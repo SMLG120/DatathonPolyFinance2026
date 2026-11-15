@@ -210,16 +210,25 @@ def test_v29_interpreter_switches_are_plain_settings_of_the_api_function_only():
 
 
 @pytest.mark.vcase("V29")
-@pytest.mark.xfail(strict=True, reason="F-22 (MEDIUM): POST /rules/interpret costs up to four Bedrock calls per request (two outputs x two attempts) but "
-                                       "keeps the default route throttle (20 rps, burst 40), four times the limit of the two routes that start an "
-                                       "investigation (5 rps), and the API function has no reserved concurrency. The worker's reserved concurrency "
-                                       "was 'the only hard bound on concurrent Bedrock use' (template, WorkerFunction must); the interpreter "
-                                       "path is outside it. Template HttpApi must: 'throttling stays modest - each POST can cost several Bedrock calls'")
-def test_v29_the_route_that_calls_the_model_from_the_api_function_is_throttled_like_the_other_model_routes():
+def test_v29_every_route_that_can_reach_the_model_has_its_own_throttle_below_the_default():
+    """Closes F-22 (fourth pass: POST /rules/interpret kept the default 20 rps). Pinned as reviewed on b7f43aa:
+    interpret 2 rps / burst 5; the two routes that start an investigation or run CLARIFY_PREFERENCE 5 rps / burst 10;
+    every other route is the default 20 / 40 and reaches no model.
+    Residual, disclosed (LOW): the API function has no reserved concurrency, and the template's own note says route
+    throttling is best effort, so the interpreter path has no hard bound on concurrent Bedrock calls as the worker has."""
     api_function = resources()["ApiFunction"]
-    block = api_function.split("Path: /rules/interpret\n", 1)[1].split("Type: HttpApi")[0]
-    own = re.search(r"ThrottlingBurstLimit: (\d+)\s*\n\s+ThrottlingRateLimit: (\d+)", block)
-    assert (own and int(own.group(2)) <= 5) or "ReservedConcurrentExecutions" in api_function
+    throttles = {}
+    for block in api_function.split("Type: HttpApi")[1:]:
+        path, method = re.search(r"Path: (\S+)", block).group(1), re.search(r"Method: (\S+)", block).group(1)
+        own = re.search(r"RouteSettings:\n(?:\s+#.*\n)*\s+ThrottlingBurstLimit: (\d+)\s*\n\s+ThrottlingRateLimit: (\d+)", block)
+        throttles[(method, path)] = (int(own.group(2)), int(own.group(1))) if own else None
+    assert throttles[("POST", "/rules/interpret")] == (2, 5)
+    assert throttles[("POST", "/investigations")] == (5, 10) and throttles[("POST", "/investigations/{id}/challenge")] == (5, 10)
+    assert {route for route, own in throttles.items() if own} == {("POST", "/rules/interpret"), ("POST", "/investigations"), ("POST", "/investigations/{id}/challenge")}
+    http_api = resources()["HttpApi"]
+    assert re.search(r"DefaultRouteSettings:\s*\n\s+ThrottlingBurstLimit: 40\s*\n\s+ThrottlingRateLimit: 20", http_api)
+    assert "ReservedConcurrentExecutions" not in api_function, "pinned as observed: if a bound is added, re-review and say so in the report"
+    assert "ReservedConcurrentExecutions: !Ref WorkerReservedConcurrency" in resources()["WorkerFunction"]
 
 
 @pytest.mark.vcase("V29")
