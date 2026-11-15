@@ -1,14 +1,19 @@
-import type { Instrument, Portfolio, PurchaseRequest } from "@/lib/contracts";
-import { EPS, formatFraction } from "@/lib/format";
+import type { AssetClass, Instrument, InstrumentId, Portfolio, PurchaseRequest } from "@/lib/contracts";
+import { formatFraction } from "@/lib/format";
 
 /**
- * Read-only helpers over a portfolio, and the arithmetic of the purchase
- * request itself (BUILD_BRIEF §2). Nothing here produces a verdict: rule
- * results always come from the service.
+ * Read-only helpers over a portfolio and the purchase form.
+ *
+ * Nothing here calculates: cash after a purchase, the amount added, the
+ * before/after figures and every rule result come from the service
+ * (`CheckResult.feasibility`, `summary`, `max_compliant`). This module only
+ * names things and reads what the user typed.
  */
 
-/** How every purchase in this simulation is funded (BUILD_BRIEF §2). Stated wherever a purchase is shown. */
+/** How every purchase in this simulation is funded. Stated wherever a purchase is shown. */
 export const FUNDING_STATEMENT = "Funded from existing cash; all other positions unchanged; fees and taxes excluded.";
+
+export type InstrumentRegistry = Record<InstrumentId, Instrument>;
 
 export interface PortfolioRow {
   key: string;
@@ -19,51 +24,52 @@ export interface PortfolioRow {
   weight: number;
 }
 
-const ASSET_TYPE_LABELS: Record<Instrument["asset_type"], string> = {
-  EQUITY: "Share",
-  EQUITY_FUND: "Equity fund",
-  BOND_FUND: "Bond fund",
-  COMMODITY: "Commodity",
-  CRYPTO: "Crypto asset",
+const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
+  equity: "Share",
+  etf_equity: "Equity fund",
+  etf_bond: "Bond fund",
+  etf_commodity: "Commodity fund",
+  crypto: "Crypto asset",
 };
 
-export function assetTypeLabel(assetType: Instrument["asset_type"]): string {
-  return ASSET_TYPE_LABELS[assetType];
+export function assetClassLabel(assetClass: AssetClass): string {
+  return ASSET_CLASS_LABELS[assetClass];
+}
+
+/** The registry name of an instrument, or its id when the registry has no entry for it. */
+export function instrumentName(instruments: InstrumentRegistry, instrumentId: InstrumentId): string {
+  return instruments[instrumentId]?.name ?? instrumentId;
+}
+
+function instrumentKind(instruments: InstrumentRegistry, instrumentId: InstrumentId): string {
+  const instrument = instruments[instrumentId];
+  return instrument ? assetClassLabel(instrument.asset_class) : "Not in the registry";
 }
 
 export function cashRowName(portfolio: Portfolio): string {
-  return `Cash (${portfolio.reporting_currency})`;
+  return `Cash (${portfolio.base_currency})`;
 }
 
-export function directWeightOf(portfolio: Portfolio, instrumentId: string): number {
-  return portfolio.positions.find((position) => position.instrument_id === instrumentId)?.weight ?? 0;
+/** The direct weight held now, or null when the instrument is not held. Read from the portfolio, never computed. */
+export function heldWeight(portfolio: Portfolio, instrumentId: string): number | null {
+  return portfolio.positions.find((position) => position.instrument_id === instrumentId)?.weight ?? null;
 }
 
 /** Positions in the order supplied, then cash. */
-export function portfolioRows(portfolio: Portfolio): PortfolioRow[] {
+export function portfolioRows(portfolio: Portfolio, instruments: InstrumentRegistry): PortfolioRow[] {
   return [
     ...portfolio.positions.map((position) => ({
       key: position.instrument_id,
       instrument_id: position.instrument_id,
-      name: position.name,
-      kind: assetTypeLabel(position.asset_type),
+      name: instrumentName(instruments, position.instrument_id),
+      kind: instrumentKind(instruments, position.instrument_id),
       weight: position.weight,
     })),
     { key: "__cash__", instrument_id: null, name: cashRowName(portfolio), kind: "Cash", weight: portfolio.cash_weight },
   ];
 }
 
-export function totalWeight(portfolio: Portfolio): number {
-  return portfolio.positions.reduce((sum, position) => sum + position.weight, portfolio.cash_weight);
-}
-
-export type PurchaseProblemCode =
-  | "NO_INSTRUMENT"
-  | "UNSUPPORTED_INSTRUMENT"
-  | "NO_TARGET"
-  | "NEGATIVE"
-  | "ABOVE_ONE"
-  | "BELOW_CURRENT";
+export type PurchaseProblemCode = "NO_INSTRUMENT" | "UNSUPPORTED_INSTRUMENT" | "NO_TARGET" | "OUT_OF_RANGE";
 
 export interface PurchaseProblem {
   code: PurchaseProblemCode;
@@ -72,111 +78,49 @@ export interface PurchaseProblem {
   message: string;
 }
 
-export interface BeforeAfterRow {
-  key: string;
-  instrument_id: string | null;
-  name: string;
-  before: number;
-  after: number;
-  /** True for the instrument being bought and for cash: the only rows a purchase changes. */
-  changed: boolean;
+export interface PurchaseInput {
+  instrumentId: string | null;
+  /** The FINAL direct weight, as a fraction, or null while the field is empty or unreadable. */
+  target: number | null;
 }
 
-export interface PurchasePreview {
-  /** The request as it would be sent, or null while the form is invalid. */
+export interface PurchaseForm {
+  /** The request as it would be sent, or null while the form cannot be sent. */
   request: PurchaseRequest | null;
-  /** A request the service would reject outright (LEAD_DECISIONS D5). */
+  /** Why the form cannot be sent. Whether a sendable request can be executed is the service's answer. */
   problem: PurchaseProblem | null;
-  starting_direct: number;
-  /** Target minus starting direct weight. */
-  additional: number | null;
-  cash_before: number;
-  cash_after: number | null;
-  /** D5: a feasibility result, reported apart from rule results. */
-  insufficient_cash: boolean;
-  rows: BeforeAfterRow[];
 }
 
 /**
- * Works out what a purchase request means for the portfolio:
+ * Reads the purchase form into a request. Only the form is checked here (an
+ * instrument is chosen, the weight is a share between 0% and 100%). Whether
+ * the request can be executed (enough cash, not below the weight already
+ * held) is decided by the service and shown from its answer.
  *
- *   cash after = starting cash - (target direct weight - starting direct weight)
- *
- * Funded from existing cash, every other position unchanged, fees and taxes
- * excluded. This is a restatement of the request for the user to check before
- * sending; the service recomputes it and its answer is the one that counts.
+ * `scripted` are the scenario's own requests: when the form holds exactly one
+ * of them, its sentence travels with the request as the original words.
  */
-export function previewPurchase(
-  portfolio: Portfolio,
-  instruments: Instrument[],
-  instrumentId: string | null,
-  target: number | null,
-): PurchasePreview {
-  const instrument = instrumentId === null ? undefined : instruments.find((i) => i.instrument_id === instrumentId);
-  const startingDirect = instrumentId === null ? 0 : directWeightOf(portfolio, instrumentId);
-
-  let problem: PurchaseProblem | null = null;
+export function readPurchaseForm(purchasableIds: InstrumentId[], input: PurchaseInput, scripted: PurchaseRequest[] = []): PurchaseForm {
+  const { instrumentId, target } = input;
   if (instrumentId === null || instrumentId === "") {
-    problem = { code: "NO_INSTRUMENT", field: "instrument", message: "Choose the instrument to buy." };
-  } else if (!instrument) {
-    problem = { code: "UNSUPPORTED_INSTRUMENT", field: "instrument", message: "This instrument is not supported." };
-  } else if (target === null) {
-    problem = { code: "NO_TARGET", field: "target", message: "Enter the final direct weight as a percentage, for example 25." };
-  } else if (target < 0) {
-    problem = { code: "NEGATIVE", field: "target", message: "The final weight cannot be negative. Shorting is not supported." };
-  } else if (target > 1 + EPS) {
-    problem = { code: "ABOVE_ONE", field: "target", message: "The final weight cannot be more than 100% of the portfolio. Leverage is not supported." };
-  } else if (target < startingDirect - EPS) {
-    problem = {
-      code: "BELOW_CURRENT",
-      field: "target",
-      message: `The final weight cannot be below the ${formatFraction(startingDirect)} already held. This simulation only buys; it does not sell.`,
-    };
+    return { request: null, problem: { code: "NO_INSTRUMENT", field: "instrument", message: "Choose the instrument to buy." } };
   }
-
-  const valid = problem === null && instrument !== undefined && target !== null;
-  const additional = valid ? target - startingDirect : null;
-  const cashAfter = additional === null ? null : portfolio.cash_weight - additional;
-
-  const rows: BeforeAfterRow[] = portfolio.positions.map((position) => {
-    const isTarget = valid && position.instrument_id === instrument.instrument_id;
+  if (!purchasableIds.includes(instrumentId)) {
+    return { request: null, problem: { code: "UNSUPPORTED_INSTRUMENT", field: "instrument", message: "This instrument is not supported." } };
+  }
+  if (target === null) {
+    return { request: null, problem: { code: "NO_TARGET", field: "target", message: "Enter the final direct weight as a percentage, for example 25." } };
+  }
+  if (target < 0 || target > 1) {
     return {
-      key: position.instrument_id,
-      instrument_id: position.instrument_id,
-      name: position.name,
-      before: position.weight,
-      after: isTarget ? target : position.weight,
-      changed: isTarget,
+      request: null,
+      problem: { code: "OUT_OF_RANGE", field: "target", message: "The final weight must be between 0% and 100% of the portfolio. Shorting and leverage are not supported." },
     };
-  });
-  if (valid && !portfolio.positions.some((position) => position.instrument_id === instrument.instrument_id)) {
-    rows.push({
-      key: instrument.instrument_id,
-      instrument_id: instrument.instrument_id,
-      name: instrument.name,
-      before: 0,
-      after: target,
-      changed: true,
-    });
   }
-  rows.push({
-    key: "__cash__",
-    instrument_id: null,
-    name: cashRowName(portfolio),
-    before: portfolio.cash_weight,
-    after: cashAfter ?? portfolio.cash_weight,
-    changed: valid,
-  });
-
+  const match = scripted.find((request) => request.instrument_id === instrumentId && request.target_direct_weight === target);
   return {
-    request: valid ? { instrument_id: instrument.instrument_id, target_direct_weight: target } : null,
-    problem,
-    starting_direct: startingDirect,
-    additional,
-    cash_before: portfolio.cash_weight,
-    cash_after: cashAfter,
-    insufficient_cash: cashAfter !== null && cashAfter < -EPS,
-    rows,
+    request: { instrument_id: instrumentId, target_direct_weight: target, funding: "CASH", original_words: match?.original_words ?? null },
+    problem: null,
   };
 }
 

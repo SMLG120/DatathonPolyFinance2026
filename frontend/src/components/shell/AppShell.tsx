@@ -23,7 +23,7 @@ function useValuationDateText(): string {
   const { state } = useWorkflow();
   switch (state.portfolio.status) {
     case "ready":
-      return formatDate(state.portfolio.data?.portfolio.valuation_date);
+      return formatDate(state.portfolio.data?.scenario.portfolio.valuation_date);
     case "loading":
       return "loading…";
     case "error":
@@ -112,8 +112,8 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
           {config.mode === "fixtures" && config.fixturesReason ? (
             <p>
-              <span className="font-semibold text-ink">{FIXTURES_LABEL}.</span> {FIXTURES_REASONS[config.fixturesReason]} Measured values in test
-              data are placeholders, not sourced figures.
+              <span className="font-semibold text-ink">{FIXTURES_LABEL}.</span> {FIXTURES_REASONS[config.fixturesReason]} Every figure shown is a
+              recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked &ldquo;Test data&rdquo;.
             </p>
           ) : null}
           {config.mode === "live" && !needsAccessCode ? (

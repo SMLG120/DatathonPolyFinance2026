@@ -6,8 +6,10 @@
  * worded, so the wording is identical on every screen and is unit-tested once.
  */
 
-/** Same tolerance as the engine (LEAD_DECISIONS D2). Used for wording only, never for a verdict. */
-export const EPS = 1e-9;
+import { EPS } from "@/lib/contracts";
+
+/** The contract's tolerance. Used here for wording only, never for a verdict. */
+export { EPS };
 
 export const UNKNOWN_TEXT = "Unknown";
 export const NOT_SET_TEXT = "Not set";
@@ -127,20 +129,41 @@ export function formatChange(delta: number | null | undefined, decimals = 1): st
   return `${delta > 0 ? "+" : MINUS}${formatPoints(delta, decimals)}`;
 }
 
+/**
+ * How much of a fund its holdings file reports: 0.998 -> "99.8%".
+ * Truncated, never rounded up, so a fund that reports 99.96% of its weight is
+ * not displayed as "100.0%" next to the word "Partial".
+ */
+export function formatCoverage(value: number | null | undefined): string {
+  return formatFraction(value, { rounding: "down" });
+}
+
+/** A return over a period, signed, to two decimals: -0.1525 -> "−15.25%". */
+export function formatReturn(value: number | null | undefined): string {
+  return formatFraction(value, { decimals: 2, signed: true });
+}
+
 export type LimitDirection = "max" | "min";
 
 /**
- * Words the gap between a measured value and its limit.
- * `gap` is measured minus limit, as a fraction; null means it cannot be determined.
+ * Words the gap the service reports between a measured value and its limit.
+ * `gap` is the contract's: positive is the size of the breach, zero or
+ * negative is headroom, null means it cannot be determined. It is worded,
+ * never recomputed.
  */
-export function formatGap(gap: number | null | undefined, direction: LimitDirection = "max"): string {
+export function formatGap(
+  gap: number | null | undefined,
+  direction: LimitDirection = "max",
+  noun: string = direction === "max" ? "limit" : "minimum",
+  startDecimals = 1,
+): string {
   if (!isFiniteNumber(gap)) return "Cannot be determined";
-  if (Math.abs(gap) <= EPS) return direction === "max" ? "Exactly at the limit" : "Exactly at the minimum";
-  let decimals = 1;
+  if (Math.abs(gap) <= EPS) return `Exactly at the ${noun}`;
+  let decimals = startDecimals;
   while (decimals < MAX_DECIMALS && Number(formatPoints(gap, decimals).split(" ")[0]) === 0) decimals += 1;
   const points = formatPoints(gap, decimals);
-  if (direction === "max") return gap > 0 ? `${points} over the limit` : `${points} under the limit`;
-  return gap > 0 ? `${points} above the minimum` : `${points} below the minimum`;
+  if (direction === "max") return gap > 0 ? `${points} over the ${noun}` : `${points} under the ${noun}`;
+  return gap > 0 ? `${points} below the ${noun}` : `${points} above the ${noun}`;
 }
 
 /** "12 Nov 2026" from "2026-11-12". Parsed as text so no time zone can shift the day. */

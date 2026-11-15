@@ -1,38 +1,60 @@
-import type { ExclusionDefinition, Rule, RuleLifecycleStatus, RuleOrigin, RuleType } from "@/lib/contracts";
-import { formatFraction, NOT_SET_TEXT, type LimitDirection } from "@/lib/format";
+import type { ControversyNature, ExclusionDefinition, Rule, RuleOrigin, RuleStatus, RuleType } from "@/lib/contracts";
+import { canonical } from "@/lib/canonical";
+import { formatDate, formatFraction, NOT_SET_TEXT, type LimitDirection } from "@/lib/format";
 
 /**
- * Everything the interface needs to know about a rule beyond its raw fields.
- * Components read rules through these helpers so the exact field names of the
- * shared contract are used in one file only.
+ * Everything the interface needs to know about a rule beyond its raw fields:
+ * wording, and the two operations that build a rule to send (a draft for a
+ * preview, a threshold change). Nothing here evaluates a rule.
  */
 
-/** The numeric threshold of a rule, whatever the field is called for its type. Null when not set. */
+/** The number of a rule. Null when it has none yet (system-proposed structures never carry one). */
 export function getRuleThreshold(rule: Rule): number | null {
-  switch (rule.rule_type) {
-    case "max_issuer_exposure":
-    case "exclusion":
-    case "controversy_exclusion":
-      return rule.max_fraction;
-    case "min_issuer_exposure":
-      return rule.min_fraction;
-    case "scenario_loss_budget":
-      return rule.max_loss_fraction;
-  }
+  return rule.threshold;
 }
 
-/** A copy of the rule carrying the given threshold. The original is never mutated. */
-export function withRuleThreshold(rule: Rule, threshold: number | null): Rule {
-  switch (rule.rule_type) {
-    case "max_issuer_exposure":
-    case "exclusion":
-    case "controversy_exclusion":
-      return { ...rule, max_fraction: threshold };
-    case "min_issuer_exposure":
-      return { ...rule, min_fraction: threshold };
-    case "scenario_loss_budget":
-      return { ...rule, max_loss_fraction: threshold };
-  }
+/**
+ * The rule as a DRAFT carrying a number the user is trying out, for a preview
+ * (POST /check with `draft_rules`). It is PROPOSED, so nothing about it is
+ * confirmed, and it keeps the id of the rule it stands in for.
+ */
+export function draftRule(rule: Rule, threshold: number): Rule {
+  const unchanged = rule.threshold !== null && rule.threshold === threshold;
+  return {
+    ...rule,
+    threshold,
+    // A number the user typed is theirs; an untouched scenario or quoted number keeps its provenance.
+    ...(unchanged && rule.threshold_source !== null
+      ? {}
+      : { origin: "USER_STATED" as const, threshold_source: "USER_ENTERED" as const, threshold_quote: null }),
+    status: "PROPOSED",
+    confirmed_at: null,
+    confirmed_by: null,
+    superseded_by_rule_id: null,
+  };
+}
+
+/** What a rule measures, whatever its id, wording or number. Two rules with the same key are the same check. */
+export function measureKey(rule: Rule): string {
+  return `${rule.rule_type}|${canonical(rule.parameters)}`;
+}
+
+/**
+ * The rule set a preview evaluates: the rules in force, each replaced in place
+ * by the draft that stands in for it (same id or same measure), then any other
+ * draft. Sent as `draft_rules` to POST /check; nothing is stored.
+ */
+export function previewRuleSet(inForce: Rule[], drafts: Rule[]): Rule[] {
+  const used = new Set<string>();
+  const rules = inForce
+    .filter((rule) => rule.status === "CONFIRMED")
+    .map((rule) => {
+      const draft = drafts.find((candidate) => candidate.rule_id === rule.rule_id || measureKey(candidate) === measureKey(rule));
+      if (!draft) return rule;
+      used.add(draft.rule_id);
+      return draft;
+    });
+  return [...rules, ...drafts.filter((draft) => !used.has(draft.rule_id))];
 }
 
 /** Whether the threshold is a ceiling or a floor. */
@@ -40,9 +62,9 @@ export function ruleDirection(ruleType: RuleType): LimitDirection {
   return ruleType === "min_issuer_exposure" ? "min" : "max";
 }
 
-/** Only CONFIRMED rules with a numeric threshold are evaluated (LEAD_DECISIONS D3). */
+/** Only CONFIRMED rules with a number are evaluated (contracts/SEMANTICS.md §3). */
 export function isRuleActive(rule: Rule): boolean {
-  return rule.status === "CONFIRMED" && getRuleThreshold(rule) !== null;
+  return rule.status === "CONFIRMED" && rule.threshold !== null;
 }
 
 const RULE_TYPE_LABELS: Record<RuleType, string> = {
@@ -56,6 +78,38 @@ const RULE_TYPE_LABELS: Record<RuleType, string> = {
 /** The rule type in plain language. */
 export function ruleTypeLabel(ruleType: RuleType): string {
   return RULE_TYPE_LABELS[ruleType];
+}
+
+const NATURE_LABELS: Record<ControversyNature, string> = {
+  ALLEGATION: "allegation",
+  REGULATORY_FINDING: "regulatory finding",
+  COURT_RULING: "court ruling",
+  SETTLEMENT: "settlement",
+  COMPANY_DISCLOSURE: "company disclosure",
+};
+
+export function exclusionDefinitionLabel(definition: ExclusionDefinition): string {
+  if (definition.kind === "fund_reported_sector") return `Holdings labelled “${definition.sector}” in what the funds report`;
+  return `Named companies: ${definition.issuer_ids.join(", ")}`;
+}
+
+/** What exactly this rule is set to measure, from its parameters. One short line. */
+export function ruleParametersText(rule: Rule): string {
+  switch (rule.rule_type) {
+    case "max_issuer_exposure":
+      return rule.parameters.issuer_scope === "any" ? "Applies to every company" : `Applies to one company: ${rule.parameters.issuer_scope}`;
+    case "min_issuer_exposure":
+      return `Applies to one company: ${rule.parameters.issuer_id}`;
+    case "exclusion":
+      return exclusionDefinitionLabel(rule.parameters.definition);
+    case "controversy_exclusion": {
+      const natures = rule.parameters.criteria.natures.map((nature) => NATURE_LABELS[nature]).join(", ");
+      const since = rule.parameters.criteria.event_date_from;
+      return `Registry records of these kinds: ${natures}${since ? `, dated ${formatDate(since)} or later` : ""}`;
+    }
+    case "scenario_loss_budget":
+      return rule.parameters.scenario_id === "replay_2022" ? "Scenario: replay of calendar 2022" : `Scenario: ${rule.parameters.scenario_id}`;
+  }
 }
 
 const THRESHOLD_LABELS: Record<RuleType, string> = {
@@ -110,38 +164,46 @@ export function originDescription(origin: RuleOrigin): string {
   return ORIGIN_DESCRIPTIONS[origin];
 }
 
-const STATUS_LABELS: Record<RuleLifecycleStatus, string> = {
+/** Where the number of a rule comes from, in words. */
+export function thresholdSourceText(rule: Rule): string {
+  switch (rule.threshold_source) {
+    case "USER_WORDS":
+      return rule.threshold_quote ? `Number taken from your words: “${rule.threshold_quote}”` : "Number taken from your words";
+    case "USER_ENTERED":
+      return "Number entered by you";
+    case "FICTIONAL_SCENARIO":
+      return "Number from the fictional scenario";
+    case null:
+      return "No number yet";
+  }
+}
+
+const STATUS_LABELS: Record<RuleStatus, string> = {
   PROPOSED: "Proposed — inactive",
   CONFIRMED: "Confirmed — active",
   SUPERSEDED: "Superseded",
 };
 
-export function ruleStatusLabel(status: RuleLifecycleStatus): string {
+export function ruleStatusLabel(status: RuleStatus): string {
   return STATUS_LABELS[status];
 }
 
-const STATUS_DESCRIPTIONS: Record<RuleLifecycleStatus, string> = {
+const STATUS_DESCRIPTIONS: Record<RuleStatus, string> = {
   PROPOSED: "Not used in any check until you confirm it.",
   CONFIRMED: "Used in every check of this policy version.",
   SUPERSEDED: "Replaced in a later policy version. Kept so earlier reports stay reproducible.",
 };
 
-export function ruleStatusDescription(status: RuleLifecycleStatus): string {
+export function ruleStatusDescription(status: RuleStatus): string {
   return STATUS_DESCRIPTIONS[status];
-}
-
-export function exclusionDefinitionLabel(definition: ExclusionDefinition): string {
-  if (definition.kind === "fund_reported_sector") return `Sector “${definition.sector}” as reported in fund holdings files`;
-  return `Named companies: ${definition.issuer_ids.join(", ")}`;
 }
 
 /** "10.0%" or "Not set" — for rule summaries and diffs. */
 export function thresholdText(rule: Rule): string {
-  const threshold = getRuleThreshold(rule);
-  return threshold === null ? NOT_SET_TEXT : formatFraction(threshold);
+  return rule.threshold === null ? NOT_SET_TEXT : formatFraction(rule.threshold);
 }
 
-/** One line naming a rule and its threshold, e.g. for the timeline and policy summaries. */
+/** One line naming a rule and its threshold, e.g. for policy summaries. */
 export function ruleSummary(rule: Rule): string {
   return `${ruleTypeLabel(rule.rule_type)}: ${thresholdText(rule)}`;
 }

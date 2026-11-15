@@ -145,8 +145,16 @@ but the result is **not yet fully traceable**:
    include the new contract fixture M2; until then
    `test_every_fixture_file_is_covered` fails (1 failed, 203 passed).
 3. Decide whether the unrounded boundary belongs in the result. The contract
-   serializes 9 decimals; the returned value is rounded down and is feasible
-   without using the 1e-9 tolerance. Fewer digits in display text is a
+   serializes 9 decimals. For Robert on real data the serialized value happens
+   to lie below the exact boundary and is feasible without the 1e-9 tolerance.
+   **Open defect (found by the review session, line confirmed by the lead,
+   reproduction not re-run by the lead):** `backend/engine/boundary.py` rounds
+   the maximum to the *nearest* 9th decimal, not down, so for a threshold with
+   more than nine decimals the returned weight can exceed the exact boundary
+   by up to 5e-10 and pass only through the tolerance, with a positive gap on
+   a PASS result. Fix: round down, add a property test over random thresholds
+   asserting measured <= limit exactly at the returned weight, and settle how
+   a within-tolerance PASS reports its gap. Fewer digits in display text is a
    presentation choice, not a defect.
 
 Other:
@@ -203,3 +211,37 @@ not block contract integration or the functional verdict experience.
   rule.
 - This is a 3D chart of issuer exposure. The "3D values map" excluded by
   `docs/BUILD_BRIEF.md` §1 stays excluded.
+
+## P10. Open defects from independent validation (2026-11-15)
+
+Blocker class (false pass), reproduced by the lead:
+
+- **F-01 / F-05, contracts validators.** `validate_portfolio` accepts a NaN
+  position weight and a NaN cash weight. The review session's validator
+  reports that the engine then drops the position and can return PASS with a
+  SUPPORTED maximum for a portfolio that breaches its cap. Not reachable over
+  HTTP at d36e41f (the API rejects NaN in request bodies), but it must be
+  closed before release: every numeric field in portfolio, purchase request,
+  rule, holdings and market-data validators must be finite
+  (`math.isfinite`), with negative tests; the engine must also refuse
+  non-finite inputs at its boundary and never drop a position silently.
+
+Other, for the milestones named:
+
+- Engine: maximum rounded to nearest instead of down (P8); controversy
+  evidence value must be the registry record id; Energy evidence must cite
+  the sector fraction and emit a null sector-label record for an unclassified
+  fund; cite the binding rule's records when no purchase is feasible.
+- Contracts: the Mateo API fixture shows 11 numbers with no backing evidence
+  record; reconcile with SEMANTICS §13. `docs/data-sources.md` says FX is
+  matched to the price date while SEMANTICS says the valuation date; make the
+  wording agree with what the engine does.
+- Frontend (Milestone 4, in progress): no browser arithmetic for feasibility;
+  headline from `summary.headline` including POLICY_CONFLICT,
+  INVALID_REQUEST and EXECUTION_ERROR; treat `unknown_causes` as a set.
+- Backend: model text must be validated against evidence before it is
+  returned; snapshots must be validated when loaded; API role needs read
+  access to the prefixes it serves.
+- Hosting: tighten `AllowedOrigin`; a rotated access code keeps working for
+  about six minutes (authorizer cache); the account id and API host appear in
+  tracked files (not credentials; the account is deleted on 2026-11-16).

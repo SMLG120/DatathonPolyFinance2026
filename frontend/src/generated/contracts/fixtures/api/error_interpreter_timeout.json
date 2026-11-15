@@ -1,0 +1,28 @@
+{
+  "fixture": true,
+  "fixture_id": "error_interpreter_timeout",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "The model call exceeded the server-side timeout. The structured error lets the UI fall back to the manual rule form.",
+  "route": "POST /rules/interpret",
+  "http_status": 504,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "robert",
+    "text": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+    "policy_id": null,
+    "policy_version": null
+  },
+  "response_schema": "api.schema.json#/$defs/error_response",
+  "response_body": {
+    "error": {
+      "code": "INTERPRETER_TIMEOUT",
+      "message": "The interpreter did not answer in time. Nothing was changed. Try again, or enter the rule with the form.",
+      "details": [],
+      "request_id": "req-fixture-0001"
+    }
+  }
+}

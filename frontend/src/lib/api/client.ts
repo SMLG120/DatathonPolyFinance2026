@@ -2,14 +2,15 @@ import type {
   ChallengeRequest,
   ChallengeResponse,
   CheckRequest,
-  CheckResponse,
-  ConfirmRulesRequest,
-  ConfirmRulesResponse,
-  CreateInvestigationRequest,
-  CreateInvestigationResponse,
+  CheckResult,
+  ConfirmRequest,
+  ConfirmResponse,
+  Id,
   InterpretRequest,
-  InterpretResponse,
-  Investigation,
+  Interpretation,
+  InvestigationAccepted,
+  InvestigationCreateRequest,
+  InvestigationJob,
   PersonaId,
   PortfolioResponse,
 } from "@/lib/contracts";
@@ -20,32 +21,41 @@ export interface RequestOptions {
   signal?: AbortSignal;
 }
 
+export interface IdempotentRequestOptions extends RequestOptions {
+  /**
+   * Sent as the `Idempotency-Key` header. One key per user action: a retry of
+   * the same action reuses it, so the service never starts a duplicate job.
+   */
+  idempotencyKey: string;
+}
+
 /**
- * One method per route in BUILD_BRIEF §7. The interface talks to the service
- * only through this, so the live client and the fixtures client are
+ * One method per route of the shared contract. The interface talks to the
+ * service only through this, so the live client and the fixtures client are
  * interchangeable and every screen can be tested without a network.
  */
 export interface ApiClient {
   readonly mode: AppMode;
-  /** GET /portfolios/{persona} */
+  /** GET /portfolios/{persona_id} */
   getPortfolio(personaId: PersonaId, options?: RequestOptions): Promise<PortfolioResponse>;
   /** POST /rules/interpret */
-  interpretRules(request: InterpretRequest, options?: RequestOptions): Promise<InterpretResponse>;
+  interpretRules(request: InterpretRequest, options?: RequestOptions): Promise<Interpretation>;
   /** POST /rules/confirm */
-  confirmRules(request: ConfirmRulesRequest, options?: RequestOptions): Promise<ConfirmRulesResponse>;
-  /** POST /check — deterministic, no model. Also used for labelled draft previews. */
-  check(request: CheckRequest, options?: RequestOptions): Promise<CheckResponse>;
-  /** POST /investigations — answers 202 once the job is accepted. */
-  createInvestigation(
-    request: CreateInvestigationRequest,
-    options?: RequestOptions,
-  ): Promise<CreateInvestigationResponse>;
+  confirmRules(request: ConfirmRequest, options?: RequestOptions): Promise<ConfirmResponse>;
+  /** POST /check — deterministic, no model. With `draft_rules` it is a preview and nothing is stored. */
+  check(request: CheckRequest, options?: RequestOptions): Promise<CheckResult>;
+  /** POST /investigations — answers 202 once the job is accepted. Needs an idempotency key. */
+  createInvestigation(request: InvestigationCreateRequest, options: IdempotentRequestOptions): Promise<InvestigationAccepted>;
   /** GET /investigations/{id} */
-  getInvestigation(investigationId: string, options?: RequestOptions): Promise<Investigation>;
-  /** POST /investigations/{id}/challenge */
-  challengeInvestigation(
-    investigationId: string,
-    request: ChallengeRequest,
-    options?: RequestOptions,
-  ): Promise<ChallengeResponse>;
+  getInvestigation(investigationId: Id, options?: RequestOptions): Promise<InvestigationJob>;
+  /**
+   * POST /investigations/{id}/challenge. A CHANGE_RULE challenge starts a new
+   * investigation, so it carries an idempotency key as well.
+   */
+  challengeInvestigation(investigationId: Id, request: ChallengeRequest, options: IdempotentRequestOptions): Promise<ChallengeResponse>;
+}
+
+/** A new key for one user action. Matches the contract's IDEMPOTENCY_KEY_PATTERN (letters, digits, `-`, `_`; 8 to 64). */
+export function newIdempotencyKey(): string {
+  return crypto.randomUUID();
 }

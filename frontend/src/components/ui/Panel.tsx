@@ -1,5 +1,8 @@
+"use client";
+
 import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { TestDataTag } from "./TestDataTag";
 
 export interface PanelProps {
   title: ReactNode;
@@ -16,10 +19,12 @@ export interface PanelProps {
   id?: string;
   /** Lets code move focus to the heading (`#<id>-title`) after an action replaces the control that had focus. */
   focusableHeading?: boolean;
+  /** True when the panel shows figures: in fixtures mode it then carries the "Test data" tag. */
+  figures?: boolean;
 }
 
 /** A titled region: a card with a real heading, exposed as a named landmark region. */
-export function Panel({ title, eyebrow, description, aside, children, className, level = 2, tone = "surface", id, focusableHeading = false }: PanelProps) {
+export function Panel({ title, eyebrow, description, aside, children, className, level = 2, tone = "surface", id, focusableHeading = false, figures = false }: PanelProps) {
   const generated = useId();
   const headingId = `${id ?? generated}-title`;
   const Heading = level === 2 ? "h2" : "h3";
@@ -27,6 +32,7 @@ export function Panel({ title, eyebrow, description, aside, children, className,
     <section
       id={id}
       aria-labelledby={headingId}
+      data-figures={figures ? "true" : undefined}
       className={cn(
         "rounded-lg border border-line p-4 sm:p-6",
         tone === "surface" ? "bg-surface" : "bg-sunken",
@@ -44,7 +50,12 @@ export function Panel({ title, eyebrow, description, aside, children, className,
             {title}
           </Heading>
         </div>
-        {aside ? <div className="flex-none">{aside}</div> : null}
+        {aside || figures ? (
+          <div className="flex flex-none flex-wrap items-center gap-2">
+            {figures ? <TestDataTag /> : null}
+            {aside}
+          </div>
+        ) : null}
       </div>
       {description ? <div className="mt-2 max-w-prose text-ink-muted">{description}</div> : null}
       <div className="mt-4">{children}</div>

@@ -1,0 +1,109 @@
+{
+  "fixture": true,
+  "fixture_id": "investigation_robert_running",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. Portfolio weights and thresholds are fictional-scenario values.",
+  "description": "Partial timeline: four finished tool steps and one RUNNING. No result, no explanation and no evidence ids until the job is terminal.",
+  "route": "GET /investigations/{id}",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>"
+  },
+  "request_body": null,
+  "response_schema": "investigation_job.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "id": "inv-robert-0001",
+    "status": "RUNNING",
+    "created_at": "2026-11-14T15:02:00Z",
+    "updated_at": "2026-11-14T15:02:15Z",
+    "deadline_at": "2026-11-14T15:04:30Z",
+    "expires_at": "2026-11-15T15:02:00Z",
+    "idempotency_key": "0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61",
+    "persona_id": "robert",
+    "policy_id": "pol-robert-demo",
+    "policy_version": 1,
+    "request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25,
+      "funding": "CASH",
+      "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+    },
+    "resolved_request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25,
+      "funding": "CASH",
+      "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+    },
+    "parent_investigation_id": null,
+    "challenge": null,
+    "agent": {
+      "mode": "MODEL",
+      "model_id": "us.anthropic.claude-sonnet-5-5",
+      "tool_rounds": 3,
+      "note": null
+    },
+    "steps": [
+      {
+        "seq": 1,
+        "tool": "get_portfolio",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:03Z",
+        "finished_at": "2026-11-14T15:02:05Z",
+        "status": "OK",
+        "input_summary": "Persona robert.",
+        "result_summary": "Fictional portfolio loaded: 5 positions, 30.0% cash, valuation date 2026-11-12.",
+        "evidence_ids": []
+      },
+      {
+        "seq": 2,
+        "tool": "get_policy",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:06Z",
+        "finished_at": "2026-11-14T15:02:08Z",
+        "status": "OK",
+        "input_summary": "Policy pol-robert-demo, version 1.",
+        "result_summary": "2 confirmed rules: single-company limit 10.0%; 2022 loss budget 10.0%.",
+        "evidence_ids": []
+      },
+      {
+        "seq": 3,
+        "tool": "simulate_change",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:09Z",
+        "finished_at": "2026-11-14T15:02:11Z",
+        "status": "OK",
+        "input_summary": "NVDA to a final direct weight of 25.0%, funded from cash.",
+        "result_summary": "Additional purchase 25.0%; cash after the purchase 5.0%; feasible.",
+        "evidence_ids": []
+      },
+      {
+        "seq": 4,
+        "tool": "get_holdings",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:12Z",
+        "finished_at": "2026-11-14T15:02:14Z",
+        "status": "OK",
+        "input_summary": "Funds SPY and XIU.TO.",
+        "result_summary": "SPY: 8 constituents, 100.0% covered, as of 2026-11-12. XIU.TO: 4 constituents, 98.0% covered, as of 2026-11-12.",
+        "evidence_ids": []
+      },
+      {
+        "seq": 5,
+        "tool": "compute_exposure",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:15Z",
+        "finished_at": null,
+        "status": "RUNNING",
+        "input_summary": "Company NVIDIA, portfolio after the purchase.",
+        "result_summary": null,
+        "evidence_ids": []
+      }
+    ],
+    "clarification": null,
+    "result": null,
+    "explanation": [],
+    "failure": null,
+    "proposed_corrections": []
+  }
+}

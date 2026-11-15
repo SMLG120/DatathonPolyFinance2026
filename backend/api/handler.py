@@ -4,7 +4,7 @@ Handler string: ``backend.api.handler.handler``. Routes and bodies are the ones
 of ``contracts/api.md`` (schema_version 1.0.0):
 
     GET  /portfolios/{persona_id}          fictional scenario, registry entries, purchasable instruments
-    POST /rules/interpret                  model-backed draft (not available in this build: 502)
+    POST /rules/interpret                  model-backed extraction -> PROPOSED drafts and questions; nothing stored
     POST /rules/confirm                    explicit confirmation -> new immutable policy version
     POST /check                            deterministic engine run; draft_rules -> labelled preview
     POST /investigations                   store QUEUED, invoke the worker, 202 once accepted
@@ -12,9 +12,11 @@ of ``contracts/api.md`` (schema_version 1.0.0):
     POST /investigations/{id}/challenge    CORRECT_FACT / CLARIFY_PREFERENCE / CHANGE_RULE
 
 Authentication is done by the Lambda authorizer in front of these routes; this
-handler never sees or logs the access code. No model is called here: verdicts
-come from ``backend.engine``, and a preview never reads or changes a stored
-policy.
+handler never sees or logs the access code. Verdicts come from
+``backend.engine`` and a preview never reads or changes a stored policy. The
+only model call made here is the interpreter's (``backend.agents.interpreter``),
+on ``POST /rules/interpret`` and the ``CLARIFY_PREFERENCE`` challenge: it
+drafts and asks; it never evaluates, stores or confirms anything.
 
 Every request body is validated against the contract schema before anything
 is read or stored; every error has the contract's error shape.
@@ -34,6 +36,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from byb_contracts import SCHEMA_VERSION, ContractError, schema_errors
 
 from backend import engine
+from backend.agents.interpreter import Interpreter, InterpreterFailed, InterpreterTimeout
 from backend.common import log
 from backend.common.clock import from_iso, to_iso
 from backend.common.config import ApiConfig
@@ -56,6 +59,8 @@ from backend.common.policy_ops import InvalidConfirmation, body_hash, build_chan
 
 # Largest body accepted. A confirmation carrying every rule and objective in full is a few kilobytes.
 MAX_BODY_BYTES = 65536
+# Longest text handed to the interpreter: the limit of interpret_request.text, applied to a clarification too.
+MAX_INTERPRET_CHARS = 2000
 
 FAILURE_WORKER_INVOCATION_FAILED = "WORKER_INVOCATION_FAILED"
 FAILURE_DEADLINE_EXCEEDED = "DEADLINE_EXCEEDED"
@@ -69,6 +74,8 @@ _DISPATCH_FAILED_MESSAGE = "The investigation could not be started. Nothing was 
 _DEADLINE_MESSAGE = "The investigation did not finish before its deadline. Nothing more will be run for it."
 _CONFLICT_MESSAGE = "The policy has a newer version than the one this confirmation was based on. Reload it and confirm again."
 _INTERPRETER_UNAVAILABLE = "The interpreter is not available in this build. Your text was kept; the scenario rules can still be confirmed without it."
+_INTERPRETER_FAILED = "The interpreter could not produce a valid draft. Nothing was changed. Try again, or enter the rule with the form."
+_INTERPRETER_TIMEOUT = "The interpreter did not answer in time. Nothing was changed. Try again, or enter the rule with the form."
 
 SCHEMA = "api.schema.json#/$defs/"
 
@@ -168,7 +175,7 @@ def read_idempotency_key(event: dict[str, Any]) -> str:
 
 class Api:
     def __init__(self, *, store: JobStore, policies: PolicyStore, snapshots: SnapshotLoader, lambda_client: Any, config: ApiConfig,
-                 clock: Any, new_id: Callable[[], str] | None = None) -> None:
+                 clock: Any, new_id: Callable[[], str] | None = None, interpreter: Interpreter | None = None) -> None:
         self._store = store
         self._policies = policies
         self._snapshots = snapshots
@@ -176,6 +183,7 @@ class Api:
         self._config = config
         self._clock = clock
         self._new_id = new_id or (lambda: uuid.uuid4().hex)
+        self._interpreter = interpreter  # None: not configured; both interpreter entry points answer 502
         self._routes: dict[str, Callable[[dict[str, Any], str | None], dict[str, Any]]] = {
             "GET /portfolios/{persona_id}": self._portfolio,
             "POST /rules/interpret": self._interpret,
@@ -241,16 +249,29 @@ class Api:
     # ----------------------------------------------------- POST /rules/interpret
 
     def _interpret(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        started = self._clock.time()
         body = read_json_body(event)
         validate_body(body, "interpret_request")
         if (body["policy_id"] is None) != (body["policy_version"] is None):
             raise _validation([detail("policy_version", "policy_id and policy_version are both null or both set")])
-        self._scenario(self._snapshot(), body["persona_id"])
+        snapshot = self._snapshot()
+        self._scenario(snapshot, body["persona_id"])
         if body["policy_id"] is not None:
+            # Context only: the policy version must exist. It is neither sent to the model nor changed.
             self._policy(body["persona_id"], body["policy_id"], body["policy_version"])
-        # No interpreter model is wired in this build. The contract's answer for "no valid draft" is 502;
-        # nothing is invented in its place and nothing is stored.
-        raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_UNAVAILABLE)
+        return json_response(200, self._interpretation(body["text"], body["persona_id"], snapshot, started))
+
+    def _interpretation(self, text: str, persona_id: str, snapshot: Snapshot, started: float, clarification_mode: bool = False) -> dict[str, Any]:
+        """A contract-valid draft, or the contract's 502 / 504. Nothing is stored; no policy is read or written; no verdict exists here."""
+        if self._interpreter is None:
+            raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_UNAVAILABLE)
+        try:
+            return self._interpreter.interpret(text=text, persona_id=persona_id, snapshot=snapshot, started=started,
+                                               clarification_mode=clarification_mode)
+        except InterpreterTimeout as error:
+            raise ApiError(504, "INTERPRETER_TIMEOUT", _INTERPRETER_TIMEOUT) from error
+        except InterpreterFailed as error:
+            raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_FAILED) from error
 
     # ------------------------------------------------------- POST /rules/confirm
 
@@ -457,6 +478,7 @@ class Api:
     # --------------------------------------- POST /investigations/{id}/challenge
 
     def _challenge(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        started = self._clock.time()
         body = read_json_body(event)
         validate_body(body, "challenge_request")
         job = self._load_job(event)
@@ -470,7 +492,7 @@ class Api:
         if kind == "CORRECT_FACT":
             return self._correct_fact(job, outcome, body)
         if kind == "CLARIFY_PREFERENCE":
-            return self._clarify_preference(job, body)
+            return self._clarify_preference(job, body, started)
         return self._change_rule(event, job, outcome, body, request_id)
 
     @staticmethod
@@ -509,14 +531,23 @@ class Api:
         return json_response(201, {"schema_version": SCHEMA_VERSION, "challenge": challenge, "proposed_correction": correction,
                                    "interpretation": None, "policy": None, "investigation": None})
 
-    def _clarify_preference(self, job: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
-        objective_id = body["payload"]["objective_id"]
+    def _clarify_preference(self, job: dict[str, Any], body: dict[str, Any], started: float) -> dict[str, Any]:
+        payload = body["payload"]
+        objective_id = payload["objective_id"]
         if objective_id is not None:
             policy = self._policies.get(job["policy_id"], job["policy_version"])
             if policy is None or objective_id not in {o["objective_id"] for o in policy["objectives"]}:
                 raise self._unsupported("payload.objective_id", "is not an objective of the investigation's policy version")
-        # Same interpreter as POST /rules/interpret, and the same answer while it is not wired. Nothing stored changes.
-        raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_UNAVAILABLE)
+        if len(payload["text"]) > MAX_INTERPRET_CHARS:
+            raise _validation([detail("payload.text", f"is longer than {MAX_INTERPRET_CHARS} characters")])
+        # The same interpreter as POST /rules/interpret: a draft and questions only. The job, its report, its policy
+        # version and every stored object stay as they are; to act on the draft the user confirms a rule.
+        interpretation = self._interpretation(payload["text"], job["persona_id"], self._snapshot(), started, clarification_mode=True)
+        challenge = {"challenge_id": f"ch-{self._new_id()[:12]}", "investigation_id": job["id"], "type": "CLARIFY_PREFERENCE",
+                     "payload": payload, "created_at": to_iso(self._clock.time())}
+        log.info("preference_clarified", challenge_id=challenge["challenge_id"], interpretation_id=interpretation["interpretation_id"])
+        return json_response(200, {"schema_version": SCHEMA_VERSION, "challenge": challenge, "proposed_correction": None,
+                                   "interpretation": interpretation, "policy": None, "investigation": None})
 
     def _change_rule(self, event: dict[str, Any], job: dict[str, Any], outcome: dict[str, Any] | None, body: dict[str, Any],
                      request_id: str | None) -> dict[str, Any]:
@@ -594,6 +625,7 @@ def _build_app() -> Api:
     s3 = boto3.client("s3", config=client_config)
     lambda_client = boto3.client("lambda", config=client_config)
     return Api(
+        interpreter=_build_interpreter(boto3, Config, config, clock),
         store=JobStore(s3, config.data_bucket, clock, can_list=True),
         policies=PolicyStore(s3, config.data_bucket, can_list=True),
         snapshots=SnapshotLoader(S3SnapshotSource(s3, config.data_bucket, config.snapshot_id), config.snapshot_id),
@@ -601,6 +633,28 @@ def _build_app() -> Api:
         config=config,
         clock=clock,
     )
+
+
+# One Converse call takes at most connect + read = 13 s, and a call is started only while 13 s of the 20 s budget
+# (contracts/api.md, INTERPRET_TIMEOUT_SECONDS) are left. So a second call happens only after a fast failure, and
+# the route always answers within about 20 s: before the function timeout and the 30 s API Gateway limit.
+INTERPRETER_CONNECT_TIMEOUT_SECONDS = 1
+INTERPRETER_READ_TIMEOUT_SECONDS = 12
+INTERPRETER_CALL_BUDGET_SECONDS = float(INTERPRETER_CONNECT_TIMEOUT_SECONDS + INTERPRETER_READ_TIMEOUT_SECONDS)
+
+
+def _build_interpreter(boto3: Any, config_class: Any, config: ApiConfig, clock: Any) -> Interpreter | None:
+    if not config.interpreter_enabled or config.model_id is None:
+        return None
+    from backend.agents.bedrock_client import BedrockConverse
+
+    # botocore's own retries are off: every attempt is made, counted and bounded by BedrockConverse.
+    bedrock = boto3.client("bedrock-runtime", config=config_class(
+        retries={"total_max_attempts": 1, "mode": "standard"},
+        connect_timeout=INTERPRETER_CONNECT_TIMEOUT_SECONDS, read_timeout=INTERPRETER_READ_TIMEOUT_SECONDS))
+    model = BedrockConverse(bedrock, config.model_id, clock, max_attempts=2, base_delay_seconds=0.5, max_delay_seconds=1.0,
+                            min_call_budget_seconds=INTERPRETER_CALL_BUDGET_SECONDS)
+    return Interpreter(model, clock, max_tokens=config.interpreter_max_tokens, call_budget_seconds=INTERPRETER_CALL_BUDGET_SECONDS)
 
 
 def _get_app() -> Api:

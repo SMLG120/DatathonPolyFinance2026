@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { IDEMPOTENCY_KEY_HEADER } from "@/lib/contracts";
+import { FIXTURES } from "@/lib/fixtures";
 import { ApiError } from "./errors";
 import { createHttpClient } from "./http-client";
 
@@ -29,35 +31,104 @@ async function failure(promise: Promise<unknown>): Promise<ApiError> {
   throw new Error("expected the request to fail");
 }
 
+/** Answers every route with the body recorded for it, so the shape checks at the edge see what the service really sends. */
+function recordedService() {
+  return vi.fn(async (url: string, init: RequestInit) => {
+    const route = `${init.method} ${url.slice(BASE.length)}`;
+    if (route === "GET /portfolios/robert") return jsonResponse(FIXTURES.portfolioRobert.response);
+    if (route === "POST /rules/interpret") return jsonResponse(FIXTURES.interpret.mateo.response);
+    if (route === "POST /rules/confirm") return jsonResponse(FIXTURES.confirmRobertV1.response, FIXTURES.confirmRobertV1.status);
+    if (route === "POST /check") return jsonResponse(FIXTURES.checkRobertPreview.response);
+    if (route === "POST /investigations") return jsonResponse(FIXTURES.investigationAccepted.response, FIXTURES.investigationAccepted.status);
+    if (route === "GET /investigations/inv%201%2F2") return jsonResponse(FIXTURES.jobs.robertSucceeded.response);
+    if (route === "POST /investigations/inv-mateo-0001/challenge") return jsonResponse(FIXTURES.challenges.clarifyPreference.response);
+    if (route === "POST /investigations/inv-robert-0001/challenge") {
+      const body = JSON.parse(String(init.body)) as { type: string };
+      return jsonResponse(body.type === "CHANGE_RULE" ? FIXTURES.challenges.changeRule.response : FIXTURES.challenges.correctFact.response);
+    }
+    return jsonResponse(FIXTURES.errors.notFound.response, 404);
+  });
+}
+
+const KEY = "0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61";
+const calls = (fetchImpl: ReturnType<typeof recordedService>) => fetchImpl.mock.calls as unknown as [string, RequestInit][];
+const headersOf = (init: RequestInit | undefined) => (init?.headers ?? {}) as Record<string, string>;
+
 describe("live HTTP client", () => {
-  it("calls the documented routes with the bearer access code", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+  it("calls the seven documented routes with the bearer access code and returns the body the service sent", async () => {
+    const fetchImpl = recordedService();
     const api = client(fetchImpl as unknown as typeof fetch);
 
-    await api.getPortfolio("robert");
-    await api.interpretRules({ persona_id: "robert", text: "goal", clarification_answers: [] });
-    await api.getInvestigation("inv 1/2");
-    await api.challengeInvestigation("inv-1", { kind: "CLARIFY_PREFERENCE", text: "x" });
+    expect(await api.getPortfolio("robert")).toEqual(FIXTURES.portfolioRobert.response);
+    expect(await api.interpretRules(FIXTURES.interpret.mateo.request)).toEqual(FIXTURES.interpret.mateo.response);
+    expect(await api.confirmRules(FIXTURES.confirmRobertV1.request)).toEqual(FIXTURES.confirmRobertV1.response);
+    expect(await api.check(FIXTURES.checkRobertPreview.request)).toEqual(FIXTURES.checkRobertPreview.response);
+    expect(await api.createInvestigation(FIXTURES.investigationAccepted.request, { idempotencyKey: KEY })).toEqual(FIXTURES.investigationAccepted.response);
+    expect(await api.getInvestigation("inv 1/2")).toEqual(FIXTURES.jobs.robertSucceeded.response);
+    expect(await api.challengeInvestigation("inv-mateo-0001", FIXTURES.challenges.clarifyPreference.request, { idempotencyKey: KEY })).toEqual(FIXTURES.challenges.clarifyPreference.response);
 
-    const calls = fetchImpl.mock.calls as unknown as [string, RequestInit][];
-    expect(calls.map(([url, init]) => `${init.method} ${url}`)).toEqual([
+    expect(calls(fetchImpl).map(([url, init]) => `${init.method} ${url}`)).toEqual([
       `GET ${BASE}/portfolios/robert`,
       `POST ${BASE}/rules/interpret`,
+      `POST ${BASE}/rules/confirm`,
+      `POST ${BASE}/check`,
+      `POST ${BASE}/investigations`,
       `GET ${BASE}/investigations/inv%201%2F2`,
-      `POST ${BASE}/investigations/inv-1/challenge`,
+      `POST ${BASE}/investigations/inv-mateo-0001/challenge`,
     ]);
-    for (const [, init] of calls) {
-      expect((init.headers as Record<string, string>).Authorization).toBe(`Bearer ${CODE}`);
+    for (const [, init] of calls(fetchImpl)) {
+      expect(headersOf(init).Authorization).toBe(`Bearer ${CODE}`);
       expect(init.credentials).toBe("omit");
     }
-    expect(calls[1]?.[1].body).toBe(JSON.stringify({ persona_id: "robert", text: "goal", clarification_answers: [] }));
+    expect(calls(fetchImpl)[1]?.[1].body).toBe(JSON.stringify(FIXTURES.interpret.mateo.request));
+    expect(calls(fetchImpl)[3]?.[1].body).toBe(JSON.stringify(FIXTURES.checkRobertPreview.request));
+  });
+
+  it("sends the Idempotency-Key header on POST /investigations, with the key it was given", async () => {
+    const fetchImpl = recordedService();
+    await client(fetchImpl as unknown as typeof fetch).createInvestigation(FIXTURES.investigationAccepted.request, { idempotencyKey: KEY });
+    const [, init] = calls(fetchImpl)[0] ?? [];
+    expect(IDEMPOTENCY_KEY_HEADER).toBe("Idempotency-Key");
+    expect(headersOf(init)[IDEMPOTENCY_KEY_HEADER]).toBe(KEY);
+    // The recorded request was made with the same header.
+    expect(Object.keys(FIXTURES.investigationAccepted.headers)).toContain(IDEMPOTENCY_KEY_HEADER);
+  });
+
+  it("sends the key with a rule change, which starts a job, and with no other challenge or route", async () => {
+    const fetchImpl = recordedService();
+    const api = client(fetchImpl as unknown as typeof fetch);
+    await api.challengeInvestigation("inv-robert-0001", FIXTURES.challenges.changeRule.request, { idempotencyKey: KEY });
+    await api.challengeInvestigation("inv-robert-0001", FIXTURES.challenges.correctFact.request, { idempotencyKey: KEY });
+    await api.challengeInvestigation("inv-mateo-0001", FIXTURES.challenges.clarifyPreference.request, { idempotencyKey: KEY });
+    await api.check(FIXTURES.checkRobertPreview.request);
+    await api.getPortfolio("robert");
+    expect(calls(fetchImpl).map(([, init]) => headersOf(init)[IDEMPOTENCY_KEY_HEADER])).toEqual([KEY, undefined, undefined, undefined, undefined]);
+  });
+
+  it.each(["", "short", "has a space in it", "x".repeat(65)])("refuses to send a request whose idempotency key is malformed (%j)", async (idempotencyKey) => {
+    const fetchImpl = recordedService();
+    const error = await failure(client(fetchImpl as unknown as typeof fetch).createInvestigation(FIXTURES.investigationAccepted.request, { idempotencyKey }));
+    expect(error.kind).toBe("validation");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("sends no Authorization header when there is no access code", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ ok: true }));
+    const fetchImpl = recordedService();
     await client(fetchImpl as unknown as typeof fetch, { code: null }).getPortfolio("robert");
-    const [, init] = (fetchImpl.mock.calls as unknown as [string, RequestInit][])[0] ?? [];
-    expect((init?.headers as Record<string, string>).Authorization).toBeUndefined();
+    const [, init] = calls(fetchImpl)[0] ?? [];
+    expect(headersOf(init).Authorization).toBeUndefined();
+  });
+
+  it("refuses a 200 answer that is not in the agreed shape, instead of passing it to a screen", async () => {
+    const wrong = (async () => jsonResponse({ ok: true })) as unknown as typeof fetch;
+    for (const call of [
+      () => client(wrong).getPortfolio("robert"),
+      () => client(wrong).check(FIXTURES.checkRobertPreview.request),
+      () => client(wrong).getInvestigation("inv-robert-0001"),
+      () => client(wrong).confirmRules(FIXTURES.confirmRobertV1.request),
+    ]) {
+      expect((await failure(call())).kind).toBe("invalid_response");
+    }
   });
 
   it.each([401, 403])("reports %i as unauthorized and asks for the access code again", async (status) => {
@@ -70,11 +141,28 @@ describe("live HTTP client", () => {
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
-  it("carries the service's error code and message", async () => {
-    const fetchImpl = vi.fn(async () => jsonResponse({ error: { code: "TARGET_BELOW_CURRENT", message: "Target is below the current weight." } }, 422));
-    const error = await failure(client(fetchImpl as unknown as typeof fetch).check({ persona_id: "robert", purchase: null, rules: [], is_draft_preview: true }));
+  it("carries the service's error code, message, details and request id, as in the recorded error body", async () => {
+    const recordedError = FIXTURES.errors.validation;
+    const fetchImpl = vi.fn(async () => jsonResponse(recordedError.response, recordedError.status));
+    const error = await failure(client(fetchImpl as unknown as typeof fetch).check(FIXTURES.checkRobertPreview.request));
 
-    expect(error).toMatchObject({ kind: "validation", status: 422, code: "TARGET_BELOW_CURRENT", message: "Target is below the current weight." });
+    expect(error).toMatchObject({
+      kind: "validation",
+      status: recordedError.status,
+      code: recordedError.response.error.code,
+      message: recordedError.response.error.message,
+      requestId: recordedError.response.error.request_id,
+    });
+    expect(error.details).toEqual(recordedError.response.error.details);
+  });
+
+  it("reads the recorded 401 body like any other refusal of the access code", async () => {
+    const recordedError = FIXTURES.errors.unauthorized;
+    const onUnauthorized = vi.fn();
+    const fetchImpl = vi.fn(async () => jsonResponse(recordedError.response, recordedError.status));
+    const error = await failure(client(fetchImpl as unknown as typeof fetch, { onUnauthorized }).getPortfolio("robert"));
+    expect(error).toMatchObject({ kind: "unauthorized", status: 401, code: "UNAUTHORIZED", message: recordedError.response.error.message });
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
   });
 
   it("maps server and not-found statuses", async () => {

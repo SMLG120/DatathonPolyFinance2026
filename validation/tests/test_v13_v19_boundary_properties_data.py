@@ -124,11 +124,11 @@ def test_v13_minimum_rule_gives_a_lower_end_not_a_false_maximum():
     assert maximum["binding_constraint"] == {"type": "CASH", "rule_id": None}
 
 
-# --------------------------------------------------------------------------- V14 (known defect)
+# --------------------------------------------------------------------------- V14 (finding F-04, CLOSED on df33dd6)
+# Both tests were strict xfail on d36e41f (maximum rounded to the nearest 9th decimal). Engine 1.0.8 rounds down:
+# they pass unmarked and stay as regression tests.
 
 @pytest.mark.vcase("V14")
-@pytest.mark.xfail(strict=True, reason="V14: boundary.py rounds the maximum compliant weight to the NEAREST 9th decimal instead of down; "
-                                       "the reported maximum exceeds the confirmed limit and is still labelled PASS with a positive gap")
 def test_v14_reported_maximum_never_exceeds_the_limit_validator_universe():
     """cash 0.40 | AAA 0.10 | F1 0.30 | BND 0.20 ; cap = 0.25 + 6e-10.
 
@@ -150,7 +150,6 @@ def test_v14_reported_maximum_never_exceeds_the_limit_validator_universe():
 
 
 @pytest.mark.vcase("V14")
-@pytest.mark.xfail(strict=True, reason="V14: same defect reproduced with the contract fixture R1 inputs (issuer cap 0.1000000006, loss budget loosened)")
 def test_v14_reported_maximum_never_exceeds_the_limit_fixture_r1_inputs():
     """R1 inputs as published in contracts/fixtures/engine (read as data), cap moved to 0.1000000006 and the loss
     budget loosened to 0.50 so that the issuer cap binds. NVIDIA before the purchase: lower 0.012 via SPY, upper
@@ -507,9 +506,10 @@ def test_v19_draft_rule_with_a_wrong_threshold_is_refused(threshold):
 NAN = float("nan")
 
 
+# Findings F-01 (V19a), F-05 (V19b), F-06 (V19c), F-07 (V19d): strict xfail on d36e41f, CLOSED on df33dd6 (engine guard
+# backend/engine/guard.py, validators refusing non-finite numbers, snapshot loader). Kept unmarked as regression tests.
+
 @pytest.mark.vcase("V19")
-@pytest.mark.xfail(strict=True, reason="V19a: a NaN position weight passes validate_portfolio and the engine silently drops the position "
-                                       "(weight > 0 is false): ALPHA 0.20 against a 0.10 cap is reported PASS / ALL_PASS")
 def test_v19_nan_position_weight_must_not_produce_a_verdict():
     portfolio = U.portfolio(0.50, {"AAA": 0.20, "BND": 0.30})
     portfolio["positions"][0]["weight"] = NAN
@@ -519,22 +519,25 @@ def test_v19_nan_position_weight_must_not_produce_a_verdict():
 
 
 @pytest.mark.vcase("V19")
-@pytest.mark.xfail(strict=True, reason="V19b: NaN cash weight / NaN target weight are evaluated with execution OK instead of INVALID_REQUEST")
 @pytest.mark.parametrize("where", ["cash", "target"])
-def test_v19_nan_cash_or_target_must_not_be_evaluated(where):
+@pytest.mark.parametrize("bad", [NAN, float("inf"), float("-inf")], ids=["nan", "inf", "-inf"])
+def test_v19_nan_cash_or_target_must_not_be_evaluated(where, bad):
+    from byb_contracts import ContractError
+
     portfolio = U.portfolio(0.50, {"AAA": 0.20, "BND": 0.30})
     request = U.request("BBB", 0.05)
     if where == "cash":
-        portfolio["cash_weight"] = NAN
+        portfolio["cash_weight"] = bad
     else:
-        request["target_direct_weight"] = NAN
-    result = check(portfolio, [U.cap_any("cap", 0.10)], request, validate=False)
-    assert result["execution"]["status"] != "OK"
+        request["target_direct_weight"] = bad
+    try:
+        result = check(portfolio, [U.cap_any("cap", 0.10)], request, validate=False)
+    except ContractError:
+        return  # refused outright: no result document can carry a non-finite request (the API turns this into a 400)
+    assert result["execution"]["status"] != "OK" and result["rule_results"] == [] and result["max_compliant"] is None
 
 
 @pytest.mark.vcase("V19")
-@pytest.mark.xfail(strict=True, reason="V19c: a NaN price or NaN draft threshold yields UNKNOWN with NaN/empty cause fields "
-                                       "(result is not finite JSON; SEMANTICS 6 requires a named cause)")
 @pytest.mark.parametrize("where", ["price", "threshold"])
 def test_v19_nan_market_or_threshold_value_must_be_refused_or_explained(where):
     data = U.universe()
@@ -557,11 +560,11 @@ def test_v19_nan_never_produces_a_pass_from_a_price_or_a_threshold():
     data["market_data"]["prices"]["AAA"]["series"][2][1] = NAN
     portfolio = U.portfolio(0.50, {"AAA": 0.20, "BND": 0.30})
     result = check(portfolio, [U.loss_budget("budget", 0.10)], U.request("BBB", 0.05), data, validate=False)
-    assert by_rule(result)["budget"]["status"] != "PASS" and result["summary"]["headline"] != "ALL_PASS"
+    assert by_rule(result).get("budget", {}).get("status") != "PASS" and result["summary"]["headline"] != "ALL_PASS"
     draft = U.cap_any("cap", 0.1, status="PROPOSED")
     draft["threshold"] = NAN
     result = check(portfolio, [draft], U.request("BBB", 0.05), preview=True, validate=False)
-    assert by_rule(result)["cap"]["status"] != "PASS"
+    assert by_rule(result).get("cap", {}).get("status") != "PASS" and result["summary"]["headline"] != "ALL_PASS"
 
 
 def _bad_snapshots():
@@ -634,9 +637,6 @@ def _production_sources() -> dict[str, str]:
 
 
 @pytest.mark.vcase("V19")
-@pytest.mark.xfail(strict=True, reason="V19d: no production code path validates the data snapshots (holdings, instruments, market data, "
-                                       "controversies) before the engine uses them; the engine trusts coverage_fraction and row contents, "
-                                       "so an inconsistent snapshot yields PASS / COVERED / a SUPPORTED maximum")
 def test_v19_production_code_validates_every_data_snapshot_before_use():
     """Static check with a behavioural witness in the report (REPORT.md, finding V19d).
 
@@ -677,3 +677,112 @@ def test_v19_unusable_rows_end_in_a_visible_engine_error_not_a_verdict(corrupt):
     assert result["execution"]["status"] == "ERROR" and result["execution"]["code"] == "ENGINE_ERROR"
     assert result["rule_results"] == [] and result["max_compliant"] is None
     assert result["summary"]["headline"] == "EXECUTION_ERROR"
+
+
+# --------------------------------------------------------------------------- V19, second pass (candidate df33dd6)
+# The engine's own guard (backend/engine/guard.py), exercised with the contract validators switched off.
+
+def _engine_without_validators(monkeypatch):
+    """Replace every byb_contracts check the engine imports by a no-op, so only the engine's own guard is left."""
+    import backend.engine.check as engine_check
+    import backend.engine.core as engine_core
+
+    for module in (engine_core, engine_check):
+        for name in ("portfolio_errors", "rule_errors", "policy_errors"):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, lambda *a, **k: [])
+        for name in ("validate_purchase_request", "validate_portfolio", "validate_policy", "validate_rule"):
+            if hasattr(module, name):
+                monkeypatch.setattr(module, name, lambda *a, **k: None)
+
+
+def _refused(run, strict_json: bool = True) -> dict | None:
+    """Run the engine; a ContractError is a refusal too. Returns the result document when there is one."""
+    try:
+        result = run()
+    except ContractError:
+        return None
+    assert result["execution"]["status"] in ("INVALID_REQUEST", "ERROR"), f"evaluated: {result['summary']}"
+    assert result["rule_results"] == [] and result["max_compliant"] is None and result["exposure"] is None
+    assert result["summary"]["headline"] in ("INVALID_REQUEST", "EXECUTION_ERROR") and result["summary"]["counts"] == {"pass": 0, "fail": 0, "unknown": 0}
+    if strict_json:
+        json.dumps(result, allow_nan=False)
+    return result
+
+
+BAD_NUMBERS = [NAN, float("inf"), float("-inf"), -0.2, 1.5, "0.2", True, None, [0.2]]
+
+
+@pytest.mark.vcase("V19")
+@pytest.mark.parametrize("where", ["position", "cash", "target", "confirmed-threshold", "draft-threshold"])
+@pytest.mark.parametrize("bad", BAD_NUMBERS, ids=["nan", "inf", "-inf", "negative", "above-1", "string", "bool", "null", "list"])
+def test_v19_engine_guard_refuses_unusable_numbers_with_the_validators_switched_off(monkeypatch, where, bad):
+    """F-01 / F-05 / F-06 closed: the refusal does not depend on byb_contracts. A position is never dropped, a NaN
+    limit never passes. (A null threshold on a rule is the legitimate 'no number yet' and is listed as not evaluated.)"""
+    _engine_without_validators(monkeypatch)
+    portfolio = U.portfolio(0.50, {"AAA": 0.20, "BND": 0.30})
+    request = U.request("BBB", 0.05)
+    rules: list | dict = [U.cap_any("cap", 0.10)]
+    kwargs = {}
+    if where == "position":
+        portfolio["positions"][0]["weight"] = bad
+    elif where == "cash":
+        portfolio["cash_weight"] = bad
+    elif where == "target":
+        request["target_direct_weight"] = bad
+    elif where == "confirmed-threshold":
+        rules = U.policy(rules)
+        rules["rules"][0]["threshold"] = bad  # after the hash: the validator's own hash helper refuses NaN
+    else:
+        rules = [U.cap_any("cap", 0.10, status="PROPOSED")]
+        rules[0]["threshold"] = bad
+        kwargs["preview"] = True
+    data = U.universe()
+    run = lambda: check_rules(portfolio, rules if isinstance(rules, dict) else None, request, data["instruments"], data["holdings"],
+                              data["market_data"], data["controversies"], draft_rules=rules if isinstance(rules, list) else None)
+    if bad is None and where in ("confirmed-threshold", "draft-threshold"):
+        result = run()
+        assert result["rule_results"] == [] and result["summary"]["headline"] != "ALL_PASS" and result["summary"]["rules_not_evaluated"] == 1
+        return
+    _refused(run)
+
+
+@pytest.mark.vcase("V19")
+@pytest.mark.parametrize("corrupt", _bad_snapshots(), ids=lambda f: f.__name__)
+def test_v19_engine_refuses_an_inconsistent_holdings_snapshot_by_itself(monkeypatch, corrupt):
+    """F-07 closed at the engine: declared coverage must equal the reported rows, every row names its issuer."""
+    _engine_without_validators(monkeypatch)
+    data = U.universe()
+    corrupt(data)
+    result = _refused(lambda: check_rules(U.portfolio(0.50, {"F1": 0.30, "BND": 0.20}), None, U.request("BBB", 0.05), data["instruments"],
+                                          data["holdings"], data["market_data"], data["controversies"],
+                                          draft_rules=[U.cap_any("cap", 0.20, status="PROPOSED"), U.loss_budget("budget", 0.10, status="PROPOSED")]))
+    assert result is not None and result["execution"]["status"] == "ERROR"
+
+
+@pytest.mark.vcase("V19")
+@pytest.mark.parametrize(
+    "where, bad",
+    [(where, bad) for where in ("row-weight", "coverage", "price", "fx", "first-price") for bad in (NAN, float("inf"), -1.0, 0.0, "12.5", None)
+     # a holdings row of weight 0 is a legitimate value; a coverage of 0 is the 'understated' case of the snapshot test
+     if not (bad == 0.0 and where in ("row-weight", "coverage"))],
+    ids=lambda v: str(v),
+)
+def test_v19_engine_refuses_unusable_numbers_in_the_data(monkeypatch, where, bad):
+    _engine_without_validators(monkeypatch)
+    data = U.universe()
+    if where == "row-weight":
+        data["holdings"]["funds"]["F1"]["holdings"][0]["weight_fraction"] = bad
+    elif where == "coverage":
+        data["holdings"]["funds"]["F1"]["coverage_fraction"] = bad
+    elif where == "price":
+        data["market_data"]["prices"]["AAA"]["series"][2][1] = bad
+    elif where == "first-price":
+        data["market_data"]["prices"]["F1"]["series"][0][1] = bad
+    else:
+        data["market_data"]["fx_usdcad"][1][1] = bad
+    result = _refused(lambda: check_rules(U.portfolio(0.40, {"AAA": 0.10, "F1": 0.30, "BND": 0.20}), None, U.request("AAA", 0.15), data["instruments"],
+                                          data["holdings"], data["market_data"], data["controversies"],
+                                          draft_rules=[U.cap_any("cap", 0.20, status="PROPOSED"), U.loss_budget("budget", 0.10, status="PROPOSED")]))
+    assert result is not None and result["execution"]["status"] == "ERROR"
+    assert "Error" not in result["execution"]["message"] and "Traceback" not in result["execution"]["message"], "no Python exception text in the message"

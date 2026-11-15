@@ -10,6 +10,7 @@ import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { PERSONAS, personaName, type PersonaCard } from "@/content/personas";
 import { cn } from "@/lib/cn";
+import type { Persona } from "@/lib/contracts";
 import { formatDate, formatFraction } from "@/lib/format";
 import { useWorkflow } from "@/state/workflow";
 
@@ -76,11 +77,39 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
   );
 }
 
+/** The persona as the service describes it: facts quoted from the case, each with its page reference. */
+function CaseFacts({ persona }: { persona: Persona }) {
+  return (
+    <details className="rounded-md border border-line bg-canvas p-3" data-testid="case-facts">
+      <summary className="min-h-6 cursor-pointer font-semibold text-ink">
+        What the case says about {persona.display_name} ({persona.case_reference})
+      </summary>
+      <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+        {persona.facts.map((fact) => (
+          <div key={fact.fact_id}>
+            <dt className="text-sm font-semibold text-ink-muted">{fact.label}</dt>
+            <dd className="text-ink">
+              {fact.text} <span className="text-sm text-ink-muted">({fact.case_reference})</span>
+            </dd>
+          </div>
+        ))}
+        <div className="sm:col-span-2">
+          <dt className="text-sm font-semibold text-ink-muted">What this persona tests</dt>
+          <dd className="text-ink">
+            {persona.what_this_persona_tests.text} <span className="text-sm text-ink-muted">({persona.what_this_persona_tests.case_reference})</span>
+          </dd>
+        </div>
+      </dl>
+    </details>
+  );
+}
+
 /** Stage 1: choose a persona and read its fictional portfolio. */
 export function PersonaStage() {
   const { state, actions } = useWorkflow();
   const { portfolio, personaId } = state;
-  const hasWork = state.policies.length > 0 || state.proposedRules.length > 0;
+  const hasWork = state.policies.length > 0 || state.investigationIds.length > 0;
+  const scenario = portfolio.data?.scenario ?? null;
 
   return (
     <StageFrame
@@ -108,6 +137,7 @@ export function PersonaStage() {
       <Panel
         title="Portfolio"
         eyebrow="Fictional simulation"
+        figures
         aside={
           <Badge tone="neutral" dashed>
             Invented holdings
@@ -121,24 +151,22 @@ export function PersonaStage() {
             <p>Nothing was changed. No figure is shown rather than a guessed one.</p>
           </ErrorBlock>
         ) : null}
-        {portfolio.status === "ready" && portfolio.data ? (
+        {portfolio.status === "ready" && portfolio.data && scenario ? (
           <div className="space-y-5">
             <Notice tone="info" title="These holdings are invented">
-              <p>
-                The case gives its personas no portfolio. The weights below are a fictional scenario written for this simulation, so that a
-                purchase can be checked against rules. They are not a recommendation and not a model portfolio.
-              </p>
+              <p data-testid="fiction-notice">{scenario.fiction_notice}</p>
             </Notice>
             <Facts className="sm:grid-cols-3">
               <Fact label="Valuation date">
-                <span className="tabular">{formatDate(portfolio.data.portfolio.valuation_date)}</span>
+                <span className="tabular">{formatDate(scenario.portfolio.valuation_date)}</span>
               </Fact>
-              <Fact label="Reporting currency">{portfolio.data.portfolio.reporting_currency}</Fact>
+              <Fact label="Reporting currency">{scenario.portfolio.base_currency}</Fact>
               <Fact label="Cash">
-                <span className="tabular">{formatFraction(portfolio.data.portfolio.cash_weight)}</span> of the portfolio
+                <span className="tabular">{formatFraction(scenario.portfolio.cash_weight)}</span> of the portfolio
               </Fact>
             </Facts>
-            <PortfolioTable portfolio={portfolio.data.portfolio} personaName={personaName(personaId)} />
+            <PortfolioTable portfolio={scenario.portfolio} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} />
+            <CaseFacts persona={scenario.persona} />
           </div>
         ) : null}
       </Panel>

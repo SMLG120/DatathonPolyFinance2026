@@ -1,11 +1,12 @@
 "use client";
 
 import { useId, useState, type FormEvent } from "react";
+import { ClarificationCard } from "@/components/rules/ClarificationCard";
+import { DraftOutcome, OptionOutcome, ruleName } from "@/components/rules/DraftOutcome";
 import { Button, LinkButton } from "@/components/ui/Button";
-import { describedBy, Field, TextArea } from "@/components/ui/Field";
+import { describedBy, Field, Select, TextArea } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
-import type { Investigation } from "@/lib/contracts";
-import { ruleTypeLabel } from "@/lib/rules";
+import type { DemoChallenge, InvestigationJob, Objective } from "@/lib/contracts";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 
@@ -14,14 +15,24 @@ import { useWorkflow } from "@/state/workflow";
  * It may be recorded as an objective, raise a question or lead to a PROPOSED
  * rule — it never changes a confirmed rule or a report by itself.
  */
-export function ClarifyPreferenceForm({ investigation }: { investigation: Investigation }) {
+export function ClarifyPreferenceForm({ job, objectives, example }: { job: InvestigationJob; objectives: Objective[]; example: DemoChallenge | null }) {
   const { state, actions } = useWorkflow();
   const textId = useId();
+  const objectiveFieldId = useId();
   const [text, setText] = useState("");
+  const [objectiveId, setObjectiveId] = useState("");
   const [attempted, setAttempted] = useState(false);
   const error = attempted && text.trim() === "" ? "Write what should be understood differently." : null;
   const busy = state.challenge.status === "loading";
   const response = state.preferenceResponse;
+  const exampleText = example?.type === "CLARIFY_PREFERENCE" && typeof example.payload.text === "string" ? example.payload.text : null;
+
+  function fillExample() {
+    if (!example || exampleText === null) return;
+    const exampleObjective = example.payload.objective_id;
+    setText(exampleText);
+    setObjectiveId(typeof exampleObjective === "string" && objectives.some((objective) => objective.objective_id === exampleObjective) ? exampleObjective : "");
+  }
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -30,7 +41,10 @@ export function ClarifyPreferenceForm({ investigation }: { investigation: Invest
       document.getElementById(textId)?.focus();
       return;
     }
-    const answer = await actions.submitChallenge(investigation.investigation_id, { kind: "CLARIFY_PREFERENCE", text: text.trim() });
+    const answer = await actions.submitChallenge(job.id, {
+      type: "CLARIFY_PREFERENCE",
+      payload: { text: text.trim(), objective_id: objectiveId === "" ? null : objectiveId },
+    });
     if (answer) {
       setText("");
       setAttempted(false);
@@ -39,13 +53,22 @@ export function ClarifyPreferenceForm({ investigation }: { investigation: Invest
 
   return (
     <div className="space-y-6">
+      <h3 className="text-lg font-semibold text-ink">Clarify a preference</h3>
       <p className="max-w-prose text-ink">
         If the result does not reflect what you meant, say it in your own words. Your text is read again. Nothing becomes a rule unless you confirm
         it, so the confirmed policy and this report do not change here.
       </p>
 
+      {example && exampleText !== null ? (
+        <p>
+          <Button size="sm" onClick={fillExample} data-testid="fill-example-preference">
+            Fill in the scenario&apos;s example: {example.label}
+          </Button>
+        </p>
+      ) : null}
+
       <form onSubmit={onSubmit} noValidate className="space-y-5" data-testid="clarify-preference-form">
-        <Field htmlFor={textId} label="What did you mean?" hint="For example what a word in your goal should cover." error={error}>
+        <Field htmlFor={textId} label="What did you mean?" hint="For example what a word in your objective should cover." error={error}>
           <TextArea
             id={textId}
             rows={3}
@@ -55,57 +78,105 @@ export function ClarifyPreferenceForm({ investigation }: { investigation: Invest
             aria-describedby={describedBy(textId, { hint: true, error: Boolean(error) })}
           />
         </Field>
+        {objectives.length > 0 ? (
+          <Field htmlFor={objectiveFieldId} label="Which objective is this about? (optional)" hint="Kept with your words as context.">
+            <Select id={objectiveFieldId} value={objectiveId} onChange={(event) => setObjectiveId(event.target.value)} aria-describedby={describedBy(objectiveFieldId, { hint: true })}>
+              <option value="">No particular objective</option>
+              {objectives.map((objective) => (
+                <option key={objective.objective_id} value={objective.objective_id}>
+                  {objective.original_words}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
         <Button type="submit" variant="primary" busy={busy} busyLabel="Reading your text…" data-testid="submit-preference">
           Record this clarification
         </Button>
       </form>
 
       {response ? (
-        <div role="status" data-testid="preference-response">
-          <Notice
-            tone="info"
-            title="Your clarification was recorded. No rule was changed."
-            action={
-              <LinkButton href={stageHref("goals")} size="sm">
-                Review it in Goals &amp; rules
-              </LinkButton>
-            }
-          >
-            {response.objectives.length > 0 ? (
-              <div>
-                <p className="font-semibold">Kept as an objective, in your words:</p>
-                <ul className="list-disc pl-5">
-                  {response.objectives.map((objective) => (
-                    <li key={objective.objective_id}>&ldquo;{objective.original_words}&rdquo;</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {response.proposed_rules.length > 0 ? (
-              <div>
-                <p className="font-semibold">Proposed, inactive until you confirm:</p>
-                <ul className="list-disc pl-5">
-                  {response.proposed_rules.map((rule) => (
-                    <li key={rule.rule_id}>{ruleTypeLabel(rule.rule_type)}</li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-            {response.clarifications.length > 0 ? (
+        <div className="space-y-4" data-testid="preference-response">
+          <div role="status">
+            <Notice
+              tone="info"
+              title="Your clarification was read. No rule was changed."
+              action={
+                <LinkButton href={stageHref("goals")} size="sm">
+                  Review it in Goals &amp; rules
+                </LinkButton>
+              }
+            >
               <p>
-                {response.clarifications.length === 1 ? "One question needs" : `${response.clarifications.length} questions need`} your answer before a rule
-                can be written.
+                Read from: &ldquo;{response.original_words}&rdquo; Everything below is a draft. The confirmed policy and the report are exactly as they
+                were.
               </p>
-            ) : null}
-            {response.unsupported.map((item) => (
-              <p key={item.original_words}>
-                Not turned into a rule: &ldquo;{item.original_words}&rdquo; — {item.reason}
-              </p>
-            ))}
-            {response.notes.map((note) => (
-              <p key={note}>{note}</p>
-            ))}
-          </Notice>
+            </Notice>
+          </div>
+
+          {response.unsupported.length > 0 ? (
+            <div>
+              <h4 className="font-semibold text-ink">Not turned into a rule</h4>
+              <ul className="mt-1 space-y-2">
+                {response.unsupported.map((item) => (
+                  <li key={`${item.code}-${item.words}`} className="rounded-md border border-dashed border-line-strong bg-canvas p-3 text-ink" data-testid="unsupported-request">
+                    <span className="block font-semibold">&ldquo;{item.words}&rdquo;</span>
+                    <span className="block text-sm">{item.reason}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {response.clarifications.length > 0 ? (
+            <div>
+              <h4 className="font-semibold text-ink">
+                {response.clarifications.length === 1 ? "One question needs your answer" : `${response.clarifications.length} questions need your answer`}{" "}
+                before a rule can be written
+              </h4>
+              <ul className="mt-2 space-y-4">
+                {response.clarifications.map((clarification) => {
+                  const chosen = state.chosenOptions[clarification.clarification_id] ?? null;
+                  return (
+                    <ClarificationCard
+                      key={clarification.clarification_id}
+                      clarification={clarification}
+                      chosenOptionId={chosen}
+                      onChoose={(optionId) => actions.chooseOption(clarification.clarification_id, optionId)}
+                      outcome={<OptionOutcome option={clarification.options.find((option) => option.option_id === chosen)} place="elsewhere" />}
+                    />
+                  );
+                })}
+              </ul>
+            </div>
+          ) : null}
+
+          {response.proposed_rules.length > 0 ? (
+            <div>
+              <h4 className="font-semibold text-ink">Rules drafted from your words — inactive until you confirm them</h4>
+              <ul className="mt-1 space-y-2">
+                {response.proposed_rules.map((draft) => (
+                  <li key={draft.rule_id} className="rounded-md border border-line bg-canvas p-3" data-testid="drafted-rule">
+                    <span className="block text-ink">{ruleName(draft)}</span>
+                    <span className="block text-sm text-ink">
+                      <DraftOutcome draft={draft} place="elsewhere" />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          {response.objectives.length > 0 ? (
+            <div>
+              <h4 className="font-semibold text-ink">Kept as an objective, word for word</h4>
+              <ul className="mt-1 list-disc pl-5 text-ink">
+                {response.objectives.map((objective) => (
+                  <li key={objective.objective_id}>&ldquo;{objective.original_words}&rdquo;</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>

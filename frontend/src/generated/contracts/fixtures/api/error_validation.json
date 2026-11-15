@@ -1,0 +1,42 @@
+{
+  "fixture": true,
+  "fixture_id": "error_validation",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "A malformed body is rejected before the engine runs.",
+  "route": "POST /check",
+  "http_status": 400,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "robert",
+    "policy_id": "pol-robert-demo",
+    "policy_version": 1,
+    "purchase_request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": "25%",
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "response_schema": "api.schema.json#/$defs/error_response",
+  "response_body": {
+    "error": {
+      "code": "VALIDATION_ERROR",
+      "message": "The request body does not match the contract.",
+      "details": [
+        {
+          "path": "purchase_request.target_direct_weight",
+          "issue": "expected a number (a fraction such as 0.25), got the string '25%'"
+        },
+        {
+          "path": "draft_rules",
+          "issue": "required property is missing (send null to evaluate the stored policy)"
+        }
+      ],
+      "request_id": "req-fixture-0001"
+    }
+  }
+}

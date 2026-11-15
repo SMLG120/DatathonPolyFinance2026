@@ -1,58 +1,20 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent, { type UserEvent } from "@testing-library/user-event";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import type { ApiClient } from "@/lib/api";
+import { storeAccessCode } from "@/lib/access-code";
+import { ApiError } from "@/lib/api";
 import { createFixturesClient } from "@/lib/api/fixtures-client";
-import type { RuntimeConfig, Timing } from "@/lib/config";
-import { FIXTURE_SCENARIOS } from "@/lib/fixtures";
-import { RuntimeProvider } from "@/state/runtime";
-import { STAGES, type StageId } from "@/state/stage";
-import { FAST_TIMING, FIXTURES_CONFIG, LIVE_CONFIG } from "@/test/render";
-import { App, AppContent } from "./App";
+import { IDEMPOTENCY_KEY_PATTERN } from "@/lib/contracts";
+import { FIXTURES } from "@/lib/fixtures";
+import { STAGES } from "@/state/stage";
+import { chooseMateo, confirmScenarioRules, go, renderApp, runInvestigation, stageHeading, toVerdict } from "@/test/app";
+import { overviewChart } from "@/test/exposure";
+import { probe, recorded } from "@/test/probes";
+import { FAST_TIMING, LIVE_CONFIG } from "@/test/render";
+import { App } from "./App";
 
-function renderApp(options: { api?: ApiClient; timing?: Timing; config?: RuntimeConfig } = {}) {
-  return render(
-    <RuntimeProvider config={options.config ?? FIXTURES_CONFIG} api={options.api ?? createFixturesClient({ latencyMs: 0 })} timing={options.timing ?? FAST_TIMING}>
-      <AppContent />
-    </RuntimeProvider>,
-  );
-}
-
-const stageHeading = () => screen.getByRole("heading", { level: 1 });
-
-/** Moves to a stage the way the browser does: by changing the hash. */
-async function go(stage: StageId) {
-  const target = STAGES.find((candidate) => candidate.id === stage);
-  act(() => {
-    window.location.hash = `#/${stage}`;
-  });
-  await waitFor(() => expect(stageHeading()).toHaveTextContent(`Step ${target?.number} of 6: ${target?.title}`));
-}
-
-async function confirmScenarioRules(user: UserEvent) {
-  await go("goals");
-  await user.click(screen.getByTestId("propose-rules"));
-  await screen.findAllByTestId("rule-card");
-  await user.click(screen.getByTestId("confirm-all"));
-  await screen.findAllByTestId("policy-rule-card");
-}
-
-async function runInvestigation(user: UserEvent) {
-  await go("purchase");
-  await user.click(screen.getByTestId("start-investigation"));
-  await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
-  await user.click(await screen.findByTestId("see-verdict", {}, { timeout: 5_000 }));
-  await screen.findByTestId("report");
-}
-
-async function robertToVerdict() {
-  const user = userEvent.setup();
-  renderApp();
-  await screen.findByTestId("portfolio-table");
-  await confirmScenarioRules(user);
-  await runInvestigation(user);
-  return user;
-}
+const ROBERT_HEADLINE = "2 of 2 confirmed rules are not respected";
+const AFTER_CHANGE_HEADLINE = "1 of 2 confirmed rules is not respected";
 
 describe("App shell", () => {
   it("keeps the simulation label, the fixtures label and the valuation date on every stage", async () => {
@@ -110,6 +72,18 @@ describe("App shell", () => {
     expect(within(screen.getByTestId("persona-robert")).getByTestId("persona-selected")).toBeInTheDocument();
     expect(within(screen.getByTestId("persona-mateo")).getByRole("button", { name: "Use Mateo’s portfolio" })).toBeInTheDocument();
   });
+
+  it("shows the portfolio and the fiction notice exactly as the service sent them", async () => {
+    renderApp();
+    const table = await screen.findByTestId("portfolio-table");
+    const { scenario } = recorded.robertPortfolio();
+    expect(screen.getByTestId("fiction-notice")).toHaveTextContent(scenario.fiction_notice);
+    // One row per recorded position, then cash.
+    expect(within(table).getAllByTestId("portfolio-row")).toHaveLength(scenario.portfolio.positions.length + 1);
+    expect(table).toHaveTextContent("Cash (CAD)");
+    expect(table).toHaveTextContent("30.0%");
+    expect(table.closest('[data-figures="true"]')).not.toBeNull();
+  });
 });
 
 describe("Robert: the six stages in fixtures mode", () => {
@@ -118,21 +92,23 @@ describe("Robert: the six stages in fixtures mode", () => {
     renderApp();
 
     // 1. Persona and portfolio.
-    const table = await screen.findByTestId("portfolio-table");
-    expect(table).toHaveTextContent("Cash (CAD)");
-    expect(table).toHaveTextContent("100.0%");
+    await screen.findByTestId("portfolio-table");
     expect(screen.getByText("These holdings are invented")).toBeInTheDocument();
 
-    // 2. Goal -> proposed rules -> explicit confirmation.
+    // 2. The scenario's rules are offered as proposals; nothing is active until the user confirms.
     await go("goals");
     expect(screen.getByText("No confirmed rule yet")).toBeInTheDocument();
-    await user.click(screen.getByTestId("propose-rules"));
     const cards = await screen.findAllByTestId("rule-card");
-    expect(cards).toHaveLength(2);
-    for (const card of cards) expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-issuer-cap-1", "robert-loss-budget-1"]);
+    for (const card of cards) {
+      expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+      expect(card).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
+      expect(within(card).getByRole("textbox")).toHaveValue("10");
+    }
     expect(screen.getAllByTestId("objective")).toHaveLength(1);
+    expect(screen.getByTestId("confirm-rules")).toHaveTextContent("Confirm these 2 rules with their numbers");
 
-    await user.click(screen.getByTestId("confirm-all"));
+    await user.click(screen.getByTestId("confirm-rules"));
     const confirmed = await screen.findAllByTestId("policy-rule-card");
     expect(confirmed).toHaveLength(2);
     expect(screen.getByRole("heading", { name: "Confirmed policy — version 1" })).toHaveFocus();
@@ -142,53 +118,59 @@ describe("Robert: the six stages in fixtures mode", () => {
     await go("purchase");
     expect(screen.getByLabelText("Final direct weight of this position")).toHaveValue("25");
     expect(screen.getByTestId("funding-statement")).toHaveTextContent("Funded from existing cash; all other positions unchanged; fees and taxes excluded.");
-    expect(screen.getByTestId("cash-after")).toHaveTextContent("5.0%");
-    const changed = within(screen.getByTestId("before-after-table"))
-      .getAllByRole("row")
-      .filter((row) => row.getAttribute("data-changed") === "true");
-    expect(changed.map((row) => row.textContent)).toEqual([expect.stringContaining("NVDA"), expect.stringContaining("Cash (CAD)")]);
+    expect(screen.getByTestId("purchase-policy-rules")).toHaveTextContent("10.0%");
 
     // 4. Only the steps the job reported.
     await user.click(screen.getByTestId("start-investigation"));
     await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
     await screen.findByTestId("see-verdict", {}, { timeout: 5_000 });
+    const recordedSteps = recorded.robertJob().steps;
     const steps = screen.getAllByTestId("timeline-step");
-    expect(steps.length).toBeGreaterThan(0);
-    expect(screen.getByTestId("step-count")).toHaveTextContent(String(steps.length));
+    expect(steps).toHaveLength(recordedSteps.length);
+    expect(screen.getByTestId("step-count")).toHaveTextContent(String(recordedSteps.length));
     expect(screen.queryByTestId("timeline-waiting")).toBeNull();
     expect(screen.getByText("Completed", { selector: "[data-job-status] *" })).toBeInTheDocument();
+    expect(screen.getByTestId("agent-mode")).toHaveAttribute("data-agent-mode", "MODEL");
 
     // 5. Verdict and evidence.
     await user.click(screen.getByTestId("see-verdict"));
     const report = await screen.findByTestId("report");
-    expect(within(report).getByTestId("verdict-headline")).toHaveTextContent("2 of 2 confirmed rules are not respected");
+    expect(report).toHaveAttribute("data-job-id", recorded.robertJob().id);
+    expect(within(report).getByTestId("verdict-headline")).toHaveTextContent(ROBERT_HEADLINE);
     expect(within(report).getByTestId("count-fail")).toHaveAttribute("data-count", "2");
     expect(within(report).getByTestId("count-unknown")).toHaveAttribute("data-count", "0");
     expect(within(report).getByTestId("count-pass")).toHaveAttribute("data-count", "0");
     expect(within(report).getByTestId("feasibility")).toHaveAttribute("data-feasibility", "FEASIBLE");
-    expect(within(report).getByTestId("starting-clear")).toBeInTheDocument();
+    expect(within(report).getByTestId("starting-breaches")).toHaveAttribute("data-count", "0");
     expect(within(report).getAllByTestId("limit-marker").length).toBeGreaterThan(0);
-    expect(within(report).getByTestId("scenario-panel")).toHaveTextContent("Replay of an assumed allocation through 2022 — not a forecast");
+    expect(within(report).getByTestId("scenario-note")).toHaveTextContent("not a forecast");
     expect(within(report).getByTestId("max-compliant")).toHaveAttribute("data-status", "SUPPORTED");
     expect(within(report).getByTestId("goal-context")).toBeInTheDocument();
     expect(within(report).getByTestId("data-coverage")).toBeInTheDocument();
+    // The policy the result was checked against is known, so the limit is drawn as a confirmed one.
+    expect(overviewChart(report)).toHaveTextContent("Confirmed limit 10.0%");
   });
 
-  it("opens the evidence of a figure in a drawer and returns focus to the figure's button when it closes", async () => {
-    const user = await robertToVerdict();
+  it("opens the evidence of a figure in a drawer, formula apart from its values, and returns focus to the figure's button when it closes", async () => {
+    const user = await toVerdict();
     const opener = screen.getByRole("button", { name: "Evidence for Maximum exposure to a single company, after the purchase" });
     await user.click(opener);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveAccessibleName(/^Evidence: Maximum exposure to a single company/);
-    const record = within(dialog).getAllByTestId("evidence-record")[0] as HTMLElement;
-    for (const heading of ["Calculation path", "Assumptions", "Sources"]) {
-      expect(within(record).getByRole("heading", { name: heading })).toBeInTheDocument();
+    const cap = recorded.robertResult().rule_results[0];
+    const records = within(dialog).getAllByTestId("evidence-record");
+    expect(records.map((record) => record.getAttribute("data-evidence-id"))).toEqual(cap?.evidence_ids);
+    const first = records[0] as HTMLElement;
+    for (const heading of ["How it was calculated", "Assumptions", "Sources"]) {
+      expect(within(first).getByRole("heading", { name: heading })).toBeInTheDocument();
     }
-    for (const label of ["Subject", "Period", "Data coverage", "Policy version", "Calculation version"]) {
-      expect(within(record).getByText(label)).toBeInTheDocument();
+    for (const label of ["Subject", "Date or period", "Policy version", "Calculation version"]) {
+      expect(within(first).getByText(label)).toBeInTheDocument();
     }
-    expect(within(record).getAllByText("Retrieved").length).toBeGreaterThan(0);
+    expect(within(first).getByTestId("evidence-formula")).toHaveTextContent("0.25 + 0.012 = 0.262");
+    expect(within(first).getAllByTestId("evidence-input")).toHaveLength(2);
+    expect(within(dialog).getByTestId("source-details-note")).toHaveTextContent("load with the live API");
     // Focus is inside the drawer while it is open.
     expect(dialog.contains(document.activeElement)).toBe(true);
 
@@ -197,29 +179,41 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(opener).toHaveFocus();
   });
 
+  it("takes a figure from the evidence drawer to “Correct a fact”, with that figure already chosen", async () => {
+    const user = await toVerdict();
+    await user.click(screen.getByRole("button", { name: "Evidence for Maximum exposure to a single company, after the purchase" }));
+    const dialog = await screen.findByRole("dialog");
+    await user.click(within(within(dialog).getAllByTestId("evidence-record")[0] as HTMLElement).getByRole("link", { name: "Challenge this figure" }));
+
+    await waitFor(() => expect(stageHeading()).toHaveTextContent("Challenge"));
+    expect(screen.getByRole("tab", { name: "Correct a fact" })).toHaveAttribute("aria-selected", "true");
+    expect(within(screen.getByTestId("correct-fact-form")).getByLabelText("Which figure?")).toHaveValue("ev-nvda-lower");
+  });
+
   it("never lets a draft preview replace the confirmed policy or the confirmed result", async () => {
     const fixtures = createFixturesClient({ latencyMs: 0 });
     const confirmRules = vi.fn(fixtures.confirmRules);
-    const user = userEvent.setup();
-    renderApp({ api: { ...fixtures, confirmRules } });
-    await screen.findByTestId("portfolio-table");
-    await confirmScenarioRules(user);
-    await runInvestigation(user);
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    const user = await toVerdict({ api: { ...fixtures, confirmRules, challengeInvestigation } });
     expect(confirmRules).toHaveBeenCalledTimes(1);
 
     await go("challenge");
-    await user.click(screen.getByRole("tab", { name: "Change a rule" }));
+    // Robert's scenario challenge is a rule change, so that path is the one shown first.
+    expect(screen.getByRole("tab", { name: "Change a rule" })).toHaveAttribute("aria-selected", "true");
     const form = screen.getByTestId("change-rule-form");
-    await user.type(within(form).getByRole("textbox"), "30");
+    await user.type(within(form).getByRole("textbox", { name: /^New value/ }), "20");
     const preview = await within(form).findByTestId("draft-preview-result");
-    expect(preview).toHaveTextContent("Preview: Pass");
+    expect(preview).toHaveTextContent("Preview: Fail");
+    expect(preview).toHaveTextContent("draft limit 20.0%");
+    expect(within(preview).getByTestId("rule-gap")).toHaveTextContent("6.2 points over the limit");
     expect(within(form).getByTestId("draft-preview")).toHaveTextContent("Preview with draft threshold — not your confirmed policy");
 
-    // Nothing was confirmed, and the report still says what it said.
+    // Nothing was confirmed or challenged, and the report still says what it said.
     expect(confirmRules).toHaveBeenCalledTimes(1);
+    expect(challengeInvestigation).not.toHaveBeenCalled();
     expect(screen.queryByTestId("rule-change-comparison")).toBeNull();
     await go("verdict");
-    expect(screen.getByTestId("verdict-headline")).toHaveTextContent("2 of 2 confirmed rules are not respected");
+    expect(screen.getByTestId("verdict-headline")).toHaveTextContent(ROBERT_HEADLINE);
     expect(screen.getAllByTestId("rule-limit").map((node) => node.textContent)).toEqual(["10.0%", "10.0%"]);
     await go("goals");
     expect(screen.getByRole("heading", { name: "Confirmed policy — version 1" })).toBeInTheDocument();
@@ -227,50 +221,89 @@ describe("Robert: the six stages in fixtures mode", () => {
   });
 
   it("records a corrected fact as unverified, with the user as its source, beside the unchanged original", async () => {
-    const user = await robertToVerdict();
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    const user = await toVerdict({ api: { ...fixtures, challengeInvestigation } });
     await go("challenge");
+    await user.click(screen.getByRole("tab", { name: "Correct a fact" }));
     const form = screen.getByTestId("correct-fact-form");
-    const figure = within(form).getByLabelText("Which figure?");
-    const firstOption = within(figure).getAllByRole("option")[1] as HTMLOptionElement;
-    await user.selectOptions(figure, firstOption);
-    const original = within(form).getByTestId("original-evidence").textContent;
 
-    await user.type(within(form).getByLabelText("The value you believe is right"), "24%");
-    await user.type(within(form).getByLabelText("Why, or where it comes from"), "Brokerage statement of 10 November.");
+    // The recorded exchange: the weight of NVIDIA inside SPY, 6% on record, 8% asserted.
+    const exchange = FIXTURES.challenges.correctFact;
+    const correction = exchange.response.proposed_correction;
+    if (!correction || exchange.request.type !== "CORRECT_FACT") throw new Error("The recording changed.");
+    await user.selectOptions(within(form).getByLabelText("Which figure?"), correction.evidence_id);
+    const original = within(form).getByTestId("original-evidence");
+    expect(original).toHaveTextContent("6.00%");
+    const originalText = original.textContent;
+
+    await user.type(within(form).getByLabelText("The value you believe is right, in percent"), "8");
+    await user.type(within(form).getByLabelText("Where your value comes from (optional)"), exchange.request.payload.user_source as string);
+    await user.type(within(form).getByLabelText("Why you believe the recorded value is wrong"), exchange.request.payload.user_note);
     await user.click(screen.getByTestId("submit-correction"));
 
     const card = await screen.findByTestId("correction-card");
+    // Exactly the recorded request was sent, and the card shows the recorded answer.
+    expect(challengeInvestigation).toHaveBeenCalledTimes(1);
+    expect(challengeInvestigation.mock.calls[0]?.[0]).toBe(recorded.robertJob().id);
+    expect(challengeInvestigation.mock.calls[0]?.[1]).toEqual(exchange.request);
+    expect(correction.status).toBe("UNVERIFIED");
+    expect(correction.applied_to_calculation).toBe(false);
     expect(card).toHaveTextContent("Proposed correction — unverified");
-    expect(within(card).getByTestId("correction-proposed")).toHaveTextContent("24%");
-    expect(card).toHaveTextContent("Asserted by you on");
+    expect(within(card).getByTestId("correction-proposed")).toHaveTextContent("8.00%");
+    expect(within(card).getByTestId("correction-original")).toHaveTextContent("6.00%");
+    expect(card).toHaveTextContent("Asserted by the user on");
+    expect(card).toHaveTextContent("No source has confirmed it");
     expect(card).toHaveTextContent("Not used in any calculation");
+    expect(card).toHaveTextContent(correction.provenance.user_note);
+    expect(screen.getByRole("heading", { name: "Proposed corrections to this report (1)" })).toHaveFocus();
     // The original evidence is still on screen, unchanged.
-    expect(within(form).getByTestId("original-evidence").textContent).toBe(original);
-    expect(within(card).getByTestId("correction-original")).toHaveTextContent(firstOption.textContent?.split(" — ")[0] ?? "");
+    expect(within(form).getByTestId("original-evidence").textContent).toBe(originalText);
+
+    // The record's own evidence shows the claim beside the recorded value, never in its place.
+    await user.click(within(card).getByRole("button", { name: /^Evidence for the recorded value of/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByTestId("evidence-value")).toHaveTextContent("6.00%");
+    expect(within(within(dialog).getByTestId("proposed-correction")).getByTestId("correction-asserted")).toHaveTextContent("8.00%");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
     await go("verdict");
-    expect(screen.getByTestId("verdict-headline")).toHaveTextContent("2 of 2 confirmed rules are not respected");
+    expect(screen.getByTestId("verdict-headline")).toHaveTextContent(ROBERT_HEADLINE);
+    // A correction creates no new report: there is still only the one, so no list of reports is shown.
+    expect(screen.queryByTestId("report-list")).toBeNull();
   });
 
   it("turns a rule change into policy version 2, re-checks the purchase, and keeps the earlier report openable", async () => {
-    const user = await robertToVerdict();
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    const user = await toVerdict({ api: { ...fixtures, challengeInvestigation } });
     await go("challenge");
-    await user.click(screen.getByRole("tab", { name: "Change a rule" }));
     const form = screen.getByTestId("change-rule-form");
     expect(within(form).getByLabelText("Rule to change")).toHaveDisplayValue("Maximum exposure to a single company — now 10.0%");
+    expect(within(form).getByTestId("current-threshold")).toHaveTextContent("Confirmed now: 10.0%");
 
     // Gated: no change without a different number.
+    const field = within(form).getByRole("textbox", { name: /^New value/ });
     expect(screen.getByTestId("submit-rule-change")).toHaveAttribute("aria-disabled", "true");
-    await user.type(within(form).getByRole("textbox"), "10");
-    expect(within(form).getByText("This is the threshold already confirmed. Enter a different value to change the rule.")).toBeInTheDocument();
-    await user.clear(within(form).getByRole("textbox"));
-    await user.type(within(form).getByRole("textbox"), "30");
+    await user.type(field, "10");
+    expect(within(form).getByText("This is the number already confirmed. Enter a different value to change the rule.")).toBeInTheDocument();
+    await user.click(screen.getByTestId("submit-rule-change"));
+    expect(challengeInvestigation).not.toHaveBeenCalled();
+
+    // The scenario's own example: raise the limit to 30%. Only the 20% draft has a recorded preview.
+    await user.click(within(form).getByTestId("fill-example-rule"));
+    expect(field).toHaveValue("30");
+    expect(await within(form).findByTestId("draft-preview-not-recorded")).toHaveTextContent("No preview for this draft value in the test data");
     await user.click(screen.getByTestId("submit-rule-change"));
 
     const comparison = await screen.findByTestId("rule-change-comparison");
-    await waitFor(() => expect(screen.getByRole("heading", { name: "Before and after your rule change" })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole("heading", { level: 2, name: "Version comparison: before and after the rule change" })).toHaveFocus());
+    // Exactly the recorded request was sent.
+    expect(challengeInvestigation).toHaveBeenCalledTimes(1);
+    expect(challengeInvestigation.mock.calls[0]?.[1]).toEqual(FIXTURES.challenges.changeRule.request);
 
-    // Policy v1 vs v2.
+    // Policy v1 against v2.
     const diffRows = within(comparison).getAllByTestId("policy-diff-row");
     const changed = diffRows.filter((row) => row.getAttribute("data-change") === "CHANGED");
     expect(changed).toHaveLength(1);
@@ -279,92 +312,302 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(changed[0]).toHaveTextContent("30.0%");
     expect(diffRows.filter((row) => row.getAttribute("data-change") === "UNCHANGED")).toHaveLength(1);
 
-    // Result v1 vs v2, once the re-check has finished.
+    // The result under each version, once the re-check has finished: the engine's headline and counts of each report.
     await within(comparison).findByTestId("result-comparison", {}, { timeout: 5_000 });
-    const headlines = within(comparison)
-      .getAllByTestId("comparison-headline")
-      .map((node) => node.textContent);
-    expect(headlines).toEqual(["2 of 2 confirmed rules are not respected", "1 of 2 confirmed rules is not respected"]);
+    expect(within(comparison).getAllByTestId("comparison-headline").map((node) => node.textContent)).toEqual([ROBERT_HEADLINE, AFTER_CHANGE_HEADLINE]);
+    expect(within(comparison).getAllByTestId("comparison-counts").map((node) => node.textContent)).toEqual(["2 fail · 0 unknown · 0 pass", "1 fail · 0 unknown · 1 pass"]);
+    const capRow = within(comparison)
+      .getAllByTestId("result-comparison-row")
+      .find((row) => row.getAttribute("data-change") === "CHANGED") as HTMLElement;
+    expect([...capRow.querySelectorAll("[data-status]")].map((badge) => badge.getAttribute("data-status"))).toEqual(["FAIL", "PASS"]);
 
     // The earlier report is still there, unchanged.
     await user.click(within(comparison).getAllByRole("button", { name: "Open this report" })[0] as HTMLElement);
     await waitFor(() => expect(stageHeading()).toHaveTextContent("Verdict & evidence"));
     expect(screen.getByText("You are reading an earlier report, checked against policy version 1")).toBeInTheDocument();
-    expect(screen.getByTestId("verdict-headline")).toHaveTextContent("2 of 2 confirmed rules are not respected");
+    expect(screen.getByTestId("verdict-headline")).toHaveTextContent(ROBERT_HEADLINE);
     expect(screen.getAllByTestId("rule-limit").map((node) => node.textContent)).toEqual(["10.0%", "10.0%"]);
     expect(screen.getAllByTestId("report-entry")).toHaveLength(2);
 
     await user.click(screen.getByRole("button", { name: "Back to the latest" }));
-    expect(screen.getByTestId("verdict-headline")).toHaveTextContent("1 of 2 confirmed rules is not respected");
+    const latest = screen.getByTestId("report");
+    expect(latest).toHaveAttribute("data-job-id", recorded.robertAfterChangeJob().id);
+    expect(within(latest).getByTestId("verdict-headline")).toHaveTextContent(AFTER_CHANGE_HEADLINE);
+    expect(within(latest).getAllByTestId("rule-limit").map((node) => node.textContent)).toEqual(["30.0%", "10.0%"]);
+    // The superseded rule is listed as not evaluated, with the engine's reason.
+    expect(within(latest).getByTestId("not-evaluated-count")).toHaveTextContent("1 rule of this policy version was not evaluated");
+    expect(within(latest).getByTestId("rules-not-evaluated")).toHaveTextContent("Superseded by robert-issuer-cap-2");
+    expect(within(latest).getByTestId("max-final-weight")).toHaveTextContent("10.0%");
 
     await go("goals");
     expect(screen.getByRole("heading", { name: "Confirmed policy — version 2" })).toBeInTheDocument();
     expect(screen.getByTestId("earlier-versions")).toHaveTextContent("Earlier versions (1)");
   });
+
+  it("keeps the rule-change form and the version comparison apart: separate sections, each under its own heading", async () => {
+    const user = await toVerdict();
+    await go("challenge");
+    await user.click(within(screen.getByTestId("change-rule-form")).getByTestId("fill-example-rule"));
+    await user.click(screen.getByTestId("submit-rule-change"));
+    const comparison = await screen.findByTestId("rule-change-comparison");
+    await within(comparison).findByTestId("result-comparison", {}, { timeout: 5_000 });
+
+    const forms = document.getElementById("challenge-forms") as HTMLElement;
+    const section = screen.getByTestId("comparison-section");
+    const form = screen.getByTestId("change-rule-form");
+    // The form lives in the forms panel; the comparison lives outside it, after it.
+    expect(forms.contains(form)).toBe(true);
+    expect(forms.contains(comparison)).toBe(false);
+    expect(section.contains(form)).toBe(false);
+    expect(forms.compareDocumentPosition(section) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    // Each has its own level-2 heading, and the comparison says in words that it is not part of the form.
+    expect(within(forms).getByRole("heading", { level: 2 })).toHaveTextContent("What do you want to challenge?");
+    expect(within(form).getByRole("heading", { level: 3, name: "Change a rule" })).toBeInTheDocument();
+    expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent("Version comparison: before and after the rule change");
+    expect(section).toHaveTextContent("Outcome of the rule change — separate from the form above");
+    expect(within(comparison).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
+      "What changed in the policy",
+      "The same purchase under each version",
+      "Each rule under the two versions",
+    ]);
+    // The comparison's figures are marked as test data on their own blocks.
+    for (const card of within(comparison).getAllByTestId("comparison-report")) {
+      expect(within(card).getByTestId("test-data-tag")).toBeInTheDocument();
+    }
+  });
 });
 
+describe("Idempotency keys", () => {
+  it("come from crypto.randomUUID, one per user action: a retry of the same action reuses its key, a new action gets a new one", async () => {
+    const randomUUID = vi.spyOn(crypto, "randomUUID");
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const createInvestigation = vi.fn(fixtures.createInvestigation);
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    // The first attempt to start never reaches the service.
+    createInvestigation.mockRejectedValueOnce(new ApiError("network", "The service could not be reached. Nothing was changed."));
+
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, createInvestigation, challengeInvestigation } });
+    await screen.findByTestId("portfolio-table");
+    await confirmScenarioRules(user);
+    await go("purchase");
+    await user.click(screen.getByTestId("start-investigation"));
+    const alert = await within(screen.getByRole("main")).findByRole("alert");
+    expect(alert).toHaveTextContent("The investigation could not be started");
+
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
+    await user.click(await screen.findByTestId("see-verdict", {}, { timeout: 5_000 }));
+    await screen.findByTestId("report");
+
+    const generated = () => randomUUID.mock.results.map((result) => result.value as string);
+    const startKeys = createInvestigation.mock.calls.map((call) => call[1]?.idempotencyKey);
+    expect(startKeys).toHaveLength(2);
+    expect(startKeys[0]).toBe(startKeys[1]);
+    expect(generated()).toContain(startKeys[0]);
+    expect(startKeys[0]).toMatch(IDEMPOTENCY_KEY_PATTERN);
+    // A UUID, not a counter or a timestamp.
+    expect(startKeys[0]).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+
+    // A rule change is a new action: its own key, again from crypto.randomUUID.
+    await go("challenge");
+    await user.click(within(screen.getByTestId("change-rule-form")).getByTestId("fill-example-rule"));
+    await user.click(screen.getByTestId("submit-rule-change"));
+    await screen.findByTestId("rule-change-comparison");
+    const challengeKey = challengeInvestigation.mock.calls[0]?.[2]?.idempotencyKey;
+    expect(challengeKey).toMatch(IDEMPOTENCY_KEY_PATTERN);
+    expect(generated()).toContain(challengeKey);
+    expect(challengeKey).not.toBe(startKeys[0]);
+
+    // Starting the same request again is another new action.
+    await screen.findByTestId("result-comparison", {}, { timeout: 5_000 });
+    await go("purchase");
+    await user.click(screen.getByTestId("start-investigation"));
+    await waitFor(() => expect(createInvestigation).toHaveBeenCalledTimes(3));
+    const again = createInvestigation.mock.calls[2]?.[1]?.idempotencyKey;
+    expect(generated()).toContain(again);
+    expect(again).not.toBe(startKeys[0]);
+    expect(again).not.toBe(challengeKey);
+  });
+});
+
+describe("A result whose check did not run", () => {
+  it("shows the execution state and never a verdict, even when rule results arrive with it", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    // The recorded job, rule results and all, with the execution block of the recorded invalid request.
+    const notExecuted = probe.notExecutedWithRuleResults();
+    await toVerdictWithoutReport({
+      ...fixtures,
+      getInvestigation: async (...args) => {
+        const job = await fixtures.getInvestigation(...args);
+        return job.status === "SUCCEEDED" ? structuredClone(notExecuted) : job;
+      },
+    });
+
+    const shown = await screen.findByTestId("report-not-executed");
+    const state = within(shown).getByTestId("execution-state");
+    expect(state).toHaveAttribute("data-execution-status", "INVALID_REQUEST");
+    expect(within(state).getByTestId("execution-message")).toHaveTextContent(recorded.invalidRequest().execution.message as string);
+    expect(state).toHaveTextContent("No rule was evaluated, so there is no verdict to show.");
+
+    // Nothing of the result is drawn: no report, no headline, no counts, no pass/fail/unknown badge anywhere in the stage.
+    const main = screen.getByRole("main");
+    expect(screen.queryByTestId("report")).toBeNull();
+    expect(screen.queryByTestId("verdict-summary")).toBeNull();
+    expect(screen.queryByTestId("rule-result")).toBeNull();
+    expect(main.querySelector("[data-status]")).toBeNull();
+    expect(main.querySelector("[data-tone]")).toBeNull();
+    for (const word of ["not respected", "are respected", "is respected"]) expect(main).not.toHaveTextContent(word);
+
+    // It cannot be challenged either: there is no report whose checks ran.
+    await go("challenge");
+    expect(screen.getByText("There is no report to challenge yet")).toBeInTheDocument();
+  });
+
+  it("says a result it cannot read is unreadable, and shows no part of it", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    await toVerdictWithoutReport({
+      ...fixtures,
+      getInvestigation: async (...args) => {
+        const job = await fixtures.getInvestigation(...args);
+        // A result object that is not the agreed shape.
+        return job.status === "SUCCEEDED" ? ({ ...job, result: { verdict: "PASS" } } as unknown as typeof job) : job;
+      },
+    });
+    expect(await screen.findByTestId("result-unreadable")).toHaveTextContent("not in the agreed format");
+    expect(screen.queryByTestId("report")).toBeNull();
+    expect(screen.getByRole("main").querySelector("[data-status]")).toBeNull();
+  });
+});
+
+/** From the first screen to the verdict stage, for a job whose result is not a report. */
+async function toVerdictWithoutReport(api: ReturnType<typeof createFixturesClient>) {
+  const user = userEvent.setup();
+  renderApp({ api });
+  await screen.findByTestId("portfolio-table");
+  await confirmScenarioRules(user);
+  await go("purchase");
+  await user.click(screen.getByTestId("start-investigation"));
+  await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
+  await user.click(await screen.findByTestId("see-verdict", {}, { timeout: 5_000 }));
+  await waitFor(() => expect(stageHeading()).toHaveTextContent("Verdict & evidence"));
+  return user;
+}
+
 describe("Mateo: a preference that needs a definition, and missing data", () => {
-  it("asks instead of guessing, starts system-proposed thresholds empty, and never reports a pass over unknown data", async () => {
+  it("asks instead of guessing, lists no check twice, and reports two failures with what was already failing kept apart", async () => {
     const user = userEvent.setup();
     renderApp();
     await screen.findByTestId("portfolio-table");
-    await user.click(screen.getByRole("button", { name: "Use Mateo’s portfolio" }));
-    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Mateo’s fictional portfolio"));
+    await chooseMateo(user);
 
     await go("goals");
-    await user.click(screen.getByTestId("propose-rules"));
+    const cards = await screen.findAllByTestId("rule-card");
+    expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["mateo-excl-energy-1", "mateo-controversy-1"]);
+    for (const card of cards) expect(within(card).getByRole("textbox")).toHaveValue("0");
 
-    // Ambiguous wording becomes a question, not a rule.
-    const question = await screen.findByTestId("clarification-card");
+    // His own sentence: ambiguous wording becomes a question, not a rule.
+    await user.click(screen.getByTestId("use-scenario-sentence"));
+    await user.click(screen.getByTestId("interpret-words"));
+    const interpretation = await screen.findByTestId("interpretation");
+    const answer = FIXTURES.interpret.mateo.response;
+    const question = within(interpretation).getByTestId("clarification-card");
+    expect(question).toHaveTextContent(answer.clarifications[0]?.question as string);
     expect(within(question).getByText("No rule written yet")).toBeInTheDocument();
     expect(within(question).getAllByTestId("unsupported-option").length).toBeGreaterThan(0);
-    const firstCards = screen.getAllByTestId("rule-card");
-    expect(firstCards).toHaveLength(1);
-
-    // The system-proposed rule has no number until the user gives one.
-    const first = firstCards[0] as HTMLElement;
-    expect(first).toHaveAttribute("data-rule-origin", "SYSTEM_PROPOSED");
-    expect(within(first).getByRole("textbox")).toHaveValue("");
-    expect(within(first).getByTestId("confirm-rule")).toHaveAttribute("aria-disabled", "true");
+    // The drafted controversy rule measures what a listed rule already measures: said so, not listed twice.
+    expect(within(interpretation).getByTestId("drafted-rule")).toHaveTextContent("Already listed under “Proposed rules” below");
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(2);
 
     await user.click(within(question).getAllByRole("radio")[0] as HTMLElement);
-    await user.click(within(question).getByRole("button", { name: "Use this definition" }));
-    await waitFor(() => expect(screen.getAllByTestId("rule-card")).toHaveLength(2));
-    expect(screen.queryByTestId("clarification-card")).toBeNull();
+    await user.click(within(question).getByTestId("choose-definition"));
+    expect(await within(question).findByTestId("clarification-outcome")).toHaveTextContent("Already listed under “Proposed rules” below");
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(2);
 
-    for (const card of screen.getAllByTestId("rule-card")) {
-      expect(within(card).getByRole("textbox")).toHaveValue("");
-      await user.type(within(card).getByRole("textbox"), "0");
-    }
-    await user.click(screen.getByTestId("confirm-all"));
-    await screen.findAllByTestId("policy-rule-card");
+    await user.click(screen.getByTestId("confirm-rules"));
+    expect(await screen.findAllByTestId("policy-rule-card")).toHaveLength(2);
+    expect(screen.getAllByTestId("policy-rule-threshold").map((node) => node.textContent)).toEqual(["0.0%", "0.0%"]);
 
-    await runInvestigation(user);
-    const report = screen.getByTestId("report");
-    const unknown = Number(within(report).getByTestId("count-unknown").getAttribute("data-count"));
-    const fail = Number(within(report).getByTestId("count-fail").getAttribute("data-count"));
-    expect(unknown).toBeGreaterThan(0);
-    // Whatever else it says, the headline is not one of the two "respected" headlines.
-    expect(within(report).getByTestId("verdict-headline").textContent).not.toMatch(/^All \d+ confirmed rules are respected$|^The one confirmed rule is respected$/);
-    expect(within(report).getByTestId("verdict-summary")).not.toHaveAttribute("data-tone", "pass");
-    expect(fail + unknown).toBe(2);
-
-    // Unknown is shown as unknown on its rule, with a range rather than a zero.
-    const unknownRow = within(report)
-      .getAllByTestId("rule-result")
-      .find((row) => row.getAttribute("data-status") === "UNKNOWN") as HTMLElement;
-    expect(unknownRow).toHaveTextContent("Unknown is not a pass.");
-    expect(within(unknownRow).getByTestId("rule-measured").textContent).toMatch(/ to /);
-    expect(within(unknownRow).getByTestId("rule-gap")).toHaveTextContent("Cannot be determined");
-
-    // Missing holdings are visible in the coverage section and drawn as a possible range.
-    expect(within(report).getByTestId("data-coverage")).not.toHaveAttribute("data-coverage-status", "COVERED");
-    expect(report.querySelector('[data-seg="possible"]')).not.toBeNull();
-    // No maximum is offered when it cannot be supported.
-    expect(within(report).getByTestId("max-compliant")).not.toHaveAttribute("data-status", "SUPPORTED");
+    const report = await runInvestigation(user);
+    expect(report).toHaveAttribute("data-job-id", recorded.mateoJob().id);
+    expect(within(report).getByTestId("verdict-headline")).toHaveTextContent("2 of 2 confirmed rules are not respected");
+    expect(within(report).getByTestId("verdict-summary")).toHaveAttribute("data-tone", "fail");
+    expect(within(report).getByTestId("count-fail")).toHaveAttribute("data-count", "2");
+    expect(within(report).getByTestId("starting-breaches")).toHaveAttribute("data-count", "2");
+    expect(within(report).getAllByTestId("starting-finding")).toHaveLength(2);
+    expect(within(report).getAllByTestId("purchase-effect").every((effect) => effect.getAttribute("data-resolved") === "false")).toBe(true);
+    // No maximum is offered, and no replay figure: the scenario has no replay rule.
+    expect(within(report).getByTestId("max-compliant")).toHaveAttribute("data-status", "NO_FEASIBLE_PURCHASE");
     expect(within(report).queryByTestId("max-final-weight")).toBeNull();
-    // This scenario has no replay rule: the panel says so instead of showing a number.
-    expect(within(report).getByText("No scenario budget was checked")).toBeInTheDocument();
+    expect(within(report).queryByTestId("scenario-table")).toBeNull();
+    // Missing holdings are visible in the coverage section and drawn as a possible range.
+    expect(within(report).getAllByTestId("fund-coverage").map((fund) => fund.getAttribute("data-coverage-status"))).toContain("MISSING");
+    expect(report.querySelector('[data-seg="possible"]')).not.toBeNull();
+    // Exclusion rules set no limit on every company, so the chart draws no limit line.
+    expect(within(report).queryAllByTestId("limit-marker")).toHaveLength(0);
+  });
+
+  it("records a clarified preference as a draft and changes neither the confirmed policy nor the report", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    const confirmRules = vi.fn(fixtures.confirmRules);
+    const user = await toVerdict({ persona: "mateo", api: { ...fixtures, challengeInvestigation, confirmRules } });
+    await go("challenge");
+    // Mateo's scenario challenge is a clarification, so that path is the one shown first.
+    expect(screen.getByRole("tab", { name: "Clarify a preference" })).toHaveAttribute("aria-selected", "true");
+    await user.click(screen.getByTestId("fill-example-preference"));
+    await user.click(screen.getByTestId("submit-preference"));
+
+    const response = await screen.findByTestId("preference-response");
+    const exchange = FIXTURES.challenges.clarifyPreference;
+    expect(challengeInvestigation.mock.calls[0]?.[1]).toEqual(exchange.request);
+    expect(response).toHaveTextContent("Your clarification was read. No rule was changed.");
+    const unsupported = exchange.response.interpretation?.unsupported[0];
+    expect(within(response).getByTestId("unsupported-request")).toHaveTextContent(unsupported?.reason as string);
+    expect(within(response).getByTestId("clarification-card")).toHaveTextContent(exchange.response.interpretation?.clarifications[0]?.question as string);
+
+    // Nothing was confirmed, no comparison was made, and the report is the same one.
+    expect(confirmRules).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId("rule-change-comparison")).toBeNull();
+    await go("verdict");
+    expect(screen.getByTestId("report")).toHaveAttribute("data-job-id", recorded.mateoJob().id);
+    await go("goals");
+    expect(screen.getByRole("heading", { name: "Confirmed policy — version 1" })).toBeInTheDocument();
+  });
+});
+
+describe("Requests the test data holds no answer for", () => {
+  it("says so calmly when a different purchase is started, and creates no investigation", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await confirmScenarioRules(user);
+    await go("purchase");
+    await user.clear(screen.getByLabelText("Final direct weight of this position"));
+    await user.type(screen.getByLabelText("Final direct weight of this position"), "12");
+    await user.click(screen.getByTestId("start-investigation"));
+
+    const note = await screen.findByTestId("start-not-recorded");
+    expect(note).toHaveTextContent("NVDA at a final direct weight of 12.0%");
+    expect(screen.getByText("The test data holds no investigation of this request")).toBeInTheDocument();
+    expect(screen.getByText("No investigation was created.")).toBeInTheDocument();
+    expect(stageHeading()).toHaveTextContent("Proposed purchase");
+    await go("verdict");
+    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+  });
+
+  it("says so when words other than the recorded sentence are interpreted, and keeps the offered rules", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await go("goals");
+    await screen.findAllByTestId("rule-card");
+    await user.type(screen.getByLabelText("What should the portfolio respect?"), "No more than 5% in any one company.");
+    await user.click(screen.getByTestId("interpret-words"));
+    expect(await screen.findByTestId("interpret-not-recorded")).toHaveTextContent("The test data holds no recorded interpretation for this persona");
+    expect(screen.queryByTestId("interpretation")).toBeNull();
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(2);
   });
 });
 
@@ -378,7 +621,7 @@ describe("failure states", () => {
     expect(screen.getByTestId("valuation-date")).toHaveTextContent("Valuation date: unavailable");
   });
 
-  it("shows a failed job as failed, with no verdict", async () => {
+  it("shows a failed job as failed, with the service's reason and no verdict", async () => {
     const user = userEvent.setup();
     renderApp({ api: createFixturesClient({ latencyMs: 0, simulate: "job-failed" }) });
     await screen.findByTestId("portfolio-table");
@@ -386,12 +629,18 @@ describe("failure states", () => {
     await go("purchase");
     await user.click(screen.getByTestId("start-investigation"));
 
+    const failure = recorded.failedJob().failure;
     expect(await screen.findByText("The investigation failed", {}, { timeout: 5_000 })).toBeInTheDocument();
+    expect(screen.getByRole("main")).toHaveTextContent(failure?.message as string);
+    expect(screen.getAllByTestId("timeline-step").map((step) => step.getAttribute("data-step-status"))).toEqual(["OK", "ERROR"]);
     expect(screen.queryByTestId("see-verdict")).toBeNull();
     await go("verdict");
     expect(screen.getByText("This investigation failed, so there is no verdict")).toBeInTheDocument();
+    expect(screen.getByTestId("failure-code")).toHaveTextContent(failure?.code as string);
+    expect(screen.getByTestId("failure-code")).toHaveTextContent("A failed run is not a pass and not a fail.");
     expect(screen.queryByTestId("report")).toBeNull();
     expect(screen.queryByTestId("verdict-headline")).toBeNull();
+    expect(screen.getByRole("main").querySelector("[data-status]")).toBeNull();
   });
 
   it("stops polling at the deadline and says no result was received", async () => {
@@ -405,25 +654,26 @@ describe("failure states", () => {
     await go("purchase");
     await user.click(screen.getByTestId("start-investigation"));
 
-    const alert = await screen.findByRole("alert", {}, { timeout: 5_000 });
+    const alert = await within(screen.getByRole("main")).findByRole("alert", {}, { timeout: 5_000 });
     expect(alert).toHaveTextContent("No final answer within");
     expect(within(alert).getByRole("button", { name: "Keep waiting" })).toBeInTheDocument();
     expect(screen.queryByTestId("see-verdict")).toBeNull();
     await go("verdict");
     expect(screen.queryByTestId("report")).toBeNull();
-    expect(screen.getByRole("alert")).toHaveTextContent("No verdict is shown, because none was received.");
+    expect(within(screen.getByRole("main")).getByRole("alert")).toHaveTextContent("No verdict is shown, because none was received.");
   });
 });
 
 describe("live mode", () => {
   it("asks for the access code before any request, then sends it as a bearer token and keeps it in sessionStorage", async () => {
-    const portfolio = FIXTURE_SCENARIOS.robert?.portfolio_response;
+    const portfolio = recorded.robertPortfolio();
+    const unauthorized = FIXTURES.errors.unauthorized;
     const requests: { url: string; authorization: string | null }[] = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const authorization = new Headers(init?.headers).get("Authorization");
       requests.push({ url: String(input), authorization });
       if (authorization !== "Bearer right-code") {
-        return new Response(JSON.stringify({ error: { code: "UNAUTHORIZED", message: "Access code not accepted." } }), { status: 401, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify(unauthorized.response), { status: unauthorized.status, headers: { "Content-Type": "application/json" } });
       }
       return new Response(JSON.stringify(portfolio), { status: 200, headers: { "Content-Type": "application/json" } });
     });
@@ -449,9 +699,34 @@ describe("live mode", () => {
 
     await screen.findByTestId("portfolio-table");
     expect(window.sessionStorage.getItem("byb.accessCode")).toBe("right-code");
+    expect(window.localStorage.length).toBe(0);
     expect(requests.every((request) => request.url.startsWith("https://api.example.test/"))).toBe(true);
     expect(requests.at(-1)).toEqual({ url: "https://api.example.test/portfolios/robert", authorization: "Bearer right-code" });
     // The code never travels in a URL.
     expect(requests.some((request) => request.url.includes("right-code") || request.url.includes("wrong-code"))).toBe(false);
+  });
+
+  it("shows no “Test data” marker and no fixtures label on any stage when the answers come from a service", async () => {
+    // Live mode with a code already entered; the recorded bodies stand in for the service's answers.
+    storeAccessCode("a-code-typed-by-the-user");
+    await toVerdict({ config: LIVE_CONFIG });
+    for (const stage of STAGES) {
+      await go(stage.id);
+      expect(screen.queryAllByTestId("test-data-tag"), stage.id).toHaveLength(0);
+      expect(screen.queryByTestId("fixtures-label"), stage.id).toBeNull();
+      expect(screen.getByTestId("simulation-label")).toBeInTheDocument();
+    }
+  });
+
+  it("marks every block of figures as test data on every stage in fixtures mode", async () => {
+    await toVerdict();
+    for (const stage of STAGES) {
+      await go(stage.id);
+      const blocks = [...screen.getByRole("main").querySelectorAll('[data-figures="true"]')];
+      expect(blocks.length, stage.id).toBeGreaterThan(0);
+      for (const block of blocks) {
+        expect(within(block as HTMLElement).queryAllByTestId("test-data-tag").length, `${stage.id}: ${block.id || block.getAttribute("data-testid") || block.tagName}`).toBeGreaterThan(0);
+      }
+    }
   });
 });

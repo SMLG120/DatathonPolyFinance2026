@@ -1,0 +1,303 @@
+{
+  "fixture": true,
+  "fixture_id": "portfolio_robert",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "GET /portfolios/robert. The fictional scenario plus registry entries. `instruments` is abbreviated here to Robert's positions and NVDA; the deployed response lists every purchasable instrument. Sector labels are the starter-kit registry labels.",
+  "route": "GET /portfolios/{persona_id}",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>"
+  },
+  "request_body": null,
+  "response_schema": "api.schema.json#/$defs/portfolio_response",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "scenario": {
+      "schema_version": "1.0.0",
+      "fictional": true,
+      "fiction_notice": "Fictional simulation. The persona facts come from the official case (page references given). The portfolio, the objective wording, every threshold and every scripted request were invented by the team for the demonstration; the case gives the personas no numbers. Nothing here is advice, a recommendation or a real account.",
+      "persona": {
+        "persona_id": "robert",
+        "display_name": "Robert",
+        "case_reference": "Case p.7",
+        "facts": [
+          {
+            "fact_id": "age_occupation",
+            "label": "Age and occupation",
+            "text": "59 years old, healthcare professional",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "profile",
+            "label": "Profile",
+            "text": "Married, adult children, considering retirement in the next few years; advanced investment experience.",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "objective",
+            "label": "Investment objective",
+            "text": "He wants to preserve capital while maintaining some growth potential.",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "preference_established",
+            "label": "Preference",
+            "text": "Prefers established companies and investments whose business models he understands.",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "preference_stability",
+            "label": "Preference",
+            "text": "Values stability and company quality and has little interest in crypto assets.",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "temptation",
+            "label": "Constraint",
+            "text": "May be tempted by a highly publicized company even when it is riskier than he would normally prefer.",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "horizon",
+            "label": "Investment horizon",
+            "text": "3-5 years",
+            "case_reference": "Case p.7"
+          },
+          {
+            "fact_id": "risk_profile",
+            "label": "Risk profile",
+            "text": "Low to moderate",
+            "case_reference": "Case p.7"
+          }
+        ],
+        "what_this_persona_tests": {
+          "text": "Can the system challenge a request that conflicts with the investor's profile? It should identify the tension between Robert's immediate interest and his objectives, explain the risks, and avoid simply agreeing.",
+          "case_reference": "Case p.7"
+        }
+      },
+      "portfolio": {
+        "schema_version": "1.0.0",
+        "portfolio_id": "pf-robert-fictional-1",
+        "persona_id": "robert",
+        "fictional": true,
+        "valuation_date": "2026-11-12",
+        "base_currency": "CAD",
+        "cash_weight": 0.3,
+        "positions": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.3
+          },
+          {
+            "instrument_id": "SPY",
+            "weight": 0.2
+          },
+          {
+            "instrument_id": "XIU.TO",
+            "weight": 0.1
+          },
+          {
+            "instrument_id": "RY.TO",
+            "weight": 0.05
+          },
+          {
+            "instrument_id": "JNJ",
+            "weight": 0.05
+          }
+        ]
+      },
+      "objectives": [
+        {
+          "objective_id": "obj-robert-1",
+          "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.7"
+        }
+      ],
+      "scenario_rules": [
+        {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no more than 10% of the portfolio in any single company, funds included.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: replayed through 2022, the portfolio should not end the year more than 10% lower.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "alternative_rule_sets": [],
+      "demo_phrases": [
+        {
+          "phrase_id": "robert-objective",
+          "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+          "expected_outcome": "PROPOSED_RULES",
+          "note": "A goal with no number. A correct interpreter stores the objective and may draft rule structures with a null threshold; it must not invent 10% or any other number."
+        }
+      ],
+      "demo_requests": [
+        {
+          "request_id": "robert-nvda-25",
+          "label": "Make NVDA 25% of the portfolio (final direct weight), funded from cash",
+          "purchase_request": {
+            "instrument_id": "NVDA",
+            "target_direct_weight": 0.25,
+            "funding": "CASH",
+            "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+          }
+        }
+      ],
+      "demo_challenge": {
+        "label": "Robert raises the single-company limit to 30%",
+        "type": "CHANGE_RULE",
+        "payload": {
+          "rule_id": "robert-issuer-cap-1",
+          "new_threshold": 0.3,
+          "user_note": "Raise my single-company limit to 30%."
+        }
+      },
+      "demo_steps": [
+        {
+          "seq": 1,
+          "stage": "PERSONA_PORTFOLIO",
+          "description": "Load Robert and his fictional portfolio (30% cash, 30% XBB.TO, 20% SPY, 10% XIU.TO, 5% RY.TO, 5% JNJ)."
+        },
+        {
+          "seq": 2,
+          "stage": "GOALS_RULES",
+          "description": "Show the objective in his words and the two fictional-scenario rules as proposals; the user confirms them (policy version 1)."
+        },
+        {
+          "seq": 3,
+          "stage": "PROPOSED_PURCHASE",
+          "description": "Request NVDA at a final direct weight of 0.25, funded from cash."
+        },
+        {
+          "seq": 4,
+          "stage": "INVESTIGATION",
+          "description": "Run the investigation; the timeline shows the real tool calls."
+        },
+        {
+          "seq": 5,
+          "stage": "VERDICT_EVIDENCE",
+          "description": "Issuer cap FAIL with direct and look-through exposure; 2022 loss budget result; maximum compliant final weight."
+        },
+        {
+          "seq": 6,
+          "stage": "CHALLENGE",
+          "description": "Raise the issuer cap to 0.30: policy version 2, issuer rule re-evaluated, the loss budget still evaluated with measured loss, budget and gap. Version 1 and its report stay available."
+        }
+      ]
+    },
+    "instruments": {
+      "XBB.TO": {
+        "instrument_id": "XBB.TO",
+        "issuer_id": "XBB.TO",
+        "name": "iShares Core Canadian Universe Bond Index ETF",
+        "asset_class": "etf_bond",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": false,
+        "sector": "Bonds (Canada aggregate)",
+        "sector_source": "starter_assets_universe"
+      },
+      "SPY": {
+        "instrument_id": "SPY",
+        "issuer_id": "SPY",
+        "name": "SPDR S&P 500 ETF Trust",
+        "asset_class": "etf_equity",
+        "currency": "USD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (U.S.)",
+        "sector_source": "starter_assets_universe"
+      },
+      "XIU.TO": {
+        "instrument_id": "XIU.TO",
+        "issuer_id": "XIU.TO",
+        "name": "iShares S&P/TSX 60 Index ETF",
+        "asset_class": "etf_equity",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (Canada)",
+        "sector_source": "starter_assets_universe"
+      },
+      "RY.TO": {
+        "instrument_id": "RY.TO",
+        "issuer_id": "ROYAL_BANK_OF_CANADA",
+        "name": "Royal Bank of Canada",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Financials",
+        "sector_source": "starter_assets_universe"
+      },
+      "JNJ": {
+        "instrument_id": "JNJ",
+        "issuer_id": "JOHNSON_AND_JOHNSON",
+        "name": "Johnson & Johnson",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Health Care",
+        "sector_source": "starter_assets_universe"
+      },
+      "NVDA": {
+        "instrument_id": "NVDA",
+        "issuer_id": "NVIDIA",
+        "name": "NVIDIA",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Information Technology",
+        "sector_source": "starter_assets_universe"
+      }
+    },
+    "purchasable_instrument_ids": [
+      "JNJ",
+      "NVDA",
+      "RY.TO",
+      "SPY",
+      "XBB.TO",
+      "XIU.TO"
+    ]
+  }
+}

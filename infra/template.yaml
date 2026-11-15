@@ -198,11 +198,14 @@ Resources:
       com.aws.cloudformation.Context:
         why: >-
           API fn creates/reads job documents, reads results, policies and the data snapshot (POST /check runs the
-          engine here), creates policy versions once, and hands the job to the worker. No Bedrock, no traces, no
-          write to snapshots/ or results/. ListBucket limited to jobs/ and policies/ (a missing object is a 404).
+          engine here), creates policy versions once, and hands the job to the worker. Bedrock Converse only for the
+          rule interpreter (POST /rules/interpret, CLARIFY_PREFERENCE), through the same single inference profile as
+          the worker; the streaming action is left out. No traces, no write to snapshots/ or results/. ListBucket
+          limited to jobs/ and policies/ (a missing object is a 404).
         must:
           - lambda:InvokeFunction on the worker fn only
           - PutObject on jobs/ & policies/ only, and only as a conditional write; snapshots/ is read-only for every role
+          - Bedrock resources = the inference profile + the foundation-model ARNs it routes to (us-east-1, us-east-2, us-west-2), nothing else
         mutable: review-required
     Properties:
       Description: Execution role of the Before You Buy API function.
@@ -273,6 +276,20 @@ Resources:
                 Effect: Allow
                 Action: lambda:InvokeFunction
                 Resource: !GetAtt WorkerFunction.Arn
+              - Sid: InterpreterConverseThroughInferenceProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
+              - Sid: InterpreterRoutedFoundationModelsOnlyViaThatProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/${BedrockFoundationModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/${BedrockFoundationModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/${BedrockFoundationModelId}
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
       Tags:
         - Key: project
           Value: before-you-buy
@@ -412,7 +429,7 @@ Resources:
           - JOB_DEADLINE_SECONDS here + 10 <= worker fn Timeout
     Properties:
       FunctionName: !Sub ${AWS::StackName}-api
-      Description: Before You Buy HTTP API handlers (the seven routes of contracts/api.md; no model call).
+      Description: Before You Buy HTTP API handlers (the seven routes of contracts/api.md; one model call, the rule interpreter).
       Handler: backend.api.handler.handler
       Runtime: !Ref PythonRuntime
       Architectures:
@@ -421,7 +438,9 @@ Resources:
         Bucket: !Ref CodeS3Bucket
         Key: !Ref CodeS3Key
       Role: !GetAtt ApiFunctionRole.Arn
-      Timeout: 15
+      # The two interpreter entry points answer within their 20 s server deadline (one Converse call is cut at 13 s
+      # and none starts with less than 13 s left); every other route takes well under 5 s.
+      Timeout: 25
       MemorySize: 512
       LoggingConfig:
         LogFormat: Text
@@ -432,8 +451,12 @@ Resources:
           WORKER_FUNCTION_NAME: !Ref WorkerFunction
           JOB_DEADLINE_SECONDS: "150"
           DATA_SNAPSHOT_ID: !Ref DataSnapshotId
-          # Display only (agent.model_id of a queued job). This role has no bedrock permission.
+          # agent.model_id of a queued job, and the model of the interpreter (POST /rules/interpret, CLARIFY_PREFERENCE).
           BEDROCK_MODEL_ID: !Ref BedrockModelId
+          # "false" switches the interpreter off: both entry points answer 502 and the client offers the rule form.
+          INTERPRETER_ENABLED: "true"
+          # maxTokens of the interpreter's Converse call.
+          INTERPRETER_OUTPUT_LIMIT: "2048"
           BYB_SCHEMA_DIR: /var/task/byb_contracts/schemas
           LOG_LEVEL: INFO
       Events:
@@ -463,7 +486,8 @@ Resources:
             Method: POST
             Path: /investigations/{id}/challenge
             PayloadFormatVersion: "2.0"
-            TimeoutInMillis: 20000
+            # A CLARIFY_PREFERENCE challenge runs the interpreter (20 s server deadline): see InterpretRules.
+            TimeoutInMillis: 29000
             RouteSettings:
               # A CHANGE_RULE challenge starts an investigation: same limit as POST /investigations.
               ThrottlingBurstLimit: 10
@@ -483,7 +507,15 @@ Resources:
             Method: POST
             Path: /rules/interpret
             PayloadFormatVersion: "2.0"
-            TimeoutInMillis: 20000
+            # The handler enforces the contract's 20 s deadline itself and answers 504; the integration must outlast it
+            # (HTTP API maximum: 30000).
+            TimeoutInMillis: 29000
+            RouteSettings:
+              # Each request can start several Bedrock calls (retries included) and the API function has no reserved
+              # concurrency, so this route is throttled below the investigation routes. A CLARIFY_PREFERENCE challenge
+              # runs the same interpreter and is covered by the challenge route's own limit (5 rps, burst 10).
+              ThrottlingBurstLimit: 5
+              ThrottlingRateLimit: 2
         ConfirmRules:
           Type: HttpApi
           Properties:
