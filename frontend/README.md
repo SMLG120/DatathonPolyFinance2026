@@ -111,12 +111,17 @@ and is listed in the header of the fixtures client:
 - `src/hooks/` — `usePolling` (deadline, visible failure), `useDebouncedPreview`
   and `useLatestRequest` (a stale answer never replaces a newer one).
 - `src/components/` — `ui/` kit, `shell/`, one folder per stage area.
-- `src/components/exposure3d/ExposureExplorerSlots.tsx` — two empty slots for
-  the 3D exposure explorer (built elsewhere). Both render nothing and take the
-  `CheckResult` as their only data prop: `VerdictExposureExplorerSlot`
-  (`result: CheckResult`, beside the 2D chart in `verdict/ExposurePanel.tsx`)
-  and `PurchaseExposureExplorerSlot` (`result: CheckResult | null`, under the
-  preview in `stages/PurchaseStage.tsx`). `three` is not a dependency yet.
+- `src/components/explorer/` — the exposure explorer: one company before and
+  after the purchase, as a 3D drawing with its values in a table. `model.ts`
+  copies the figures out of a `CheckResult`; `capability.ts` decides between
+  the drawing and the fallback; `ExposureScene.tsx` is the only file that
+  imports `three` and is loaded with `import()`.
+- `src/components/exposure3d/ExposureExplorerSlots.tsx` — where the explorer
+  is mounted. Each slot takes the `CheckResult` as its only data prop:
+  `VerdictExposureExplorerSlot` (`result: CheckResult`, beside the 2D chart in
+  `verdict/ExposurePanel.tsx`) and `PurchaseExposureExplorerSlot`
+  (`result: CheckResult | null`, under the preview in
+  `stages/PurchaseStage.tsx`; nothing is rendered for `null`).
 - `src/test/` — test helpers. `probes.ts` holds the recorded bodies handed to
   tests and the few derived inputs no recording covers.
 - `e2e/` — Playwright specs. `scripts/` — static server, contrast report,
@@ -137,6 +142,9 @@ and is listed in the header of the fixtures client:
   percentage cut, never rounded up to 100.
 - **No markup from a model.** Explanation sentences are rendered as plain
   text.
+- **No arithmetic in the explorer.** Its figures are copied from the result
+  (`direct`, `known`, `lower`, `upper`, `possible_extra`, the rule's `limit`).
+  The only numbers it works out are the three labels of the drawing's scale.
 - **No source registry yet.** No route delivers it, so the evidence drawer
   shows the source ids, dates and assumptions of the evidence records and says
   that source details load with the live API.
@@ -163,6 +171,15 @@ and is listed in the header of the fixtures client:
   bars. Measured exposure is solid; possible but unmeasured exposure is hollow
   and dashed; `forced-colors` gets textures. On a narrow screen the limit
   label is a line of its own above the bars.
+- **Exposure explorer:** an enhancement beside the chart, which stays on
+  screen. The 3D drawing is shown only with WebGL, a screen at least 768 px
+  wide, no forced colours and no request for reduced motion; its script is
+  fetched only then. Otherwise, and if the script or the drawing fails, the
+  flat chart of the same company takes its place with the reason in a
+  sentence, and nothing is reported as an error. The canvas is hidden from
+  assistive technology and is not a tab stop: every value is in the table
+  next to it, every part is an HTML button, and the view is turned, zoomed
+  and reset with ordinary buttons.
 - **Evidence drawer:** the formula as recorded by the engine is one block and
   the values it was computed from are another.
 - **Challenge stage:** the rule-change form and the comparison of the two
@@ -218,7 +235,10 @@ and is listed in the header of the fixtures client:
   change and the live-mode access code.
 - **Guard** (`src/guard.test.ts`): no hand-written result object anywhere
   under `src/` outside `generated/`, no `innerHTML` or
-  `dangerouslySetInnerHTML`, no `Math.random`. `src/test/probes.ts` is the one
+  `dangerouslySetInnerHTML`, no `Math.random`, no AWS SDK and no
+  `@react-three/*`. `three` may be imported only under
+  `src/components/explorer/`, and no page may reach it through static
+  imports: the file that imports it is loaded with `import()` only. `src/test/probes.ts` is the one
   file allowed to replace named fields of a recorded body, and it may not
   write a whole result. Those probes exist to show that a screen reads a value
   instead of working it out (figures that no arithmetic connects), or that it
@@ -229,6 +249,11 @@ and is listed in the header of the fixtures client:
     focus rings, report sections, chart rows, drawer focus trap and focus
     return.
   - `states.spec.ts` — Mateo, and the states other than the happy path.
+  - `explorer.spec.ts` — the exposure explorer: `three` is fetched only when
+    the drawing is about to be shown and a frame is really drawn (skipped
+    with a message where the browser has no WebGL); the flat chart without
+    WebGL, with reduced motion requested, and when the drawing's script
+    cannot be loaded.
   - `mobile.spec.ts` — 390×844 and 360 px with taps, no element wider than
     the viewport.
   - `live.spec.ts` — the access-code gate of a live-mode build whose API
@@ -245,6 +270,10 @@ and is listed in the header of the fixtures client:
   other instruments and free text get the "no recorded answer" message.
 - Source titles, publishers and terms are not shown until a route delivers
   the source registry.
+- The explorer shows the first company the engine lists (the largest proven
+  exposure after the purchase); it has no selector for the others, which stay
+  in the chart beside it. It draws a limit only when exactly one single-company
+  limit was evaluated.
 - The live client has been exercised against the local mock only, not
   against the deployed API.
 - ESLint is held at 9: `eslint-config-next` does not accept ESLint 10 yet.

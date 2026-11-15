@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { expectNoAxeViolations, expectNoHorizontalOverflow, expectPersistentLabels, expectStage, expectTestDataMarkers, START_URL } from "./helpers";
+import { expectNoAxeViolations, expectNoHorizontalOverflow, expectPersistentLabels, expectStage, expectTestDataMarkers, overviewChart, START_URL } from "./helpers";
 
 /** Runs in the mobile project only: 390 x 844, touch. Every action is a tap. */
 test.describe("mobile viewport", () => {
@@ -41,17 +41,28 @@ test.describe("mobile viewport", () => {
     await expect(page.getByTestId("verdict-summary").getByTestId("test-data-tag")).toBeVisible();
     await expectTestDataMarkers(page, "mobile, stage 5");
     // On a phone the limit label is a line of its own above the bars: the track is narrower than the label.
-    await expect(page.getByTestId("exposure-chart").getByTestId("limit-label")).toHaveText("Confirmed limit 10.0%");
-    await expect(page.getByTestId("exposure-chart").getByTestId("limit-label")).toBeVisible();
+    await expect(overviewChart(page).getByTestId("limit-label")).toHaveText("Confirmed limit 10.0%");
+    await expect(overviewChart(page).getByTestId("limit-label")).toBeVisible();
     await expectNoHorizontalOverflow(page, "stage 5");
     await expectNoAxeViolations(page, "mobile, stage 5");
 
+    // The explorer of one company: a phone is too narrow for the 3D drawing, so it shows the flat chart of that company
+    // and says why. The 3D code is not even fetched.
+    const explorer = page.getByTestId("exposure-explorer");
+    await expect(explorer).toHaveAttribute("data-mode", "FALLBACK");
+    await expect(explorer).toHaveAttribute("data-fallback-reason", "NARROW_VIEWPORT");
+    await expect(explorer.getByTestId("explorer-fallback")).toContainText("On a narrow screen the flat chart and the table are shown instead of the 3D view.");
+    await expect(explorer.getByTestId("explorer-fallback").getByTestId("exposure-row")).toHaveCount(1);
+    await expect(explorer.locator("canvas")).toHaveCount(0);
+    await expect(explorer.getByTestId("explorer-origin")).toContainText("Test data");
+    expect(await page.evaluate(() => "__THREE__" in window)).toBe(false);
+
     // Exposure chart: the details of a bar open with a tap; there is nothing to hover on a touch screen.
-    const other = page.locator('[data-testid="exposure-row"]:not([data-issuer-id="NVIDIA"])').first();
+    const other = overviewChart(page).locator('[data-testid="exposure-row"]:not([data-issuer-id="NVIDIA"])').first();
     await expect(other.getByTestId("exposure-breakdown")).toBeHidden();
     await other.locator("summary").tap();
     await expect(other.getByTestId("exposure-breakdown")).toBeVisible();
-    await expect(page.locator('[data-testid="exposure-row"][data-issuer-id="NVIDIA"]').getByTestId("exposure-breakdown")).toBeVisible();
+    await expect(overviewChart(page).locator('[data-testid="exposure-row"][data-issuer-id="NVIDIA"]').getByTestId("exposure-breakdown")).toBeVisible();
     await expectNoHorizontalOverflow(page, "stage 5, exposure breakdowns open");
     await other.locator("summary").tap();
     await expect(other.getByTestId("exposure-breakdown")).toBeHidden();

@@ -5,6 +5,7 @@ import { createFixturesClient } from "@/lib/api/fixtures-client";
 import type { InvestigationJob, Policy } from "@/lib/contracts";
 import type { InstrumentRegistry } from "@/lib/portfolio";
 import { unknownCauseText } from "@/lib/verdict";
+import { overviewChart } from "@/test/exposure";
 import { probe, recorded, SENTINEL } from "@/test/probes";
 import { LIVE_CONFIG, renderWithApp, type AppRenderOptions } from "@/test/render";
 import { coverageSentence, CoverageBlock } from "./ContextPanels";
@@ -37,7 +38,7 @@ describe("Report, page order", () => {
     expect(blocks[1]).toHaveAttribute("id", "report-rules");
     expect(blocks[2]).toHaveAttribute("id", "report-exposure");
     expect(within(blocks[1] as HTMLElement).getAllByTestId("rule-result")).toHaveLength(2);
-    expect(within(blocks[2] as HTMLElement).getByTestId("exposure-chart")).toBeInTheDocument();
+    expect(overviewChart(blocks[2] as HTMLElement)).toBeInTheDocument();
   });
 
   it("keeps coverage, the sentences and the notes about the report in closed native disclosures, after everything else", () => {

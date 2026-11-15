@@ -15,6 +15,8 @@ export interface ExposureChartProps {
   limitLabel?: string;
   /** The company whose breakdown is open at first, when it is among the rows (the one being bought). */
   openIssuerId?: string | null;
+  /** The chart's caption. The default names the chart of every company the engine sent. */
+  caption?: string;
 }
 
 const AXIS_STEPS: [max: number, step: number][] = [
@@ -157,7 +159,13 @@ function ValueRow({ label, rowKey, values, strong = false }: { label: string; ro
  * - Every value is a field of the engine's result. The only arithmetic here is
  *   the geometry of the drawing.
  */
-export function ExposureChart({ exposure, limit, limitLabel = "Confirmed limit", openIssuerId = null }: ExposureChartProps) {
+export function ExposureChart({
+  exposure,
+  limit,
+  limitLabel = "Confirmed limit",
+  openIssuerId = null,
+  caption = "Exposure to single companies, as a share of the portfolio",
+}: ExposureChartProps) {
   const captionId = useId();
   const axis = exposureAxis([...exposure.issuers.flatMap((issuer) => [issuer.starting.upper, issuer.proposed.upper]), limit ?? 0]);
   const step = axis.ticks[1] ?? axis.max;
@@ -169,7 +177,7 @@ export function ExposureChart({ exposure, limit, limitLabel = "Confirmed limit",
   return (
     <figure className="byb-chart" aria-labelledby={captionId} data-testid="exposure-chart">
       <figcaption id={captionId} className="font-semibold text-ink">
-        Exposure to single companies, as a share of the portfolio
+        {caption}
       </figcaption>
       <p className="mt-1 text-sm text-ink-muted">Select a company to see the value of each part of its bars.</p>
 

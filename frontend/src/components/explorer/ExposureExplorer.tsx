@@ -26,6 +26,7 @@ import {
   fallbackReasonText,
   FORCED_COLORS_QUERY,
   MIN_3D_VIEWPORT_WIDTH,
+  REDUCED_MOTION_QUERY,
   WIDE_VIEWPORT_QUERY,
   type SceneFailure,
 } from "./capability";
@@ -105,19 +106,20 @@ function scaleText(value: number): string {
 }
 
 // ---------------------------------------------------------------------------
-// Browser environment (WebGL, forced colours, width) as an external store
+// Browser environment (WebGL, forced colours, reduced motion, width) as an external store
 // ---------------------------------------------------------------------------
 
 function subscribeEnvironment(onChange: () => void): () => void {
-  const queries = [window.matchMedia(WIDE_VIEWPORT_QUERY), window.matchMedia(FORCED_COLORS_QUERY)];
+  const queries = [window.matchMedia(WIDE_VIEWPORT_QUERY), window.matchMedia(FORCED_COLORS_QUERY), window.matchMedia(REDUCED_MOTION_QUERY)];
   queries.forEach((query) => query.addEventListener("change", onChange));
   return () => queries.forEach((query) => query.removeEventListener("change", onChange));
 }
 
-/** A string, so the snapshot is stable between calls: "<webgl><forcedColors><wide>". */
+/** A string, so the snapshot is stable between calls: "<webgl><forcedColors><wide><reducedMotion>". */
 function environmentSnapshot(): string {
   const flag = (value: boolean) => (value ? "1" : "0");
-  return flag(browserSupportsWebGL()) + flag(window.matchMedia(FORCED_COLORS_QUERY).matches) + flag(window.matchMedia(WIDE_VIEWPORT_QUERY).matches);
+  const matches = (query: string) => flag(window.matchMedia(query).matches);
+  return flag(browserSupportsWebGL()) + matches(FORCED_COLORS_QUERY) + matches(WIDE_VIEWPORT_QUERY) + matches(REDUCED_MOTION_QUERY);
 }
 
 const serverEnvironmentSnapshot = () => "server";
@@ -505,6 +507,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
     ready: snapshot !== "server",
     webgl: snapshot[0] === "1",
     forcedColors: snapshot[1] === "1",
+    reducedMotion: snapshot[3] === "1",
     // Only "wide enough or not" is known from the media query; that is all the decision needs.
     viewportWidth: snapshot[2] === "1" ? MIN_3D_VIEWPORT_WIDTH : 0,
     sceneFailure,

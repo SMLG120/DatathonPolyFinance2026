@@ -10,7 +10,7 @@ import {
   type RenderEnvironment,
 } from "./capability";
 
-const GOOD: RenderEnvironment = { ready: true, webgl: true, forcedColors: false, viewportWidth: 1440, sceneFailure: null };
+const GOOD: RenderEnvironment = { ready: true, webgl: true, forcedColors: false, reducedMotion: false, viewportWidth: 1440, sceneFailure: null };
 
 describe("supportsWebGL", () => {
   it("is true when a webgl2 context can be created", () => {
@@ -67,6 +67,7 @@ describe("decideRenderMode", () => {
     ["before the browser has been inspected", { ready: false }, "NOT_READY"],
     ["without WebGL", { webgl: false }, "NO_WEBGL"],
     ["in forced-colours mode", { forcedColors: true }, "FORCED_COLORS"],
+    ["when the reader asked for reduced motion", { reducedMotion: true }, "REDUCED_MOTION"],
     ["on a viewport narrower than 768 px", { viewportWidth: MIN_3D_VIEWPORT_WIDTH - 1 }, "NARROW_VIEWPORT"],
     ["after the chunk failed to load or the scene threw", { sceneFailure: "LOAD_OR_RENDER_ERROR" }, "LOAD_OR_RENDER_ERROR"],
     ["after the renderer could not start", { sceneFailure: "INIT_FAILED" }, "INIT_FAILED"],
@@ -83,7 +84,7 @@ describe("decideRenderMode", () => {
 describe("fallbackReasonText", () => {
   it("explains every reason except the first paint", () => {
     expect(fallbackReasonText("NOT_READY")).toBeNull();
-    for (const reason of ["NO_WEBGL", "FORCED_COLORS", "NARROW_VIEWPORT", "LOAD_OR_RENDER_ERROR", "INIT_FAILED", "CONTEXT_LOST"] as const) {
+    for (const reason of ["NO_WEBGL", "FORCED_COLORS", "REDUCED_MOTION", "NARROW_VIEWPORT", "LOAD_OR_RENDER_ERROR", "INIT_FAILED", "CONTEXT_LOST"] as const) {
       expect(fallbackReasonText(reason)).toMatch(/shown instead/);
     }
   });

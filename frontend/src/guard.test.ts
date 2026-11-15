@@ -64,6 +64,43 @@ const RESULT_KEYS = [
 /** `name:` or `"name":` as a key. A read such as `result.rule_results` has a dot in front and does not match. */
 const RESULT_KEY = new RegExp(`(?<![.\\w])["']?(${RESULT_KEYS.join("|")})["']?\\s*:`);
 
+// ---------------------------------------------------------------------------
+// Imports. `three` is large, so it may be named only inside the exposure
+// explorer, and the pages must reach it through `import()` alone: a module
+// that is imported statically is part of the JavaScript every visitor loads.
+// ---------------------------------------------------------------------------
+
+/** The only directory that may import `three`. */
+const EXPLORER = path.join("components", "explorer") + path.sep;
+/** The pages and layouts: where the JavaScript every visitor loads starts. */
+const APP = "app" + path.sep;
+
+type ImportKind = "static" | "type" | "dynamic";
+
+/**
+ * Every module a source text names, and how it loads it. `import type` (and
+ * `export type`) is erased by the compiler and loads nothing; `import()` loads
+ * on demand; everything else loads with the file itself.
+ */
+function importsOf(source: string): { specifier: string; kind: ImportKind }[] {
+  const found: { specifier: string; kind: ImportKind }[] = [];
+  for (const match of source.matchAll(/^[ \t]*(?:import|export)\s+(type\s+)?(?:[\w*${},\s]+?\s+from\s+)?["']([^"']+)["']/gm)) {
+    found.push({ specifier: match[2] as string, kind: match[1] ? "type" : "static" });
+  }
+  for (const match of source.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)) found.push({ specifier: match[1] as string, kind: "dynamic" });
+  for (const match of source.matchAll(/\brequire\s*\(\s*["']([^"']+)["']\s*\)/g)) found.push({ specifier: match[1] as string, kind: "static" });
+  return found;
+}
+
+const isThree = (specifier: string) => specifier === "three" || specifier.startsWith("three/");
+
+/** The source file a relative or `@/` specifier points at; undefined for a package, a stylesheet or a generated file. */
+function resolveSource(from: string, specifier: string, files: Set<string>): string | undefined {
+  const base = specifier.startsWith("@/") ? path.join(SRC, specifier.slice(2)) : specifier.startsWith(".") ? path.resolve(path.dirname(from), specifier) : null;
+  if (base === null) return undefined;
+  return [base, `${base}.ts`, `${base}.tsx`, path.join(base, "index.ts"), path.join(base, "index.tsx")].find((candidate) => files.has(candidate));
+}
+
 describe("source guards", () => {
   const files = sourceFiles();
 
@@ -107,9 +144,73 @@ describe("source guards", () => {
     expect(scripts.test).toMatch(/^node scripts\/sync-contracts\.mjs --check && vitest run/);
   });
 
-  it("does not depend on a 3D library yet, and ships no AWS SDK", () => {
+  it("ships no AWS SDK and no React wrapper around three; three itself is the one 3D dependency", () => {
     const manifest = JSON.parse(readFileSync(path.join(FRONTEND, "package.json"), "utf8")) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
     const names = [...Object.keys(manifest.dependencies ?? {}), ...Object.keys(manifest.devDependencies ?? {})];
-    expect(names.filter((name) => name === "three" || name.startsWith("@react-three/") || name.startsWith("@aws-sdk/") || name === "aws-sdk")).toEqual([]);
+    expect(names.filter((name) => name.startsWith("@react-three/") || name.startsWith("@aws-sdk/") || name === "aws-sdk")).toEqual([]);
+    expect(manifest.dependencies).toHaveProperty("three");
+  });
+
+  describe("three", () => {
+    const sources = new Map(files.filter((file) => relative(file) !== SELF).map((file) => [file, importsOf(readFileSync(file, "utf8"))]));
+    const known = new Set(files);
+    /** Files that load three together with themselves. */
+    const carriers = [...sources].filter(([, imports]) => imports.some((item) => item.kind === "static" && isThree(item.specifier))).map(([file]) => file);
+
+    it("tells a static import from a type-only one and from one made on demand", () => {
+      const kinds = (source: string) => importsOf(source).map((item) => `${item.kind} ${item.specifier}`);
+      expect(kinds('import { Mesh } from "three";')).toEqual(["static three"]);
+      expect(kinds('import {\n  Mesh,\n  type Material,\n} from "three";')).toEqual(["static three"]);
+      expect(kinds('import * as THREE from "three";')).toEqual(["static three"]);
+      expect(kinds('import "three/addons/controls/OrbitControls.js";')).toEqual(["static three/addons/controls/OrbitControls.js"]);
+      expect(kinds('export { Scene } from "three";')).toEqual(["static three"]);
+      expect(kinds('const three = require("three");')).toEqual(["static three"]);
+      expect(kinds('import type { ExposureSceneHandle } from "./ExposureScene";')).toEqual(["type ./ExposureScene"]);
+      expect(kinds('export type * from "@/lib/contracts";')).toEqual(["type @/lib/contracts"]);
+      expect(kinds('const ExposureScene = lazy(() => import("./ExposureScene"));')).toEqual(["dynamic ./ExposureScene"]);
+      expect(isThree("three")).toBe(true);
+      expect(isThree("three/webgpu")).toBe(true);
+      expect(isThree("three-stdlib")).toBe(false);
+    });
+
+    it("is named only inside the exposure explorer", () => {
+      const naming = [...sources].filter(([, imports]) => imports.some((item) => isThree(item.specifier))).map(([file]) => relative(file));
+      expect(naming.length).toBeGreaterThan(0);
+      expect(naming.filter((name) => !name.startsWith(EXPLORER))).toEqual([]);
+    });
+
+    it("is never reached from a page through static imports, so it stays out of the JavaScript every visitor loads", () => {
+      const pages = [...sources.keys()].filter((file) => relative(file).startsWith(APP));
+      expect(pages.length).toBeGreaterThan(0);
+      // Everything a page loads up front: follow the static imports only.
+      const loadedUpFront = new Set<string>(pages);
+      const queue = [...pages];
+      while (queue.length > 0) {
+        const file = queue.pop() as string;
+        for (const item of sources.get(file) ?? []) {
+          if (item.kind !== "static") continue;
+          const target = resolveSource(file, item.specifier, known);
+          if (target && !loadedUpFront.has(target)) {
+            loadedUpFront.add(target);
+            queue.push(target);
+          }
+        }
+      }
+      // The walk is real: it reaches the explorer card, which is on the pages.
+      expect([...loadedUpFront].map(relative)).toContain(path.join("components", "explorer", "ExposureExplorer.tsx"));
+      expect(carriers.filter((file) => loadedUpFront.has(file)).map(relative)).toEqual([]);
+    });
+
+    it("is loaded on demand: each file that imports it is itself brought in by import() from a file the pages load", () => {
+      expect(carriers.length).toBeGreaterThan(0);
+      for (const carrier of carriers) {
+        const onDemand = [...sources].filter(([file, imports]) => imports.some((item) => item.kind === "dynamic" && resolveSource(file, item.specifier, known) === carrier));
+        expect(onDemand.map(([file]) => relative(file)), `${relative(carrier)} is not loaded by any import()`).not.toEqual([]);
+        const statically = [...sources].filter(
+          ([file, imports]) => !/\.test\.tsx?$/.test(file) && imports.some((item) => item.kind === "static" && resolveSource(file, item.specifier, known) === carrier),
+        );
+        expect(statically.map(([file]) => relative(file)), `${relative(carrier)} is also imported statically`).toEqual([]);
+      }
+    });
   });
 });

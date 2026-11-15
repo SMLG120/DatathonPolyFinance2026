@@ -2,6 +2,7 @@ import { screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Exposure } from "@/lib/contracts";
 import { formatFraction, formatFractionRange } from "@/lib/format";
+import { overviewChart } from "@/test/exposure";
 import { probe, recorded } from "@/test/probes";
 import { LIVE_CONFIG, renderWithApp } from "@/test/render";
 import { ExposureChart, exposureAxis } from "./ExposureChart";
@@ -144,7 +145,7 @@ describe("ExposurePanel", () => {
   it("shows the chart, the engine's note on how the rows were chosen and what the unattributed fund weight means", () => {
     const result = recorded.robertResult();
     renderWithApp(<ExposurePanel result={result} lookup={ruleLookup(recorded.robertPolicyV1())} openIssuerId="NVIDIA" />);
-    expect(screen.getByTestId("exposure-chart")).toHaveTextContent("Confirmed limit 10.0%");
+    expect(overviewChart()).toHaveTextContent("Confirmed limit 10.0%");
     expect(screen.getByTestId("exposure-selection-note")).toHaveTextContent(result.exposure?.selection_note as string);
     expect(screen.getByTestId("possible-extra-note")).toHaveTextContent("0.2% of the portfolio");
     expect(screen.getByTestId("possible-extra-note")).toHaveTextContent("never counted as zero");
@@ -153,7 +154,7 @@ describe("ExposurePanel", () => {
   it("labels the limit of a preview as a draft", () => {
     const preview = recorded.robertPreview();
     renderWithApp(<ExposurePanel result={preview} lookup={ruleLookup(null, recorded.robertPreviewRequest().draft_rules ?? [])} />);
-    expect(screen.getByTestId("exposure-chart")).toHaveTextContent("Draft limit 20.0%");
+    expect(overviewChart()).toHaveTextContent("Draft limit 20.0%");
   });
 
   it("says “No exposure data” when the result has no exposure block (the recorded request that was not evaluated)", () => {
@@ -163,6 +164,7 @@ describe("ExposurePanel", () => {
     expect(screen.getByText("No exposure data")).toBeInTheDocument();
     expect(screen.getByTestId("no-exposure")).toHaveTextContent("not the same as an exposure of zero");
     expect(screen.queryByTestId("exposure-chart")).toBeNull();
+    expect(screen.queryByTestId("exposure-explorer")).toBeNull();
   });
 
   it.each(["null", "empty"] as const)("says “No exposure data” instead of drawing an empty chart when exposure is %s", (kind) => {
@@ -170,12 +172,20 @@ describe("ExposurePanel", () => {
     expect(screen.getByText("No exposure data")).toBeInTheDocument();
     expect(screen.queryByTestId("exposure-chart")).toBeNull();
     expect(screen.queryAllByTestId("exposure-row")).toHaveLength(0);
+    expect(screen.queryByTestId("exposure-explorer")).toBeNull();
   });
 
-  it("mounts the 3D explorer slot beside the chart, and the slot renders nothing", () => {
-    renderWithApp(<ExposurePanel result={recorded.robertResult()} lookup={ruleLookup(recorded.robertPolicyV1())} />, { config: LIVE_CONFIG });
+  it("keeps the chart of every company first and mounts the explorer of one company beside it", () => {
+    const result = recorded.robertResult();
+    renderWithApp(<ExposurePanel result={result} lookup={ruleLookup(recorded.robertPolicyV1())} />, { config: LIVE_CONFIG });
     const views = screen.getByTestId("exposure-views");
-    expect(views.children).toHaveLength(1);
-    expect(views.firstElementChild).toBe(screen.getByTestId("exposure-chart"));
+    expect(views.children).toHaveLength(2);
+    expect(views.firstElementChild).toBe(overviewChart());
+    expect(views.lastElementChild).toBe(screen.getByTestId("exposure-explorer"));
+    // The chart of every company is unchanged by the explorer: all the engine's rows, in its order.
+    expect(within(overviewChart()).getAllByTestId("exposure-row").map((item) => item.getAttribute("data-issuer-id"))).toEqual(
+      exposureOf(result).issuers.map((issuer) => issuer.issuer_id),
+    );
+    expect(overviewChart()).toHaveTextContent("Exposure to single companies, as a share of the portfolio");
   });
 });

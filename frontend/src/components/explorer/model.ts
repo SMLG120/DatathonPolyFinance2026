@@ -6,7 +6,8 @@
  * the model is a number copied from the response (`direct`, `known`, `lower`,
  * `upper`, `possible_extra`, `limit`). Nothing is summed, subtracted, rescaled
  * or rounded here. The only number this file computes is `axisMax`, the top of
- * the drawing scale, which is presentation and is never shown as a value.
+ * the drawing scale. It is presentation: it appears only as the labels of the
+ * scale lines of the drawing, never as a figure of the result.
  *
  * When the response does not supply something, the model says so
  * (`unavailable`, `limit: null`, `evidenceId: null`, `holdingsDate: null`)

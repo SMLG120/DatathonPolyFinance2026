@@ -15,13 +15,15 @@ export const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 /** Why the scene stopped after it had been chosen. */
 export type SceneFailure = "LOAD_OR_RENDER_ERROR" | "INIT_FAILED" | "CONTEXT_LOST";
 
-export type FallbackReason = "NOT_READY" | "NO_WEBGL" | "FORCED_COLORS" | "NARROW_VIEWPORT" | SceneFailure;
+export type FallbackReason = "NOT_READY" | "NO_WEBGL" | "FORCED_COLORS" | "REDUCED_MOTION" | "NARROW_VIEWPORT" | SceneFailure;
 
 export interface RenderEnvironment {
   /** False until the component has run in a browser (static export, first paint). */
   ready: boolean;
   webgl: boolean;
   forcedColors: boolean;
+  /** The reader asked the system for less motion. A view that turns under the pointer is not offered then. */
+  reducedMotion: boolean;
   viewportWidth: number;
   sceneFailure: SceneFailure | null;
 }
@@ -34,6 +36,7 @@ export function decideRenderMode(environment: RenderEnvironment): RenderDecision
   if (environment.sceneFailure) return { mode: "FALLBACK", reason: environment.sceneFailure };
   if (!environment.webgl) return { mode: "FALLBACK", reason: "NO_WEBGL" };
   if (environment.forcedColors) return { mode: "FALLBACK", reason: "FORCED_COLORS" };
+  if (environment.reducedMotion) return { mode: "FALLBACK", reason: "REDUCED_MOTION" };
   if (environment.viewportWidth < MIN_3D_VIEWPORT_WIDTH) return { mode: "FALLBACK", reason: "NARROW_VIEWPORT" };
   return { mode: "3D" };
 }
@@ -99,6 +102,8 @@ export function fallbackReasonText(reason: FallbackReason): string | null {
       return "The 3D view is not available in this browser, so the flat chart and the table are shown instead. They carry the same values.";
     case "FORCED_COLORS":
       return "High-contrast mode is on, so the flat chart and the table are shown instead of the 3D view. They carry the same values.";
+    case "REDUCED_MOTION":
+      return "Reduced motion is turned on, so the flat chart and the table are shown instead of the 3D view. They carry the same values.";
     case "NARROW_VIEWPORT":
       return "On a narrow screen the flat chart and the table are shown instead of the 3D view. They carry the same values.";
     case "LOAD_OR_RENDER_ERROR":

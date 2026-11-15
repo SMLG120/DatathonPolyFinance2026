@@ -110,6 +110,23 @@ export async function expectTestDataMarkers(page: Page, context: string) {
   }
 }
 
+/**
+ * The chart of every company, placed directly in the exposure panel. The
+ * explorer beside it holds its own view of one company (flat when the 3D
+ * drawing cannot be used), so a test names the chart it means.
+ */
+export function overviewChart(page: Page): Locator {
+  return page.locator('[data-testid="exposure-views"] > [data-testid="exposure-chart"]');
+}
+
+/** True when this browser can create a WebGL context: the 3D drawing of the explorer needs one. */
+export async function browserHasWebGL(page: Page): Promise<boolean> {
+  return page.evaluate(() => {
+    const canvas = document.createElement("canvas");
+    return Boolean(canvas.getContext("webgl2") ?? canvas.getContext("webgl"));
+  });
+}
+
 /** WCAG 2.0, 2.1 and 2.2 at levels A and AA, plus axe's best-practice rules (landmarks, heading order, unique names). */
 const AXE_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa", "best-practice"];
 

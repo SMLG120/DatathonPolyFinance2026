@@ -4,7 +4,7 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { formatDate, formatFraction } from "@/lib/format";
-import { MIN_3D_VIEWPORT_WIDTH } from "./capability";
+import { MIN_3D_VIEWPORT_WIDTH, resetBrowserWebGLCache } from "./capability";
 import type { CheckResult } from "./contract-types";
 import { ExposureExplorer } from "./ExposureExplorer";
 import { buildExplorerModel, type ExplorerReady } from "./model";
@@ -278,6 +278,34 @@ describe("ExposureExplorer: fallback", () => {
     render(<ExposureExplorer model={ready(fixtureResult("investigation_robert_succeeded.json"))} fallback={FALLBACK} />);
     expect(screen.getByTestId("explorer-fallback")).toBeInTheDocument();
     expect(screen.getByTestId("exposure-explorer")).toHaveAttribute("data-mode", "FALLBACK");
+  });
+
+  it("uses the fallback when reduced motion is requested, even on a wide screen with WebGL", () => {
+    // A browser that could draw the scene: WebGL contexts are granted and the screen is wide. Only the reader's preference differs.
+    vi.stubGlobal("WebGLRenderingContext", class {});
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({} as never);
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: query.includes("min-width") || query.includes("prefers-reduced-motion"),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    resetBrowserWebGLCache();
+    try {
+      const { container } = render(<ExposureExplorer model={ready(fixtureResult("investigation_robert_succeeded.json"))} fallback={FALLBACK} />);
+      const explorer = screen.getByTestId("exposure-explorer");
+      expect(explorer).toHaveAttribute("data-mode", "FALLBACK");
+      expect(explorer).toHaveAttribute("data-fallback-reason", "REDUCED_MOTION");
+      expect(within(screen.getByTestId("explorer-fallback")).getByTestId("test-fallback")).toBeInTheDocument();
+      expect(screen.getByTestId("explorer-fallback")).toHaveTextContent("Reduced motion is turned on, so the flat chart and the table are shown instead of the 3D view.");
+      expect(container.querySelector("canvas")).toBeNull();
+      expect(screen.getByTestId("explorer-table")).toBeInTheDocument();
+    } finally {
+      // Later tests probe the test DOM as it really is: no WebGL.
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+      resetBrowserWebGLCache();
+    }
   });
 
   it("explains how to read the drawing", () => {

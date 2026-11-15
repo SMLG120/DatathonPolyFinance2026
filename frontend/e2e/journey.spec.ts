@@ -5,6 +5,7 @@ import {
   expectStage,
   expectTestDataMarkers,
   expectVisibleFocusRing,
+  overviewChart,
   stageHeading,
   START_URL,
   tabBackTo,
@@ -148,11 +149,11 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(page.getByTestId("count-fail")).toHaveAttribute("data-count", "2");
     await expect(page.getByTestId("count-unknown")).toHaveAttribute("data-count", "0");
     await expect(page.getByTestId("verdict-summary").getByTestId("test-data-tag")).toBeVisible();
-    await expect(page.getByTestId("exposure-chart")).toBeVisible();
+    await expect(overviewChart(page)).toBeVisible();
     await expect(page.getByTestId("scenario-note")).toBeVisible();
 
     // The limit label starts at the marker it names and stays inside the chart.
-    const chart = page.getByTestId("exposure-chart");
+    const chart = overviewChart(page);
     await expect(chart.getByTestId("limit-label")).toHaveText("Confirmed limit 10.0%");
     const labelBox = await chart.getByTestId("limit-label").boundingBox();
     const markerBox = await chart.getByTestId("limit-marker").first().boundingBox();
@@ -200,9 +201,9 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(page).toHaveURL(/#\/verdict$/);
 
     // Exposure chart: the breakdown of a company's bar opens from the keyboard; nothing depends on hover.
-    const nvidia = page.locator('[data-testid="exposure-row"][data-issuer-id="NVIDIA"]');
+    const nvidia = overviewChart(page).locator('[data-testid="exposure-row"][data-issuer-id="NVIDIA"]');
     await expect(nvidia.getByTestId("exposure-breakdown")).toBeVisible(); // the company being bought starts open
-    const other = page.locator('[data-testid="exposure-row"]:not([data-issuer-id="NVIDIA"])').first();
+    const other = overviewChart(page).locator('[data-testid="exposure-row"]:not([data-issuer-id="NVIDIA"])').first();
     await expect(other.getByTestId("exposure-breakdown")).toBeHidden();
     await tabTo(page, other.locator("summary"));
     await expectVisibleFocusRing(other.locator("summary"));
@@ -212,7 +213,7 @@ test.describe("keyboard-only journey through the six stages", () => {
     await page.keyboard.press("Space");
     await expect(other.getByTestId("exposure-breakdown")).toBeHidden();
     await page.keyboard.press("Enter");
-    await expect(page.getByTestId("exposure-chart").locator("[title]")).toHaveCount(0);
+    await expect(page.getByTestId("exposure-views").locator("[title]")).toHaveCount(0);
     await expectNoAxeViolations(page, "stage 5, sections and an exposure breakdown open");
 
     // Evidence drawer: opens from a figure, traps focus, closes on Escape, returns focus.

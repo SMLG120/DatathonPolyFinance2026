@@ -8,6 +8,7 @@ import { IDEMPOTENCY_KEY_PATTERN } from "@/lib/contracts";
 import { FIXTURES } from "@/lib/fixtures";
 import { STAGES } from "@/state/stage";
 import { chooseMateo, confirmScenarioRules, go, renderApp, runInvestigation, stageHeading, toVerdict } from "@/test/app";
+import { overviewChart } from "@/test/exposure";
 import { probe, recorded } from "@/test/probes";
 import { FAST_TIMING, LIVE_CONFIG } from "@/test/render";
 import { App } from "./App";
@@ -147,7 +148,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(within(report).getByTestId("goal-context")).toBeInTheDocument();
     expect(within(report).getByTestId("data-coverage")).toBeInTheDocument();
     // The policy the result was checked against is known, so the limit is drawn as a confirmed one.
-    expect(within(report).getByTestId("exposure-chart")).toHaveTextContent("Confirmed limit 10.0%");
+    expect(overviewChart(report)).toHaveTextContent("Confirmed limit 10.0%");
   });
 
   it("opens the evidence of a figure in a drawer, formula apart from its values, and returns focus to the figure's button when it closes", async () => {
