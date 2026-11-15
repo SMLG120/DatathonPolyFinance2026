@@ -106,7 +106,7 @@ marker must be removed deliberately.
 | AC-S3 | IAM: separate roles per function, no wildcard action, no `Resource: "*"`, only reviewed prefix wildcards; S3 writes conditional; no delete. | BB 7 | V29 | HIGH |
 | AC-S4 | Bucket private (four public-access-block flags), encrypted, TLS-only, job data expires. | BB 7 | V29; live L3 | BLOCKER (public) / HIGH |
 | AC-S5 | CORS allows only the hosted frontend origin, the three needed headers and no credentials; throttling, reserved concurrency, timeouts and log retention are bounded. | BB 7; template `must` | V29; live L2 | MEDIUM |
-| AC-S6 | Frontend: access code in sessionStorage only, no HTML injection sink, no secret in bundle inputs. | D8; BB 7 | V31 (preliminary); manual M1 | HIGH |
+| AC-S6 | Frontend: access code in sessionStorage only, no HTML injection sink, no secret in bundle inputs. | D8; BB 7 | V31; manual M1 | HIGH |
 
 ### I. Data provenance and licence
 

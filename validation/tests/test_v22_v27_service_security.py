@@ -403,14 +403,29 @@ def test_v24_same_key_same_body_is_one_job_and_one_result(stack):
 
 
 @pytest.mark.vcase("V24")
-@pytest.mark.xfail(strict=True, reason="F-16 (LOW, ambiguous): a replay of the same key and body while the job is still QUEUED invokes the worker a "
-                                       "second time. contracts/api.md 6.2: 'no second job and no second worker are created'. The second "
-                                       "invocation is a no-op (compare-and-swap claim), so one result is produced")
-def test_v24_a_replay_while_queued_does_not_invoke_a_second_worker(stack):
+def test_v24_a_replay_while_queued_may_redispatch_and_the_duplicate_delivery_does_nothing(stack):
+    """F-16, closed by the contract: api.md 6 rule 2 (amended in 147d7d7) allows the service to invoke the worker again
+    for a job that is still QUEUED, and requires that a delivery for a claimed or terminal job does nothing (no model
+    call, no state change), that no second job exists and that no second result is ever produced."""
     key = new_key()
-    create(stack, key=key)
-    create(stack, key=key)
-    assert len(stack.lambda_.invocations) == 1
+    first, second = create(stack, key=key), create(stack, key=key)
+    assert first.status == second.status == 202 and investigation_id(first) == investigation_id(second)
+    job_id = investigation_id(first)
+    assert stack.s3.keys("jobs/") == [f"jobs/{job_id}.json"], "no second job"
+    assert 1 <= len(stack.lambda_.invocations) <= 2
+    assert all(json.loads(call["Payload"]) == json.loads(stack.lambda_.invocations[0]["Payload"]) for call in stack.lambda_.invocations)
+    stack.bedrock.script, stack.bedrock.repeat_last = [fakes.text_turn('{"highlights": []}')], True
+    stack.run_worker(job_id, "delivery-1")
+    assert job_status(stack, job_id) == "SUCCEEDED"
+    model_calls, stored = len(stack.bedrock.requests), dict(stack.s3.objects)
+    stack.run_worker(job_id, "delivery-2")  # the re-dispatched duplicate arrives after the job is terminal
+    assert len(stack.bedrock.requests) == model_calls, "no model call for a duplicate delivery"
+    assert dict(stack.s3.objects) == stored, "no state change and no second result"
+    assert stack.s3.keys("results/") == [f"results/{job_id}.json"]
+    dispatched = len(stack.lambda_.invocations)
+    third = create(stack, key=key)
+    assert third.status == 202 and third.json["status"] == "SUCCEEDED" and len(stack.lambda_.invocations) == dispatched, "a finished job is not dispatched again"
+    assert dict(stack.s3.objects) == stored
 
 
 @pytest.mark.vcase("V24")
