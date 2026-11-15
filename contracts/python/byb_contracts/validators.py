@@ -1,5 +1,9 @@
 """validate_* functions for inputs and data files. Standard library only.
 
+Every function starts with ``schema_errors``, which first rejects any NaN or
++/-Infinity anywhere in the document (naming its path), so no check below ever
+compares against a non-finite number.
+
 Each function checks the JSON Schema shape first (through ``schema.py``) and
 then the semantic rules a schema cannot express (weights that must add up, id
 links, hashes). On any problem it raises ``ContractError`` listing every issue
@@ -8,6 +12,7 @@ found, each with the path of the offending field.
 
 from __future__ import annotations
 
+import math
 from typing import Any, Iterable, Optional
 
 from .constants import ASSET_CLASS_FLAGS, COVERAGE_SUM_TOLERANCE, EPS
@@ -47,12 +52,17 @@ def _duplicates(values: Iterable[Any]) -> list[Any]:
 
 # --------------------------------------------------------------------------- portfolio / request
 
+def _weights_add_up(total: float) -> bool:
+    """True only for a finite total within EPS of 1. Written so that NaN can never satisfy it."""
+    return math.isfinite(total) and abs(total - 1.0) <= EPS
+
+
 def portfolio_errors(portfolio: Any) -> list[str]:
     errors = schema_errors(portfolio, "portfolio.schema.json")
     if errors:
         return errors
     total = portfolio["cash_weight"] + sum(p["weight"] for p in portfolio["positions"])
-    if abs(total - 1.0) > EPS:
+    if not _weights_add_up(total):
         errors.append(f"cash_weight + sum(positions.weight) = {total!r}, must equal 1 (fractions, 10% = 0.10)")
     for dup in _duplicates(p["instrument_id"] for p in portfolio["positions"]):
         errors.append(f"positions: instrument_id {dup!r} appears more than once")
@@ -64,7 +74,11 @@ def validate_portfolio(portfolio: Any) -> None:
 
 
 def validate_purchase_request(request: Any) -> None:
-    """Shape only. Range problems are the engine's INVALID_REQUEST, not a contract error (D5)."""
+    """Shape only, and the target must be a finite number.
+
+    Finite range problems (negative, above 1, below the current weight) are the
+    engine's INVALID_REQUEST, not a contract error (D5).
+    """
     _raise("purchase_request", schema_errors(request, "purchase_request.schema.json"))
 
 
@@ -165,9 +179,9 @@ def validate_holdings_snapshot(snapshot: Any) -> None:
             if fund["n_holdings"] != len(fund["holdings"]):
                 errors.append(f"{where}: n_holdings {fund['n_holdings']} != {len(fund['holdings'])} rows")
             total = sum(row["weight_fraction"] for row in fund["holdings"])
-            if abs(total - fund["coverage_fraction"]) > COVERAGE_SUM_TOLERANCE:
+            if not abs(total - fund["coverage_fraction"]) <= COVERAGE_SUM_TOLERANCE:
                 errors.append(f"{where}: coverage_fraction {fund['coverage_fraction']!r} != sum of weights {total!r} (weights are never rescaled)")
-            if fund["coverage_fraction"] > 1.01:
+            if not fund["coverage_fraction"] <= 1.01:
                 errors.append(f"{where}: coverage_fraction {fund['coverage_fraction']!r} > 1.01: weights must be fractions, not percentages")
             for i, row in enumerate(fund["holdings"]):
                 if row["fund_id"] != key:
