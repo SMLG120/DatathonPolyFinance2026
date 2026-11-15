@@ -1,207 +1,317 @@
-# Deployment
+# Deployment runbook
 
-How to host Before You Buy, written for commit `d36e41f` (2026-11-15 UTC).
+For the coordinator. It takes the release candidate from a local checkout to a
+deployed backend and a hosted frontend in the workshop AWS account, in the
+order that the template forces.
 
-**Nothing in this document has been executed.** No Amplify app exists, no
-frontend is hosted, and this document was written without AWS access. The
-backend half refers to a procedure that was executed and recorded
-(`scripts/deploy.md`, `infra/evidence/milestone2.md`); the frontend half is a
-plan. Section 13 lists what is missing before hosting can work, and section 14
-what could not be verified.
+**Candidate described:** local branch `integration/rc` at `deec650`, plus fixes in progress.
 
-## 1. State today
+**Nothing in this runbook has been executed for this candidate.** It was
+written without AWS access. The backend steps use the procedure of
+`scripts/deploy.md`, whose phase-1 form was executed and recorded on
+2026-11-14 and 2026-11-15 UTC (`infra/evidence/milestone2.md`); its
+milestone-5 additions (snapshot upload, two parameters, CORS guard) have never
+run against AWS. The Amplify steps have never run at all. Marks used below:
 
-| Part | State | Source |
+- **[local]** run on one machine for this document or by the coordinator;
+- **[phase 1]** executed against AWS for the earlier slice only;
+- **[docs]** read in the AWS documentation on 2026-11-14, not executed;
+- **[unverified]** not executed and not confirmed anywhere.
+
+Section 9 lists every value the coordinator supplies; section 10 collects
+everything unverified.
+
+## Why this order
+
+`infra/template.yaml` gives `AllowedOrigin` no default and accepts only an
+exact origin or a literal `*`, and `scripts/mcp/02_deploy.py` refuses to
+execute a change set whose resulting origin is `*`. So the backend cannot be
+deployed before the site's origin is known. The site in turn inlines the API
+base URL at build time (`NEXT_PUBLIC_API_BASE_URL`).
+
+Both values can be known before either side is deployed:
+
+- **API base URL.** The stack already exists. The template keeps the logical
+  id `HttpApi` and its type (`AWS::Serverless::HttpApi`), so an update should
+  modify the API in place and the stack output `ApiBaseUrl` should stay what
+  it is today (`infra/README.md` records the phase-1 URL). **[unverified]**
+  until the change set of section 3 shows no `Replacement` for `HttpApi`. If
+  it shows a replacement, stop: the URL would change.
+- **Site origin.** An Amplify app and a branch can be created without
+  deploying anything. The default domain is then
+  `https://<branch>.<appId>.amplifyapp.com` **[docs]**.
+
+Order: (1) create the Amplify app and branch, note the origin; (2) build and
+upload the data snapshot; (3) deploy the backend with `AllowedOrigin` set to
+that origin; (4) check the backend; (5) build the site once with the API base
+URL and deploy it; (6) check the hosted site. The site is built once.
+
+## 0. Prerequisites and authorizations
+
+| Needed | Check | State |
 | --- | --- | --- |
-| Backend stack `before-you-buy`, `us-east-1` | Deployed four times on 2026-11-14 and 2026-11-15 UTC; last status `UPDATE_COMPLETE`; smoke runs 6 to 8 passed. Phase 1: two routes, **placeholder calculation**, pre-contract shapes | `infra/evidence/milestone2.md` sections 1 and 15 |
-| Template in the repository | `infra/template.yaml`, SHA-256 prefix `e076af541c8b13f5`, equal to deployment D4 in the evidence file | computed for this document |
-| Backend phase 2 (real engine, contract routes) | In progress, not in this commit | reported by the lead on 2026-11-14 |
-| Data snapshot in S3 | Not uploaded; no upload step in this commit | section 5 |
-| Frontend | Not hosted. No Amplify app | `docs/PLAN.md` P4 |
-| CORS allowed origin | `*` | `infra/evidence/milestone2.md` section 1 |
+| Authorization from the account owner to mutate the stack `before-you-buy`, write to the two buckets, and create an Amplify app | Ask; record the answer | Not given to this document's author |
+| The AWS MCP tool (`run_script`, `get_presigned_url`) pointed at the workshop account, region `us-east-1` | `scripts/mcp/03_status.py`: it stops if the account is not the expected one | **[phase 1]** |
+| The stack exists in `UPDATE_COMPLETE` and still holds the phase-1 template with `AllowedOrigin` `*` | `03_status.py`; last recorded read 2026-11-15 00:23 UTC (`infra/evidence/milestone2.md` section 1) | **[unverified]** today |
+| Permission to create an Amplify app in this account | `docs/PLAN.md` P4 records one successful `amplify:ListApps` only | **[unverified]** |
+| Bedrock access to the runtime model through the inference profile, for the worker and now for the API function (interpreter) | A successful `POST /rules/interpret` in section 4 | **[phase 1]** for the worker; **[unverified]** for the interpreter |
+| A clean checkout of the commit to deploy, with the git-ignored processed data present | `git status --porcelain` is empty; `python3 scripts/build_snapshot.py --check` passes | **[local]**: the check passed on the 2026-11-14 data (`scripts/deploy.md` 3b) |
+| Test suites pass on that commit | `uv run --no-project --python 3.14 --with pytest --with boto3 --with jsonschema pytest backend/tests contracts/python/tests -q` and the frontend commands of `README.md` section 6 | **[local]** on the candidate: 1685 passed, 9 skipped (run for this document) |
+| Validation has no open blocker | `validation/REPORT.md` when the coordinator adds it; finding F-20 closed | Open on the candidate |
+| Node.js 22.12 or later, `npm`, `curl`, `jq`, `zip`, `python3` | `node --version` | Local tools |
+| The access code can reach the operator without being written anywhere | `scripts/deploy.md` section 6 (transfer file) or the Systems Manager console | **[phase 1]** |
+| Time | The account is deleted at the end of 2026-11-16; the hour is unresolved (`docs/PLAN.md` P2) | Open |
 
-The AWS account is a workshop account. It is deleted at the end of 2026-11-16
-with all its data; the exact hour is unresolved (`docs/PLAN.md` P2). Every URL
-below stops working then.
+Rules for the whole run: never paste the access code or a presigned URL into
+a file of the repository, a report or a chat; keep the output of every check;
+a check that was not run is reported as not run.
 
-## 2. Order of operations
+## 1. Create the Amplify app and branch (no deployment yet)
 
-1. Deploy backend phase 2 (section 4) and upload the data snapshot (section 5).
-2. Run the backend smoke check.
-3. Build the frontend with the API base URL (sections 3 and 6).
-4. Host it and note the origin (section 6).
-5. Set the security headers (section 7) and tighten CORS (section 8).
-6. Verify (section 10) and record what is deployed (section 9).
+Through `run_script`, service `amplify`, region `us-east-1` **[docs]** for the
+operation and parameter names, **[unverified]** in this account:
 
-The API base URL does not change when the stack is updated, so step 3 does not
-depend on step 5.
+1. `CreateApp` with `name` (for example `before-you-buy`) and `platform`
+   `WEB`. No repository, no access token. Read `app.appId` and
+   `app.defaultDomain` in the response.
+2. `CreateBranch` with `appId` and `branchName`. Use a short lowercase name
+   without `/` (for example `main`), so the subdomain equals the name.
+3. The origin is `https://<branchName>.<defaultDomain>`, that is
+   `https://<branch>.<appId>.amplifyapp.com`: scheme included, no trailing
+   slash, no path. Write it down as `SITE_ORIGIN`. It must match the
+   template's pattern `https://[A-Za-z0-9.-]+`.
 
-## 3. Environment variables
+Nothing is served yet; what the domain answers before the first deployment was
+not checked **[unverified]**.
 
-| Variable | Where | Secret | Notes |
+Git-connected hosting is not used: `integration/rc` is not pushed, the account
+lives two more days, and it would add a build image, a Node.js version and a
+framework detection that have never run here. `amplify.yml` in the repository
+root exists for that option only and has never been executed.
+
+## 2. Data snapshot
+
+Procedure: `scripts/deploy.md` section 3b. **[local]** for the build,
+**[unverified]** for the upload.
+
+1. `python3 scripts/build_snapshot.py --check`, then
+   `python3 scripts/build_snapshot.py`. It writes
+   `dist/snapshots/<snapshot_id>/` and prints the id and the upload list. For
+   the data of 2026-11-14 the id was `snap-2026-11-12-3390e023b308` (9 files,
+   1,427,264 bytes). Use the id the script prints on the day, not this one:
+   other data gives another id.
+2. Read the data bucket name from the stack output `DataBucketName`
+   (`03_status.py`).
+3. For each file of the list: one `get_presigned_url` request
+   (`operation: upload`, the data bucket, key `snapshots/<snapshot_id>/<name>`),
+   then `curl -sS -o /dev/null -w 'http=%{http_code}\n' --upload-file <file> '<url>'`.
+   Each must print `http=200`. Upload `manifest.json` last.
+4. In the sandbox, `ListObjectsV2` with prefix `snapshots/<snapshot_id>/`:
+   nine keys, sizes equal to the printed `bytes`.
+5. Write the id down as `SNAPSHOT_ID`. It is the `DataSnapshotId` parameter.
+
+A snapshot is never modified in place. The bucket is retained by the template
+and has no lifecycle rule on `snapshots/`.
+
+## 3. Backend: package, change set, review, execute
+
+Procedure: `scripts/deploy.md` sections 1, 3, 4, 5 and "Next deploy:
+checklist". **[phase 1]** for the mechanics, **[unverified]** for this
+template and zip.
+
+1. Package and name the template:
+
+       python3 scripts/package.py
+       shasum -a 256 infra/template.yaml | cut -c1-16
+
+   The first prints `s3_key` (`lambda/byb-backend-<sha16>.zip`); the second
+   gives `templates/template-<sha16>.yaml`. On the candidate the template prefix
+   is `0bfb606d3605a68a`; recompute it on the commit actually deployed.
+2. Upload the zip and the template to the artifacts bucket through presigned
+   URLs (`scripts/deploy.md` section 3). Both uploads print `http=200`.
+3. Before editing `02_deploy.py`, note the stack's current `CodeArtifact`
+   output and parameters (`03_status.py`). They are the rollback target
+   (section 7).
+4. In `scripts/mcp/02_deploy.py` set:
+
+       CODE_KEY = "lambda/byb-backend-<sha16>.zip"
+       TEMPLATE_KEY = "templates/template-<sha16>.yaml"
+       PARAMETER_OVERRIDES = {"DataSnapshotId": "<SNAPSHOT_ID>", "AllowedOrigin": "<SITE_ORIGIN>"}
+       ALLOW_WILDCARD_ORIGIN = False
+       EXECUTE = False
+
+   and run it. Both parameters are required: `DataSnapshotId` has no default
+   and no previous value, and the previous `AllowedOrigin` is `*`, which the
+   guard refuses.
+5. Review the report before executing:
+
+   | Field | Must be |
+   | --- | --- |
+   | `allowed_origin` | exactly `SITE_ORIGIN` |
+   | `cors_refusal` | `null` |
+   | `data_snapshot_id` | `SNAPSHOT_ID` |
+   | validation results | none failed |
+   | changes | the three functions, both function roles, five new routes with integrations and permissions, the authorizer, the API (CORS) |
+   | `Replacement` | **not** `True` for `HttpApi`, `DataBucket` or any function |
+
+6. Set `EXECUTE = True`, run again, set it back to `False`. Then
+   `03_status.py`: `UPDATE_COMPLETE`; outputs `ApiBaseUrl` (unchanged),
+   `CodeArtifact` (the new key), `DataSnapshotId`. Write `ApiBaseUrl` down as
+   `API_BASE_URL`.
+
+**Change-set name trap [unverified].** `02_deploy.py` names the change set
+from the two key hashes only and re-uses an existing change set of that name.
+If a change set was created with a wrong parameter (for example a mistyped
+origin) and the keys are unchanged, a second run would find the first one
+again. Call `DeleteChangeSet` on that name before re-running. How the snippet
+behaves when the name belongs to a change set that was already executed
+(relevant to rollback, section 7) was not tested.
+
+The file `scripts/mcp/02_deploy.py` is committed with the phase-1 keys, an
+empty `PARAMETER_OVERRIDES` and `EXECUTE = False`. Whether the edited keys are
+committed afterwards is a coordinator decision; never commit `EXECUTE = True`
+or `ALLOW_WILDCARD_ORIGIN = True`.
+
+## 4. Post-deploy checks of the backend
+
+None of these has run against this candidate. All use `curl` from a terminal,
+so CORS does not block them. Set, in the shell only:
+
+    API=<API_BASE_URL>
+    ORIGIN=<SITE_ORIGIN>
+
+Get the access code into a mode-600 file outside the repository with the
+transfer procedure of `scripts/deploy.md` section 6, and delete the file at
+the end.
+
+| # | Check | Command | Expected |
 | --- | --- | --- | --- |
-| `NEXT_PUBLIC_API_BASE_URL` | Frontend build (shell, or Amplify environment variable) | **No. Public.** | Inlined into the JavaScript bundle by `next build` and readable by every visitor (`frontend/.env.example`). The value is the stack output `ApiBaseUrl`, without a trailing slash. Empty or invalid means the site runs in fixtures mode and shows "Test data — fixtures" (`frontend/src/lib/config.ts`) |
-| `AMPLIFY_MONOREPO_APP_ROOT` | Amplify app, Git-connected option only | No | Must be `frontend`, equal to `appRoot` in `amplify.yml` |
+| 4.1 | Smoke test, seven routes, one real Robert investigation | `scripts/e2e_smoke.sh "$API" /tmp/byb-e2e/code` | Exit status 0. One line may differ, see 4.4 |
+| 4.2 | Robert figures | In the 4.1 output, or on the hosted site in section 6 | Statuses and figures of the real-data table in `docs/WORKFLOWS.md`; `calculation_version` starts with `byb-engine-`; the agent mode is noted (`MODEL` or `DETERMINISTIC_FALLBACK`) |
+| 4.3 | Mateo, live against local engine | `read -rs BYB_ACCESS_CODE && export BYB_ACCESS_CODE`, then `python3 acceptance/mateo/live_check.py --base-url "$API" --compare-local`, then `unset BYB_ACCESS_CODE` | Exit status 0. It creates one policy and one investigation. Add `--require-interpreter` to make a 502 or 504 from the interpreter a failure; `--dry-run` sends nothing |
+| 4.4 | Preflight returns the exact origin | block A below | `204`; `access-control-allow-origin` equal to `ORIGIN`; allowed headers `authorization`, `content-type`, `idempotency-key`; no `access-control-allow-credentials` |
+| 4.5 | Preflight from another origin | block A with `ORIGIN=https://example.org` | No `access-control-allow-origin` header. The status code is **[unverified]** |
+| 4.6 | No code: all seven routes refuse | block B | `401` seven times |
+| 4.7 | Wrong code: all seven routes refuse | block B with the extra header | `403` seven times |
+| 4.8 | Do gateway refusals carry CORS headers? | block C | Record the answer; either is acceptable, see below |
+| 4.9 | Rotated code refused | `scripts/deploy.md` section 7 | Old code `403` and new code `200` after the 45 s wait of that procedure (30 s cache plus margin) |
+| 4.10 | Logs hold no secret | CloudWatch log groups named in the stack outputs | No access code, no `Authorization` header, no request body (`validation/ACCEPTANCE.md` L6) |
 
-**No secret may ever be a build variable.** Anything prefixed `NEXT_PUBLIC_`
-is published. The access code is not configuration: the user types it at
-runtime and it is kept in `sessionStorage` only
-(`frontend/src/lib/access-code.ts`, `docs/LEAD_DECISIONS.md` D8). The project
-uses no `.env` file (`scripts/deploy.md`), and none should be created for
-deployment. The access code is 48 hexadecimal characters
-(`scripts/deploy.md` section 2), which is what the bundle check in section 6
-looks for.
+Block A:
 
-Backend configuration is stack parameters and Lambda environment variables set
-by the template; the one secret is the SSM SecureString
-`/before-you-buy/access-code`, created by the bootstrap step and never printed
-(`scripts/deploy.md` section 2).
+    curl -sS -D - -o /dev/null -X OPTIONS "$API/investigations" \
+      -H "Origin: $ORIGIN" -H 'Access-Control-Request-Method: POST' \
+      -H 'Access-Control-Request-Headers: authorization,content-type,idempotency-key'
 
-## 4. Backend
+Block B (for 4.7 add `-H 'Authorization: Bearer not-the-access-code'` to the
+`curl` line):
 
-Follow `scripts/deploy.md`: build the zip, upload zip and template through
-presigned URLs, create the change set, read it, execute it, read the status,
-run `scripts/e2e_smoke.sh`.
+    ID=inv-00000000000000000000000000000000
+    while read -r METHOD ROUTE; do
+      if [ "$METHOD" = POST ]; then set -- -H 'content-type: application/json' -d '{}'; else set --; fi
+      printf '%s %s ' "$METHOD" "$ROUTE"
+      curl -sS -o /dev/null -w '%{http_code}\n' -X "$METHOD" "$API$ROUTE" "$@"
+    done <<EOF
+    GET /portfolios/robert
+    POST /rules/interpret
+    POST /rules/confirm
+    POST /check
+    POST /investigations
+    GET /investigations/$ID
+    POST /investigations/$ID/challenge
+    EOF
 
-For phase 2 the packaging command changes: `scripts/deploy.md` section 1 says
-to add `--with-engine` and `--include contracts/python=<archive prefix>`, and
-`backend/engine/README.md` says a deployment must ship
-`contracts/python/byb_contracts` and `contracts/schemas` next to the engine.
-**The exact command, the new routes and any IAM change are pending the backend
-handoff.** One change is certain to be needed: in the deployed stack no role
-may write to `policies/` or `snapshots/` (`infra/README.md` "IAM"), and the
-contract stores policy versions.
+Block C:
 
-## 5. Data snapshot upload: pending
+    curl -sS -D - -o /dev/null "$API/portfolios/robert" -H "Origin: $ORIGIN" | grep -i '^HTTP\|access-control'
+    curl -sS -D - -o /dev/null "$API/portfolios/robert" -H "Origin: $ORIGIN" \
+      -H 'Authorization: Bearer not-the-access-code' | grep -i '^HTTP\|access-control'
 
-The engine needs the instrument registry, the holdings snapshot, market data
-and the controversy registry. The worker role can read `snapshots/*` in the
-data bucket, and nothing in the stack can write there, so the upload is a
-deployer action.
+Notes:
 
-**No upload script or procedure exists in this commit. To be confirmed by the
-backend handoff:** the object keys, the file list and the command.
+- **4.1 and 4.4.** `scripts/e2e_smoke.sh` sends its own preflight with
+  `Origin: https://example.org` and expects `204`. With an exact origin
+  configured, that line may print no CORS headers, or fail, without anything
+  being wrong **[unverified]**. Judge CORS by 4.4 and 4.5.
+- **4.8.** If API Gateway omits CORS headers on the authorizer's `401` and
+  `403`, a browser cannot read the status, and the access gate shows "The code
+  could not be checked" for a wrong code instead of a wrong-code message
+  (`acceptance/fullstack/README.md`). That is a wording defect, not an access
+  defect: nothing is displayed either way. Record which case holds and tell
+  the presenter.
+- **4.9** changes the code. Do it only if a rotation is wanted, before the
+  code is given to the presenter. The frontend then needs the new code typed
+  again.
+- **4.3 interpreter.** The first successful `POST /rules/interpret` is also
+  the first live call of the interpreter prompt and of the API function's
+  Bedrock permission. If it fails, the rest of the service still works; the
+  demo uses the interpreter fallback of `docs/DEMO_SCRIPT.md`.
+- `scripts/e2e_probe.sh` still sends phase-1 shapes and will fail; do not run
+  it (`scripts/deploy.md`).
+- Throttling (`validation/ACCEPTANCE.md` L2) and the bucket checks (L3) are
+  optional here; L2 leaves the route throttled for about a minute.
 
-What is known:
+## 5. Frontend: build, deploy, headers
 
-- The files are the outputs of `python3 -I data/scripts/build_processed.py`
-  in `data/processed/`. Five of the seven are git-ignored and absent from a
-  fresh clone: `holdings.json`, `instruments.json`, `market_data.json`,
-  `fund_sector_breakdowns.json`, `build_report.json`. They exist only on a
-  machine that holds the raw issuer files and the starter prices
-  (`docs/data-sources.md` section 1).
-- The bucket is private, so uploading there is not publication. Whether the
-  issuer-derived files may be published is a separate, pending decision
-  (`docs/data-sources.md` section 6).
-- Uploads from this environment go through presigned URLs, as for the code zip
-  (`scripts/deploy.md` section 3).
-- Record the holdings date (2026-11-12) and the source ids of the uploaded
-  snapshot next to the deployed commit (section 9).
-
-## 6. Frontend hosting
-
-The site is a Next.js static export: `next build` writes plain files to
-`frontend/out` (`frontend/next.config.ts`). It has one page, `/`, so no
-rewrite rule is needed. The Amplify platform is `WEB` (static hosting).
-
-Build, for either option:
+### 5.1 Build **[local]**
 
     cd frontend
     npm ci
-    NEXT_PUBLIC_API_BASE_URL=https://<api-id>.execute-api.us-east-1.amazonaws.com npm run build
+    NEXT_PUBLIC_API_BASE_URL=<API_BASE_URL> npm run build
 
-Node.js 22.12 or later is required (`frontend/package.json`).
+`NEXT_PUBLIC_API_BASE_URL` is the only build variable. It is public (it is
+inlined in the JavaScript) and is not a secret. Without it, or with an invalid
+value, the site runs in fixtures mode (`frontend/src/lib/config.ts`). The
+output is `frontend/out` (`output: "export"`, `trailingSlash: true` in
+`frontend/next.config.ts`).
 
-### Option A: manual deploy of the `out/` zip (recommended)
+Check the build before uploading:
 
-1. Build locally as above, from a clean checkout of the commit to be hosted.
-2. Check the bundle before uploading:
+    grep -rl "execute-api" frontend/out/_next/static | head -1     # the API URL was inlined
+    grep -rEow "[0-9a-f]{48}" frontend/out | head                  # expect nothing; explain any hit
+    (cd frontend && npm start)                                     # serves out/ on 127.0.0.1:4173
 
-       grep -rl "execute-api" frontend/out/_next/static | head -1     # the API URL was inlined
-       grep -rEow "[0-9a-f]{48}" frontend/out | head                  # expect nothing; explain any hit before uploading
+Served locally, the page loads but its API calls are blocked by CORS, because
+the API now allows only `SITE_ORIGIN`. That is expected. The local check is
+limited to: the access screen appears and the label "Test data — fixtures" is
+absent.
 
-3. Zip the **contents** of `out/`, named with the commit:
+Zip the **contents** of `out/`, named with the commit (`dist/` and `*.zip`
+are git-ignored). Keep every deployed zip until the recording is saved.
 
-       (cd frontend/out && zip -qr "../../dist/byb-frontend-$(git rev-parse --short HEAD).zip" .)
+    (cd frontend/out && zip -qr "../../dist/byb-frontend-$(git rev-parse --short HEAD).zip" .)
 
-   `dist/` and `*.zip` are git-ignored.
-4. In the Amplify console: create an app with "Deploy without Git", give the
-   app and the environment a name, upload the zip. Through the AWS MCP tool
-   the equivalent is `CreateApp` (platform `WEB`), `CreateBranch`,
-   `CreateDeployment`, upload the zip to the returned URL, `StartDeployment`.
-5. The origin is `https://<environment-name>.<app-id>.amplifyapp.com`.
+### 5.2 Manual deployment **[docs]**, never executed
 
-### Option B: Git-connected branch
+1. `CreateDeployment` with `appId` and `branchName`. The response carries a
+   `jobId` and an upload URL for the zip (field name `zipUploadUrl`
+   **[unverified]**, from memory). The URL is presigned: do not record it.
+2. `curl -sS -o /dev/null -w 'http=%{http_code}\n' --upload-file dist/byb-frontend-<sha>.zip '<upload url>'`
+   must print `http=200`. If the upload is refused for a missing content type,
+   add `-H 'Content-Type: application/zip'` **[unverified]**.
+3. `StartDeployment` with `appId`, `branchName` and that `jobId`, within eight
+   hours of step 1.
+4. `GetJob` with `appId`, `branchName`, `jobId` until the status is `SUCCEED`.
+   Write the job id down.
 
-1. Push the commit to GitHub.
-2. In the Amplify console: create an app from the GitHub repository, choose
-   the branch, tick the monorepo box and enter `frontend` as the app root.
-   The console then sets `AMPLIFY_MONOREPO_APP_ROOT`.
-3. Set the environment variable `NEXT_PUBLIC_API_BASE_URL`.
-4. Amplify reads `amplify.yml` from the repository root. If the console
-   proposes Next.js server-side settings (an artifact directory `.next`), the
-   file in the repository overrides them; check that the app's platform is
-   `WEB`.
-5. Each push to the branch builds and deploys.
+The Amplify console does the same under "Deploy without Git" (drag the zip).
 
-### Recommendation: option A
+### 5.3 Custom headers **[docs]** for the mechanism, **[unverified]** for the policy
 
-- Nothing after the first review merge is on GitHub `main`. Option B cannot
-  host the current code until it is pushed, and then hosts whatever the branch
-  holds, tested or not.
-- The account is deleted within two days. Continuous deployment has no value
-  for one or two deployments, and option B adds things that have never been
-  run here: the Amplify build image, its Node.js version, `nvm`, and the
-  console's framework detection.
-- With option A the hosted files are exactly the files that were built and
-  checked locally.
-- Option B requires authorizing the Amplify GitHub app on the repository
-  owner's GitHub account. That authorization is outside AWS and is not removed
-  when the AWS account is deleted. The repository is public, so hosting from
-  it adds nothing a reader cannot already build.
+For a manual deployment Amplify does not need a `customHttp.yml` in the
+repository, so none was added. The headers are set on the app: `UpdateApp`
+with `appId` and `customHeaders` (the YAML below as one string), or in the
+console under Hosting, Custom headers. Then deploy the same zip again (5.2):
+the documentation says a redeploy applies them.
 
-The cost of option A: the commit is not recorded automatically (section 9),
-and custom headers are set in the console (section 7).
-
-## 7. Security headers
-
-Set as Amplify custom headers. This is a proposal: **the policy below was not
-tested against a build** and must not be copied blindly.
-
-What a Next.js static export needs:
-
-- **Inline scripts.** The exported HTML contains inline `<script>` elements
-  that carry the data React needs to start. A policy of `script-src 'self'`
-  alone blocks them and the page stays blank. A static host cannot issue a
-  nonce per response, so the choices are `'unsafe-inline'` or one hash per
-  inline script, recomputed at every build. The snippet uses
-  `'unsafe-inline'`; hashes are the stricter option if time allows.
-- **Inline styles.** The exposure chart sets `style` attributes
-  (`frontend/src/components/verdict/ExposureChart.tsx`), so `style-src` needs
-  `'unsafe-inline'`.
-- **No third-party origin.** The stylesheet imports only Tailwind, compiled
-  into a local file (`frontend/src/app/globals.css`); no external font, script
-  or image host was found in `frontend/src`.
-- **The 3D exposure explorer** (in progress, not in this commit) uses WebGL
-  through three.js and is loaded lazily from the same origin. It may need
-  additions such as `worker-src blob:` or `img-src blob:`. Re-test the policy
-  after it is integrated.
-
-With `'unsafe-inline'` for scripts, the policy does not stop an injected
-inline script. What it still does: `connect-src` limits where a script can
-send data to the site itself and the API; `frame-ancestors` prevents framing;
-`object-src` and `base-uri` close two other routes.
-
-`customHttp.yml` for option A (paste into Hosting, Custom headers, then deploy
-again), with `<api-origin>` replaced by the stack output `ApiBaseUrl`
-(`https://3t4hod912l.execute-api.us-east-1.amazonaws.com` on 2026-11-14,
-`infra/README.md`):
+Start with the policy in report-only mode. Replace `<api-origin>` with
+`API_BASE_URL` (scheme and host only):
 
 ```yaml
 customHeaders:
   - pattern: '**/*'
     headers:
-      - key: 'Content-Security-Policy'
+      - key: 'Content-Security-Policy-Report-Only'
         value: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' <api-origin>; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
       - key: 'X-Content-Type-Options'
         value: 'nosniff'
@@ -213,208 +323,171 @@ customHeaders:
         value: 'max-age=31536000'
 ```
 
-For option B the file is saved in the repository root and uses the monorepo
-form:
+Why it looks like this:
 
-```yaml
-applications:
-  - appRoot: frontend
-    customHeaders:
-      - pattern: '**/*'
-        headers:
-          - key: 'Content-Security-Policy'
-            value: "..."   # same headers as above
-```
+- A Next.js static export contains inline `<script>` elements, and a static
+  host cannot issue a nonce, so `script-src` needs `'unsafe-inline'` (or one
+  hash per inline script, recomputed at each build). With it, the policy does
+  not stop an injected inline script; `connect-src` still limits where a
+  script can send data to the site and the API.
+- Components set `style` attributes, so `style-src` needs `'unsafe-inline'`.
+- No third-party origin was found in `frontend/src`.
+- The 3D exposure explorer (three.js, WebGL) may need `worker-src 'self' blob:`
+  or `blob:` in `img-src`. **This policy has not been tested against a
+  build.**
 
-No `customHttp.yml` exists in the repository; creating it is a lead decision.
+Procedure: with the report-only header deployed, run the whole Robert workflow
+and the Mateo workflow with the browser console open, including the purchase
+and verdict stages where the explorer loads. Add what the console reports as
+violated. Only then rename the header to `Content-Security-Policy` and deploy
+again. If time is short, stay in report-only mode and say so: it enforces
+nothing. `frame-ancestors` is ignored in report-only mode; `X-Frame-Options`
+covers framing meanwhile.
 
-Procedure: first deploy with the header named
-`Content-Security-Policy-Report-Only`, run the whole Robert workflow with the
-browser console open, fix every reported violation, then rename the header to
-`Content-Security-Policy` and deploy again.
+## 6. Hosted checks
 
-## 8. Tighten the API's allowed origin
+None has run. Use a private browser window on `SITE_ORIGIN`.
 
-The stack parameter `AllowedOrigin` is `*`. Once the hosted origin is known,
-set it to exactly that origin, with scheme and without a trailing slash, in
-`PARAMETER_OVERRIDES` of `scripts/mcp/02_deploy.py`
-(`scripts/deploy.md` section 4):
-
-    PARAMETER_OVERRIDES = {"AllowedOrigin": "https://<environment-name>.<app-id>.amplifyapp.com"}
-
-- `authorization` must be an allowed header, with `content-type` and
-  `idempotency-key`: the browser sends all three (`contracts/api.md`
-  section 1). The template already lists them (`infra/template.yaml`,
-  `AllowHeaders`). Do not remove them, and add any new request header the
-  phase-2 frontend sends.
-- The template takes one origin. After the change, a frontend served from
-  anywhere else (`npm run dev`, `npm start` on `127.0.0.1:4173`) can no longer
-  call the API from a browser. Do it after local testing is finished.
-- `scripts/e2e_smoke.sh` sends its preflight check with
-  `Origin: https://example.org` and expects 204. Its CORS lines may read
-  differently after the change; the other checks use `curl` and are not
-  affected by CORS.
-- CORS is not authentication. The bearer code is.
-- Make this change in the same change set as, or directly after, the header
-  change in section 7 (`docs/PLAN.md` P9).
-
-## 9. Record what is deployed
-
-Nothing in the interface shows which commit it was built from, and no hosted
-version is tied to a Git commit.
-
-**Proposal, not implemented:** a public build variable
-`NEXT_PUBLIC_COMMIT_SHA`, set at build time
-(`NEXT_PUBLIC_COMMIT_SHA=$(git rev-parse --short HEAD)`; on a Git-connected
-Amplify build the commit is available as `AWS_COMMIT_ID`) and shown in the
-footer. It needs a frontend change by the frontend owner. It does not exist in
-this commit.
-
-Until then, write down by hand, in the release notes or
-`infra/evidence/`:
-
-| Item | Where to read it |
-| --- | --- |
-| Frontend commit | `git rev-parse HEAD` in the checkout that was built; the zip file name |
-| Backend commit and code artifact | the checkout that was packaged; stack output `CodeArtifact` |
-| Template | SHA-256 prefix of `infra/template.yaml`; the change set name |
-| Data snapshot | holdings date, source ids, object keys |
-| Engine version | `backend/engine/version.py`; `calculation_version` in a result |
-| Runtime model | stack output `BedrockModelId` |
-| Hosted origin and Amplify deployment or job id | Amplify console |
-
-## 10. Verification after deploy
-
-| Check | How | Expected |
+| # | Check | Expected |
 | --- | --- | --- |
-| Headers | `curl -sI https://<hosted-origin>/` | The five headers of section 7 |
-| Live mode | Open the site in a private window | The access-code screen appears; the label "Test data — fixtures" is **absent**; no `?fixtures=1` |
-| API origin | Browser network panel during a run | Requests go only to the hosted origin and to `ApiBaseUrl`; the preflight is answered; no Content-Security-Policy violation in the console |
-| No stale assets | Hard reload; compare the `_next/static/<build id>` path in the page source with the local `out/index.html` | Same build id |
-| Hosted Robert run | The whole workflow of `docs/WORKFLOWS.md` on the hosted site | Statuses as described there; figures equal to the real-data column (`backend/engine/evidence/robert_max_compliant.md`); the investigation id noted |
-| Result is real | The result's `calculation_version` | `byb-engine-...`, not `phase1-placeholder-1` |
-| Other origins refused | A browser call from another origin after section 8 | Blocked by CORS |
-| Authentication | A wrong code | The access-code prompt returns; nothing is displayed |
-| Backend | `scripts/e2e_smoke.sh` (`scripts/deploy.md` section 6) | Exit status 0 |
-| Fixtures mode still labelled | Add `?fixtures=1` | The label is present |
+| 6.1 | Headers: `curl -sI <SITE_ORIGIN>/` | The five headers of 5.3 |
+| 6.2 | Live mode | The screen "Enter the access code" appears; the label "Test data — fixtures" and the "Test data" tag are absent; the label "Simulation — fictional portfolio, not advice" is present |
+| 6.3 | API origin: network panel during a run | Requests go only to `SITE_ORIGIN` and `API_BASE_URL`; preflights are answered; no blocked request; no policy violation in the console (or only the ones being fixed in report-only mode) |
+| 6.4 | Lazy three.js: network panel, cache disabled, on first load | The three.js chunk (558,259 bytes, 136,902 gzip, in the coordinator's local build) is **not** requested on the first screen; it is requested when the purchase stage opens |
+| 6.5 | Wrong code | Nothing is displayed; note the message shown (see 4.8) |
+| 6.6 | Robert, whole workflow of `docs/DEMO_SCRIPT.md` act 1 | Statuses and real-data figures of `docs/WORKFLOWS.md`; version 2 created by the challenge; report 1 still opens; investigation ids and agent mode noted |
+| 6.7 | Mateo, act 2 | Both rules FAIL with the starting breach separated; ESGV shown as missing; the interpreter either asks about "oil" or shows the readable error; which one is noted |
+| 6.8 | Narrow window (390 px) | The flat exposure view replaces the 3D one |
+| 6.9 | Same build: the `_next/static/<build id>` path in the page source | Equal to the one in the local `out/index.html` |
+| 6.10 | Fixtures mode still labelled: add `?fixtures=1` | The label "Test data — fixtures" is present |
+| 6.11 | Unknown path, for example `/nope/` | Recorded; how Amplify serves it for this export is **[unverified]** |
 
-Keep the outputs. A check that was not run is reported as not run.
+Then record what is deployed, by hand (the interface shows no commit):
+commit; zip names; stack outputs `CodeArtifact` and `DataSnapshotId`; template
+prefix and change set name; Amplify `appId`, branch and job id; `SITE_ORIGIN`;
+the output of every check above. `infra/evidence/` is where earlier
+deployments were recorded; that directory is not this document's to write.
 
-## 11. Rollback
+## 7. Rollback, step by step
 
-- **Frontend, option A:** upload the previous zip again. Keep every deployed
-  zip, named with its commit, until the recording is saved.
-- **Frontend, option B:** in the Amplify console, open the branch and choose
-  "Redeploy this version" on the previous build.
-- **Backend:** create and execute a change set with the previous `CODE_KEY`
-  and `TEMPLATE_KEY` in `scripts/mcp/02_deploy.py`. The phase-1 pair recorded
-  as live on 2026-11-15 is `lambda/byb-backend-5cf91f80c5c1a2ce.zip` with
-  `templates/template-e076af541c8b13f5.yaml`
-  (`infra/evidence/milestone2.md`). Objects in the artifacts bucket expire
-  after 7 days, which is later than the account's deletion. A failed update
-  rolls back by itself (`scripts/deploy.md` section 5).
-- Rolling the backend back to phase 1 returns the placeholder calculation and
-  the pre-contract shapes. A contract-typed frontend will not work against it;
-  roll both back, or switch the demonstration to fixtures mode and say so.
-- **CORS:** set `AllowedOrigin` back to `*` with a parameter-only change set.
+| Step | Rollback | Notes |
+| --- | --- | --- |
+| 1 Amplify app and branch | `DeleteApp` | Nothing depends on it until step 3. Deleting it after step 3 leaves `AllowedOrigin` pointing at an origin nobody serves, which is harmless |
+| 2 Snapshot upload | Nothing to undo | Ids are immutable and unused until a stack parameter names one. Rolling data back means passing the previous `DataSnapshotId` in a change set; before this deployment there is no previous id |
+| 3 Backend, update fails | None needed | A failed update rolls back by itself (`scripts/deploy.md` section 5) **[phase 1]** |
+| 3 Backend, update succeeded but checks fail | A change set with the previous `CODE_KEY` and `TEMPLATE_KEY`, and the previous parameters | See below |
+| 5.2 Site deployment | Deploy the previous zip again (5.2 with the kept file) | The console's "Redeploy this version" on the previous job, or `StartJob` with `jobType` `RETRY`, may also work for a manual deployment **[unverified]** |
+| 5.3 Headers | `UpdateApp` with the previous `customHeaders` (an empty string for none), then deploy again | A blank page after enforcing the policy means a violation: go back to report-only |
 
-## 12. Teardown, and what survives
+Backend rollback targets:
 
-Backend teardown: `scripts/deploy.md` section 8. Add: delete the Amplify app.
-If option B was used, remove the Amplify GitHub app's access to the repository
-in GitHub settings.
+- **To the previous candidate build** (after a second deployment of this
+  template): the previous `CODE_KEY` (stack output `CodeArtifact`, noted in
+  section 3 step 3), the same `TEMPLATE_KEY`, and
+  `PARAMETER_OVERRIDES = {"DataSnapshotId": "<previous id>"}` if the data
+  changed. Unlisted parameters keep their values.
+- **To phase 1**: `CODE_KEY = "lambda/byb-backend-5cf91f80c5c1a2ce.zip"` with
+  `TEMPLATE_KEY = "templates/template-e076af541c8b13f5.yaml"`, the pair
+  recorded as live on 2026-11-15 (`infra/evidence/milestone2.md`) and the pair
+  committed in `02_deploy.py`. `AllowedOrigin` keeps the exact origin, so the
+  guard passes; set `ALLOW_WILDCARD_ORIGIN = True` only if `*` is wanted on
+  purpose. Phase 1 has two routes, pre-contract shapes and a **placeholder
+  calculation**: the candidate's frontend does not work against it. Roll the
+  site back too, or switch the demonstration to a fallback of
+  `docs/DEMO_SCRIPT.md` and say so. **[unverified]**: this downgrade was never
+  run; the phase-1 template does not declare `DataSnapshotId`, and the
+  change-set name trap of section 3 applies, because this exact pair of keys
+  was already used once.
+- Objects in the artifacts bucket expire after 7 days (`scripts/deploy.md`
+  section 2). The phase-1 objects were uploaded on 2026-11-14 and
+  2026-11-15, so they should still exist; `02_deploy.py` checks with
+  `HeadObject` and stops if not.
+- Policies, results and traces written by the candidate stay in the bucket
+  after a rollback. Phase 1 does not read `policies/` or `snapshots/`.
 
-The whole account is deleted at the end of 2026-11-16, which removes the
-stack, both buckets, the SSM parameter, the logs, the Amplify app and every
-stored investigation.
+## 8. Teardown
 
-What survives the deletion:
+1. `DeleteApp` on the Amplify app.
+2. Backend: `scripts/deploy.md` section 8 (`DeleteStack`; empty and delete the
+   retained data bucket, which now also holds `snapshots/` and `policies/`;
+   empty and delete the artifacts bucket; `DeleteParameter` on the access
+   code).
+3. Locally: delete `/tmp/byb-e2e`, the header files of a rotation check, and
+   `dist/`.
 
-- The code on GitHub, once pushed. Today nothing after the first review merge
-  is on `main`.
-- The demo recording, if it was saved locally.
-- `infra/evidence/` in the repository: the recorded proof of the deployment.
-- The procedure to redeploy in another account (`infra/README.md`,
-  `scripts/deploy.md`, this file). A redeploy needs Bedrock access to the
-  runtime model, a new access code, and the data files that are not in git.
+The whole account is deleted at the end of 2026-11-16, which removes all of
+it. What survives: the code on GitHub once pushed (today `integration/rc` is
+not pushed), the recording if saved locally, the evidence files in the
+repository, and this procedure. A redeploy elsewhere needs Bedrock access to
+the runtime model, a new access code and the data files that are not in git.
 
-What does not survive: the hosted URL, the API URL, the access code, the
-uploaded snapshot, stored policies, results and traces.
+## 9. Values the coordinator supplies
 
-## 13. Missing deployment prerequisites
+No value here is a secret except the access code, which is never written.
 
-Found in the repository at `d36e41f`, most blocking first.
+| Value | Where it comes from | Used in |
+| --- | --- | --- |
+| Commit to deploy | `git rev-parse HEAD` in the clean checkout; the coordinator stamps the final one | Everything; zip names; the record |
+| Authorization to mutate AWS | The account owner | Section 0 |
+| Amplify app name and branch name | Chosen by the coordinator | Section 1 |
+| `appId`, `defaultDomain` | `CreateApp` response | Sections 1, 5, 7, 8 |
+| `SITE_ORIGIN` | `https://<branchName>.<defaultDomain>` | `AllowedOrigin`; checks 4.4, 4.8, 6 |
+| `DataBucketName` | Stack output (`03_status.py`) | Section 2 |
+| `SNAPSHOT_ID` | Printed by `scripts/build_snapshot.py` | `DataSnapshotId` |
+| `CODE_KEY` | `s3_key` printed by `scripts/package.py` | `02_deploy.py` |
+| `TEMPLATE_KEY` | `shasum -a 256 infra/template.yaml`, first 16 characters | `02_deploy.py` |
+| Previous `CodeArtifact` and parameters | Stack outputs and parameters before the change | Section 7 |
+| `API_BASE_URL` | Stack output `ApiBaseUrl` | The build variable, `connect-src`, every check |
+| Access code | Systems Manager console ("Show decrypted value") for the presenter; the transfer file of `scripts/deploy.md` section 6 for the scripts; `read -rs` into `BYB_ACCESS_CODE` for `live_check.py` | Sections 4 and 6. Never in a file of the repository, a build variable, a report or the recording |
+| Presigned URLs | `get_presigned_url`, `CreateDeployment` | Used once, never recorded |
+| Amplify job id | `CreateDeployment` response | The record; rollback |
+| Decision: report-only or enforced policy | The coordinator, after 5.3 | Section 5.3 |
+| Decision: rotate the code or not | The coordinator | 4.9 |
 
-1. **Backend phase 2 is not in this commit and not deployed.** The API has two
-   of the seven routes, pre-contract shapes and a placeholder calculation
-   (`infra/README.md` "Gap to the contracts"). A hosted live frontend has
-   nothing correct to call.
-2. **The frontend is on provisional types and is not wired to the contract
-   API.** `docs/PLAN.md` P8 records that it does not typecheck against the
-   synced contract copies at this commit. Whether `npm run build` succeeds at
-   this commit was not checked.
-3. **No data snapshot procedure**: no upload script, no agreed object keys,
-   and the processed files are absent from a fresh clone (section 5).
-4. **IAM**: no role can write `policies/`; phase 2 needs a template change
-   (section 4).
-5. **No Amplify app, and the code to host is not on GitHub** (`origin/main`
-   ends at the first review merge).
-6. **The access code must reach the presenter** without entering the
-   repository, a build variable or the recording. The documented way is the
-   Systems Manager console (`scripts/deploy.md` section 6).
-7. **`AllowedOrigin` is `*`** and no security header is configured; no
-   `customHttp.yml` exists.
-8. **Client polling deadline 120 s**, below the 150 s job deadline; the
-   contract says 180 s and a 1.5 s interval (`frontend/src/lib/config.ts`,
-   `contracts/api.md` section 1). A slow investigation would be shown as
-   failed while it is still running.
-9. **No commit identifier in the interface** (section 9).
-10. **Deadline and expiry hour unresolved** (`docs/PLAN.md` P2): the time
-    available for hosting and recording is unknown.
-11. **`infra/README.md` is partly stale**: its status box names template
-    `9b1c94d4e07d8bc3` and its resource table gives the earlier throttle
-    limits, while `infra/evidence/milestone2.md` records the later deployment
-    D4 (`e076af541c8b13f5`, 20 rps / burst 40 and 5 rps / burst 10). It also
-    points to `work/PAUSE_CHECKPOINT.md`, which is git-ignored. The evidence
-    file is the current one.
-12. **No Node.js version file** (`.nvmrc`) for the build image; `amplify.yml`
-    installs Node 22 with `nvm` instead.
-13. A comment in `frontend/scripts/serve-out.mjs` names "S3 + CloudFront" as
-    the deployed host. The decided host is Amplify Hosting.
+## 10. Not verified
 
-## 14. Not verified without AWS access
+Read in the AWS documentation on 2026-11-14 (Amplify Hosting user guide and
+API reference): the operations `CreateApp`, `CreateBranch`,
+`CreateDeployment`, `StartDeployment`, `UpdateApp`; the parameters `name`,
+`platform`, `customHeaders`, `appId`, `branchName`, `jobId`; that a manual
+deployment takes a zip of build output and does not support server-side
+rendering; the eight-hour limit between `CreateDeployment` and
+`StartDeployment`; the two forms of `customHttp.yml`; that custom headers for
+a manual deployment are set in the console or shipped with the artifacts,
+followed by a redeploy.
 
-Checked against the AWS documentation on 2026-11-14 (Amplify Hosting user
-guide: monorepo build settings, custom headers, manual deploys): the
-`amplify.yml` keys `version`, `applications`, `appRoot`, `frontend`, `phases`,
-`preBuild`, `build`, `commands`, `artifacts`, `baseDirectory`, `files`,
-`cache`, `paths`; that `appRoot` must equal `AMPLIFY_MONOREPO_APP_ROOT`; that
-the console sets that variable for a monorepo app; the two `customHttp.yml`
-forms; that a manual deploy accepts a zip of build output and does not support
-server-side rendering. `amplify.yml` parses as YAML and its two guard commands
-were run locally.
+Not verified, in the order they are met:
 
-Not verified:
+1. The present state of the stack, and that the account allows creating an
+   Amplify app.
+2. The exact shape of the `CreateApp` response (`defaultDomain`) and of the
+   `CreateDeployment` response (`zipUploadUrl`); `GetJob`, `DeleteApp` and
+   `StartJob` were not looked up.
+3. That a branch created without a deployment yields the stated domain before
+   anything is deployed, and what it serves meanwhile.
+4. The snapshot upload: never run. That the functions accept the uploaded
+   snapshot was shown locally only.
+5. That CloudFormation accepts this template: the change set, the absence of
+   a replacement of `HttpApi`, and therefore the stability of `ApiBaseUrl`.
+6. The CORS guard and the two required parameters against a real stack; the
+   change-set name re-use described in section 3.
+7. Everything in section 4: the smoke test and `live_check.py` have run only
+   against local handlers. How API Gateway answers a preflight from a
+   non-allowed origin; whether authorizer refusals carry CORS headers; the
+   30-second bound on a rotated code.
+8. The real model with the current prompts (`investigator-4`,
+   `interpreter-1`), and the API function's Bedrock permission.
+9. The upload to the Amplify URL (content type), the deployment job, and that
+   headers set with `UpdateApp` apply to a manual deployment after a redeploy.
+10. The Content-Security-Policy against a real build, including the 3D
+    explorer.
+11. How Amplify serves an unknown path and the trailing-slash paths of this
+    export.
+12. Every rollback of section 7, in particular the downgrade to phase 1.
+13. `amplify.yml`: never executed; not used by this runbook.
 
-- That `amplify.yml` builds this app in Amplify. It has never run.
-- That `baseDirectory` and the cache paths are resolved relative to `appRoot`
-  when `buildPath` is not set. The documentation's example with `buildPath: /`
-  uses a path from the repository root; this file relies on the default.
-- The Node.js version of the default build image, and that `nvm install 22`
-  works in it and gives 22.12 or later. The file fails the build if not.
-- Whether the console detects a Next.js 16 static export as static (`WEB`) or
-  proposes server-side settings (`WEB_COMPUTE`).
-- The Amplify API operation names in section 6, option A, and
-  `AWS_COMMIT_ID`: written from memory, not looked up.
-- Whether custom headers saved in the console apply to a manual-deploy app
-  without including a `customHttp.yml` in the zip. The documentation describes
-  both ways.
-- That the Content-Security-Policy in section 7 lets the built site run. No
-  build was made for this document.
-- How API Gateway answers a preflight from an origin that is no longer
-  allowed, and so what `scripts/e2e_smoke.sh` prints after section 8.
-- How Amplify serves an unknown path for this export (`404.html`).
-- The current state of the stack. It was last read on 2026-11-15 00:23 UTC
-  (`infra/evidence/milestone2.md` section 1).
-- That the account allows creating an Amplify app. `docs/PLAN.md` P4 records
-  a successful `amplify:ListApps` call only.
+Also noted for the owners of other files: the "Limitations" of
+`infra/README.md` still say that no interpreter is implemented and that the
+5 s budget of `POST /check` is only logged, which the candidate's code
+contradicts (`backend/agents/interpreter.py`, `backend/api/handler.py`); the
+header of `scripts/deploy.md` still names the branch `agent/a2-backend`.

@@ -2,23 +2,27 @@
 
 Two fictional investors, step by step, in user terms, mapped to the API routes
 (`contracts/api.md`) and to the engine concepts (`contracts/SEMANTICS.md`).
-Written for commit `d36e41f`.
+
+**Candidate described:** local branch `integration/rc` at `deec650`, plus fixes in progress.
 
 Read this first:
 
-- **Every expected figure below is a synthetic-fixture outcome** unless a line
-  says "real data". The fixture universes use invented fund weights, prices
-  and FX rates so that the arithmetic can be done by hand
-  (`contracts/fixtures/engine/HAND_CALCS.md`). They are not the real holdings
-  or prices of SPY, XIU.TO, NVDA or any company.
-- The engine reproduces these outcomes: the engine tests run all 26 fixture
-  cases and pass at this commit.
-- **The end-to-end path does not exist yet.** At this commit the deployed API
-  has only `POST /investigations` and `GET /investigations/{id}`, with a
-  placeholder calculation and pre-contract shapes, and the interface runs on
-  provisional fixtures. The routes named below are specified in
-  `contracts/api.md`; the service code for them is in progress and not in this
-  commit.
+- **Two sets of figures appear below and must never be mixed.** The step
+  tables give **synthetic-fixture** outcomes: the fixture universes use
+  invented fund weights, prices and FX rates so that the arithmetic can be
+  done by hand (`contracts/fixtures/engine/HAND_CALCS.md`). They are not the
+  real holdings or prices of SPY, XIU.TO, NVDA or any company. The "on the
+  real data" sections give the outcomes on the project's real data snapshot.
+  Fixtures mode of the interface shows the first set; a live run shows the
+  second.
+- The engine reproduces the fixture outcomes: the engine tests run every
+  fixture case and pass (README section 6).
+- **The whole path works locally and has not run in AWS.** Every route named
+  below is implemented in the candidate and was exercised in a browser against
+  the real handlers on one machine, on the real data, with S3, Lambda
+  invocation and Bedrock faked (`acceptance/fullstack/README.md`). The stack
+  deployed in AWS is still the earlier phase-1 code and cannot run these
+  workflows.
 - Personas come from the official case; portfolios, thresholds and requests
   are invented by the team (`docs/LEAD_DECISIONS.md` D7). Nothing here is
   advice.
@@ -49,21 +53,24 @@ Version 1 and its report stay retrievable and unchanged.
 ### Robert on the real data
 
 The same request was run through the engine on the real snapshot
-(`backend/engine/evidence/robert_max_compliant.md`, engine `byb-engine-1.0.1`,
-holdings dated 2026-11-12, replay 2021-12-31 to 2022-12-30). The numbers
-differ from the synthetic fixture, and so does the binding rule:
+(holdings dated 2026-11-12, replay 2021-12-31 to 2022-12-30). Source of the
+real-data column: the coordinator's local run on the candidate, 2026-11-14/15;
+the boundary and its derivation are also in
+`backend/engine/evidence/robert_max_compliant.md` (generated with an earlier
+engine version, same numbers). The numbers differ from the synthetic fixture,
+and so does the binding rule:
 
-| | Synthetic fixture (R1, R2) | Real data (evidence note) |
+| | Synthetic fixture (R1, R2) | Real data |
 | --- | --- | --- |
 | NVIDIA exposure through SPY | 1.2% | 1.2275954% |
-| NVIDIA after the purchase | 26.2% to 26.4% | 26.23% to 26.28% (0.25 + 0.012275954, plus at most 0.00048735 unreported; our sum of the note's inputs) |
-| Replayed 2022 loss after the purchase | 15.25% | 17.78% |
-| Maximum compliant final weight, policy v1 | 8.6%, bound by the single-company rule | 8.3924028% (about 8.39%), bound by the 2022 loss budget |
-| Maximum compliant final weight, policy v2 | 10.0%, bound by the loss budget | 8.3924028%, unchanged: the loss budget binds in both versions |
+| NVIDIA after the purchase | 26.2% to 26.4% | 0.262275954 to 0.262763304 (26.23% to 26.28%), against 10%: FAIL |
+| Replayed 2022 loss after the purchase | 15.25% | 0.177835413 (17.78%), against 10%: FAIL |
+| Maximum compliant final weight, policy v1 | 8.6%, bound by the single-company rule | 0.083924028 (about 8.39%), bound by the 2022 loss budget |
+| After raising the cap to 30% (policy v2) | cap PASS, loss FAIL, maximum 10.0% bound by the loss budget | cap PASS, loss FAIL; version 1 and its report reproducible. The evidence note gives the maximum as unchanged, 0.083924028, because the loss budget binds in both versions |
 
-Never quote one of these figures without saying which column it comes from. A
-live run shows real-data figures only once the worker calls the engine on the
-uploaded snapshot (in progress).
+Never quote one of these figures without saying which column it comes from.
+Screens of this run: `acceptance/fullstack/screenshots/` (local backend, real
+data). No run on AWS exists.
 
 ## Mateo
 
@@ -78,7 +85,7 @@ controversies."
 | # | What the user does | Route | Engine concept | Expected outcome (synthetic fixture) |
 | --- | --- | --- | --- | --- |
 | 1 | Opens Mateo and sees the portfolio | `GET /portfolios/mateo` | Fictional scenario | |
-| 2 | Submits his sentence | `POST /rules/interpret` | The interpreter drafts; it never invents a number and never activates a rule | One clarification: "What should 'avoid oil' cover?" with four options. Supported: holdings labelled Energy in what the funds report; specific named companies. Shown as unsupported: companies that produce oil; all fossil fuels. A controversy exclusion is drafted with a null threshold (`interpret_mateo_clarification.json`) |
+| 2 | Submits his sentence | `POST /rules/interpret` (the only step that needs the model; if it answers 502 or 504 the page keeps his text, shows a readable error, and the scenario's two offered rules can be confirmed by hand) | The interpreter drafts; it never invents a number and never activates a rule | One clarification: "What should 'avoid oil' cover?" with four options. Supported: holdings labelled Energy in what the funds report; specific named companies. Shown as unsupported: companies that produce oil; all fossil fuels. A controversy exclusion is drafted with a null threshold (`interpret_mateo_clarification.json`) |
 | 3 | Picks the Energy label and sets the tolerated exposure to 0; confirms the controversy exclusion at 0 | `POST /rules/confirm` | Two separate rules: `exclusion` by fund-reported sector, and `controversy_exclusion` by registry records (regulatory finding, court ruling or settlement). A sector label is not a controversy record | Policy version 1 with two confirmed rules |
 | 4 | Requests SPY at a final direct weight of 15%, funded from cash | `POST /investigations` | Purchase simulation | Additional 15%, cash after 10%, `FEASIBLE` |
 | 5 | Watches the steps | `GET /investigations/{id}` | Holdings, sector labels and registry lookups; no 2022 replay, because no scenario rule exists | Eight steps including `lookup_controversy_evidence` (`investigation_mateo_succeeded.json`) |
@@ -96,13 +103,27 @@ weight is `WITHHELD`. Unknown data never yields a number.
 
 ### Mateo on the real data
 
-No engine result for Mateo on the real snapshot is recorded in this commit;
-acceptance tests are in progress. What the committed data shows
-(`docs/data-sources.md` sections 5.1, 5.3 and 7): XIU.TO's file labels nine
-constituents Energy, together 16.66% of the fund; Enbridge is 3.59% and
-Canadian Natural Resources 3.45% of XIU.TO, so a 20% XIU.TO position carries
-1.408% known exposure to two issuers with a registry record; none of SPY's
-503 rows has a sector label; ESGV has no holdings file. The same kind of
-result is therefore expected (both rules breached by the starting portfolio,
-with large unknown parts), with different figures. That expectation is ours
-and is not a recorded test result.
+Source: `acceptance/mateo/FINDINGS.md` (engine `byb-engine-1.0.8`, scenario
+rules confirmed unchanged, SPY to 0.15) and the coordinator's local run. The
+suite recomputes every value independently from the input files.
+
+| | Synthetic fixture (M1) | Real data |
+| --- | --- | --- |
+| Energy exclusion, starting portfolio | FAIL, 1.4% to 16.8% | FAIL, 0.03332 to 0.18378 |
+| Energy exclusion, after the purchase | FAIL, 1.4% to 31.8% | FAIL, 0.03332 to 0.33378 |
+| Controversy exclusion, starting portfolio | FAIL, 1.4% to 50% | FAIL, 0.01408 to 0.50 |
+| Controversy exclusion, after the purchase | FAIL, 1.7% to 65% | FAIL, 0.015678159 to 0.65 |
+| What the purchase adds | Energy: 0 proven, up to 15%. Controversy: 0.3% proven, up to 15% | Energy: 0 proven, up to 0.15. Controversy: 0.0015981585 proven, up to 0.15 |
+| Coverage | XIU.TO partial, ESGV missing, SPY covered without sector labels | XIU.TO partial (0.9977), ESGV missing, SPY partial (0.99871325) without sector labels |
+| Maximum compliant weight | `NO_FEASIBLE_PURCHASE`, bound by the Energy exclusion, no number | the same |
+| Summary | `HAS_FAIL`, 0 pass, 2 fail, 0 unknown | the same |
+
+Where the real figures come from (`docs/data-sources.md` sections 5.1 and 7):
+XIU.TO's file labels nine constituents Energy, together 16.66% of the fund, so
+a 20% position carries 3.332%; Enbridge and Canadian Natural Resources are
+3.59% and 3.45% of XIU.TO, so the same position carries 1.408% of issuers with
+a registry record; SPY adds Exxon Mobil.
+
+The interpreter step (2) and the clarification challenge (9) have been checked
+only on fixtures and on a scripted model. With a real model they are
+unverified.

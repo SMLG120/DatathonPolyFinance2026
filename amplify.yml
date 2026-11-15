@@ -1,8 +1,9 @@
 # AWS Amplify Hosting build specification (Git-connected deployments only).
 #
 # STATUS: written from the AWS documentation, never executed. No Amplify app
-# exists for this project. See docs/DEPLOYMENT.md, "Not verified without AWS
-# access", before relying on it.
+# exists for this project. The runbook in docs/DEPLOYMENT.md uses a manual
+# deployment of the built `frontend/out` zip and does not use this file; see
+# its section "Not verified" before relying on it.
 #
 # The repository is a monorepo whose only web app is `frontend/`, a Next.js
 # static export (`output: "export"` in frontend/next.config.ts). `next build`

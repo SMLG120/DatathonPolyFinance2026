@@ -9,8 +9,8 @@ challenge.
 
 **Problem.** A self-directed investor states goals in words ("preserve my
 capital", "avoid oil") and then places an order that may contradict them. The
-contradiction is often invisible: a fund already holds the company, a file is
-missing, or a limit was never written down as a number. Robert, 59, wants
+contradiction is often invisible: a fund already holds the company, or a limit
+was never written down as a number. Robert, 59, wants
 NVIDIA at 25% of his portfolio; Mateo, 41, wants to buy a broad fund while
 avoiding oil and controversies.
 
@@ -22,9 +22,9 @@ work, by design:
 
 | Deterministic (Python engine) | Agentic (Claude Sonnet on Amazon Bedrock) |
 | --- | --- |
-| Exposure through funds, rule statuses, the 2022 replay, the largest weight that passes every rule | Turns the investor's words into *proposed* rules and asks when wording is ambiguous |
+| Exposure through funds, rule statuses, the 2022 replay, the largest weight that passes every rule | Reads the investor's words into *proposed* rules and asks when wording is ambiguous; it cannot supply a number |
 | The same inputs always give the same result | Chooses which allowlisted tools to call during an investigation |
-| Runs every applicable check whatever the model did | Words the explanation; never produces or changes a number, a status or a policy |
+| Runs every check whatever the model did, and writes every sentence shown | Selects which evidence to highlight; never produces or changes a number, a status, a policy or a displayed sentence |
 
 **Why the result can be trusted.**
 
@@ -35,41 +35,41 @@ work, by design:
   the earlier version and its report stay unchanged. Raising a limit changes
   the status, not the measured exposure.
 - *The server enforces the calculation.* The model cannot skip an unfavourable
-  rule by not calling a tool, and it never writes the verdict.
+  rule, and if the model is unavailable the same checks still run.
 - *Evidence records.* Each figure has a source, a date, a unit, a formula and
   the records it was derived from. "PASS" means consistent with the
   investor's own confirmed rules, not "a good investment".
 
-**Data.** Organizer price and FX files; holdings from the issuers' own files
-for SPY (State Street) and XIU (BlackRock Canada), one snapshot dated
-2026-11-12, used only for today's look-through; three controversy records from
-official pages. Absence from the registry means "not assessed".
+**Data and AWS.** Organizer price and FX files; holdings from the issuers' own
+files for SPY (State Street) and XIU (BlackRock Canada), one snapshot dated
+2026-11-12, used only for today's look-through; controversy records from
+official pages. API Gateway, three Lambda functions, Amazon Bedrock, a private
+S3 bucket as the only store, one SAM template.
 
-**AWS.** API Gateway, three Lambda functions, Amazon Bedrock, a private S3
-bucket used as the job store, CloudWatch Logs, one SAM template.
+**Current state.** Candidate: local branch `integration/rc` at `deec650`, plus fixes in progress.
+Working locally on the real data: engine, seven-route backend, interpreter,
+interface with a 3D exposure view, and both scenarios in a browser against the
+real handlers. On real data Robert's request fails both of his rules (NVIDIA
+26.23% to 26.28% against 10%; 2022 replay loss 17.78% against 10%), and
+raising his cap to 30% leaves the loss rule failing. **Not yet verified: any
+deployment of this candidate, the real model with the current prompts, and
+hosting.** AWS today runs an earlier slice with a placeholder calculation. An
+independent validation gave "go with disclosed limits", conditional on one fix
+in progress.
 
-**Current state (commit `d36e41f`, 2026-11-15 UTC).** Built and tested: the
-contracts, the data pipeline and the engine (1083 automated tests pass, 3
-skipped). Deployed on AWS: the investigation pipeline from the API to Bedrock
-and S3, proven with real requests, **with a placeholder calculation**. In
-progress, not finished: the engine inside the deployed worker, the remaining
-API routes, the interface on the final data shapes, independent validation.
-The interface runs on test fixtures and is not hosted.
-
-**Limits.** Two funds with holdings; two others deliberately unknown. No
-sector labels for SPY's constituents. Three issuers researched for
-controversies. One shared demonstration access code, not user identity. The
-2022 replay tests an assumed allocation against one past year; it is not a
-prediction. The AWS account is deleted at the end of 2026-11-16.
+**Disclosed limits.** One shared access code, no user identity. Model text is
+never shown: explanations are server templates. The interpreter depends on a
+model call never yet made live. The 5 s check budget is measured, not
+pre-emptive. Policies and results do not expire. ESGV and QQQ holdings are
+missing; SPY has no sector labels; the controversy registry holds three
+records. The 2022 replay tests one past year and predicts nothing. The AWS
+account is deleted at the end of 2026-11-16.
 
 **Why it is not advice.** The system never proposes what to buy, never
 forecasts a return and never says a purchase is good or safe. It measures a
-decision the investor already made against rules the investor wrote, says what
-it could not determine, and leaves the decision with the investor. A CIRO news
+decision the investor already made against rules the investor wrote, and says
+what it could not determine: a second look before acting. A CIRO news
 release dated 2026-03-12 announces guidance that, in its words, "broadens the
 range of decision-making supports that OEO dealers can offer to clients
 without violating the rule that prohibits them from making recommendations";
 we did not read the guidance itself and claim no regulatory approval.
-
-**User benefit.** A second look before acting, in the investor's own terms,
-that is honest about what it does not know.
