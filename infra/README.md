@@ -46,7 +46,7 @@ in memory per container. Nothing can write there except the deploying identity. 
 | API role, `s3:ListBucket` | prefix `jobs/*` | prefixes `jobs/*` and `policies/*` (statement `ListJobsAndPoliciesPrefixesOnly`, condition `StringLike s3:prefix`): latest-version lookup, and a missing object is a 404 instead of a 403 |
 | Worker role, `s3:GetObject` | `jobs/*`, `snapshots/*` | plus `policies/*` (statement `ReadJobsPoliciesAndSnapshots`) |
 | Authorizer | `ReauthorizeEvery: 300`, function cache 60 s | `ReauthorizeEvery: 0`, function cache 30 s: a rotated code stops working within 30 s instead of about 6 minutes |
-| CORS | `AllowedOrigin` default `*` | unchanged in the template; `scripts/mcp/02_deploy.py` refuses to execute a change set whose effective origin is `*` unless `ALLOW_WILDCARD_ORIGIN` is set on purpose |
+| CORS | `AllowedOrigin` default `*` | no default: every deployment states the origin (pattern: exact origin, or a literal `*`); `scripts/mcp/02_deploy.py` refuses to execute a change set whose effective origin is `*` unless `ALLOW_WILDCARD_ORIGIN` is set on purpose |
 
 No statement uses a wildcard action or `Resource: "*"`; no role can write under `snapshots/`; the worker cannot
 write `policies/` or create a job; the authorizer role is unchanged. Worker timeout 160 s = contract deadline
@@ -131,7 +131,7 @@ bucket `byb-artifacts-010928212265-us-east-1` and the SSM SecureString
 | `CodeS3Bucket`, `CodeS3Key` | none | Location of the zip built by `scripts/package.py` (content-addressed key) |
 | `BedrockModelId` | `us.anthropic.claude-sonnet-5-5` | Inference profile the worker calls |
 | `BedrockFoundationModelId` | `anthropic.claude-sonnet-5-5` | Foundation model that profile routes to; used only to build IAM resource ARNs. Change both together |
-| `AllowedOrigin` | `*` | CORS origin. **Tighten to the Amplify origin once it exists** |
+| `AllowedOrigin` | none | CORS origin, required: the exact frontend origin. `*` only when typed on purpose, and then `02_deploy.py` does not execute unless `ALLOW_WILDCARD_ORIGIN` is set |
 | `AccessCodeParameterName` | `/before-you-buy/access-code` | Name (never the value) of the SSM SecureString |
 | `PythonRuntime` | `python3.14` | `python3.13`, `python3.14` or `python3.15` |
 | `LogRetentionDays` | `7` | Retention of the four log groups |
@@ -405,8 +405,8 @@ touch the lifecycle code. Known differences:
   frontend must handle both.
 - **Access code.** See `scripts/deploy.md` for reading it once and for rotation.
   This is demo-grade access control, not user identity.
-- **CORS.** `AllowedOrigin` is `*` until the Amplify origin is known. CORS is
-  not authentication; the bearer code is.
+- **CORS.** `AllowedOrigin` has no default; the stack deployed from the older template still has `*` until an
+  update passes the Amplify origin. CORS is not authentication; the bearer code is.
 
 ## Limitations
 
