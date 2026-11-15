@@ -22,7 +22,17 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.3`.
+`CALCULATION_VERSION` is `byb-engine-1.0.4`.
+
+Change from 1.0.3 (evidence records only; no number, status or boundary changed), for a sector-label rule:
+
+- the lower bound's `derived_from` now includes, for each fund that contributes, a record holding the share of the
+  fund labelled with that sector (`fund_constituent_weight`, subject the fund), so `weight x fraction` is
+  recomputable from the calculation path;
+- when `UNCLASSIFIED_SECTOR` is a cause, a fund whose holdings file has no sector label on any row gets a
+  `sector_label` record with a null value (SEMANTICS section 13), cited by the rule result and by the upper bound.
+  A fund with labels on only some rows, or a directly held instrument without a label, does not get one: their
+  unlabelled weight is still in the upper bound and its formula, backed by the position-weight records.
 
 Change from 1.0.2 (one evidence record; no number, status or boundary changed): the `value` of a
 `controversy_record` evidence record is the registry `record_id` (SEMANTICS section 13), with the event date as its

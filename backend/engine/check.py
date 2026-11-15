@@ -39,6 +39,7 @@ from .text import eq, num, pct, points, span, total
 from .version import CALCULATION_VERSION
 
 STATES = ("starting", "proposed")
+SECTOR_LABEL_NOTE = "A sector label is not a list of oil producers and is not a controversy finding."
 CONTROVERSY_RECORD_NOTE = "A record says that a dated event is on file with its source; it is not a judgement of the company."
 STATE_LABEL = {"starting": "STARTING", "proposed": "PROPOSED"}
 STATE_TAG = {"starting": "start", "proposed": "prop"}
@@ -386,6 +387,8 @@ class _Document:
                 derived.append(self.weight_ev(part["position_id"], state))
                 if part["kind"] == "FUND":
                     sources.append(self.fund_info[part["position_id"]]["source_id"])
+                    if kind == "SECTOR":  # the fraction multiplied below is itself a record of the calculation path
+                        derived.append(self.sector_fraction_ev(rule, part["position_id"], part["fund_fraction"]))
                     terms.append(f"{num(self.position_weight(part['position_id'], state))} x {num(part['fund_fraction'])} (via {part['position_id']})")
                 else:
                     terms.append(f"{num(part['known'])} ({part['position_id']} held directly)")
@@ -411,7 +414,7 @@ class _Document:
             upper_id = self.ev.add(
                 f"ev-rule-{rule_id}-up-{tag}", "CALCULATION", "exposure_upper", upper, "RULE", rule_id, state=label,
                 assumptions=[UNATTRIBUTED_NOTE, "A holding without a sector label counts toward the upper bound only."],
-                derived=[lower_id] + self.unattributed_evs(state) + (self.scope_weight_evs(state) if unclassified > 0 else []),
+                derived=[lower_id] + self.unattributed_evs(state) + (self.scope_weight_evs(state) + self.unlabelled_evs(state) if unclassified > 0 else []),
                 formula=f"{num(lower)} + {num(extra)} (not reported by the funds) + {num(unclassified)} (reported without a sector label) {eq(upper)}",
             )
         else:
@@ -421,6 +424,33 @@ class _Document:
                 formula=f"{num(lower)} + {num(extra)} {eq(upper)}",
             )
         return [lower_id, upper_id]
+
+    def sector_fraction_ev(self, rule: dict, fund_id: str, fraction: float) -> str:
+        """The share of one fund that its holdings file labels with the rule's sector."""
+        fund, sector = self.fund_info[fund_id], rule["parameters"]["definition"]["sector"]
+        return self.ev.add(
+            f"ev-secw-{fund_id}-{rule['rule_id']}", "CALCULATION", "fund_constituent_weight", fraction, "FUND", fund_id,
+            period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
+            assumptions=[f"Rows of the fund's holdings file labelled exactly '{sector}'. " + SECTOR_LABEL_NOTE],
+            formula=f"sum of the reported weights of the rows labelled '{sector}' {eq(fraction)}",
+        )
+
+    def unlabelled_evs(self, state: str) -> list[str]:
+        """A null sector_label record for each fund whose holdings file reports no sector label on any row."""
+        ids = []
+        for fund in self.exposure[state]["funds"]:
+            if fund["status"] == "MISSING" or fund["coverage_fraction"] <= 0 or fund["sector_labelled_fraction"] > 0:
+                continue
+            fund_id = fund["fund_id"]
+            ids.append(self.ev.add(
+                f"ev-sector-{fund_id}-none", "FACT" if fund["source_id"] else "ASSUMPTION", "sector_label", None, "FUND", fund_id, unit="text",
+                period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
+                assumptions=[
+                    f"No constituent row of the {fund_id} holdings file carries a sector label. For a sector rule a missing label counts "
+                    "as unknown: it adds to the upper bound only and is never read as outside the sector."
+                ],
+            ))
+        return ids
 
     def gap_ev(self, rule: dict, state: str) -> Optional[str]:
         result = self.a["results"][rule["rule_id"]][state]
@@ -457,7 +487,7 @@ class _Document:
                             via=path["position_id"] if fund else None,
                             period={"type": "AS_OF", "date": fund["holdings_date"]} if fund else None,
                             sources=[path["sector_source"]],
-                            assumptions=["A sector label is not a list of oil producers and is not a controversy finding."],
+                            assumptions=[SECTOR_LABEL_NOTE],
                         ))
             if kind == "CONTROVERSY":
                 for record in self.a["flagged"][rule["rule_id"]].get(issuer, []):
@@ -747,6 +777,8 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
         if not scenario_rule:
             evidence_ids += [i for i in doc.unattributed_evs("proposed")]
             evidence_ids += doc.subject_evs(rule, "proposed")
+            if "UNCLASSIFIED_SECTOR" in result["unknown_causes"]:
+                evidence_ids += doc.unlabelled_evs("proposed")
         evidence_ids += doc.measured_evs(rule, "starting")
         rule_results.append({
             "rule_id": rule_id,
