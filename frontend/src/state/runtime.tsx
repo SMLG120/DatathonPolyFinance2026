@@ -4,7 +4,8 @@ import { createContext, useCallback, useContext, useMemo, useState, useSyncExter
 import { clearAccessCode, readAccessCode, storeAccessCode, subscribeAccessCode } from "@/lib/access-code";
 import { createApiClient, type ApiClient } from "@/lib/api";
 import { createHttpClient } from "@/lib/api/http-client";
-import { FIXTURES_TIMING, LIVE_TIMING, readBuildTimeApiBaseUrl, resolveRuntimeConfig, type RuntimeConfig, type Timing } from "@/lib/config";
+import { DataModeProvider } from "@/components/ui/TestDataTag";
+import { readBuildTimeApiBaseUrl, resolveRuntimeConfig, SIMULATED_TIMEOUT_DEADLINE_MS, TIMING, type RuntimeConfig, type Timing } from "@/lib/config";
 
 export interface Runtime {
   config: RuntimeConfig;
@@ -35,10 +36,9 @@ export interface RuntimeProviderProps {
 }
 
 function timingFor(config: RuntimeConfig): Timing {
-  if (config.mode === "live") return LIVE_TIMING;
-  // A job that never finishes should reach its visible deadline quickly.
-  if (config.simulate === "poll-timeout") return { ...FIXTURES_TIMING, pollDeadlineMs: 4_000 };
-  return FIXTURES_TIMING;
+  // A simulated job that never finishes should reach its visible deadline quickly.
+  if (config.mode === "fixtures" && config.simulate === "poll-timeout") return { ...TIMING, pollDeadlineMs: SIMULATED_TIMEOUT_DEADLINE_MS };
+  return TIMING;
 }
 
 /**
@@ -99,7 +99,11 @@ export function RuntimeProvider({ children, config: configOverride, api: apiOver
     [config, api, timingOverride, accessCode, rejected, submitAccessCode, forgetAccessCode],
   );
 
-  return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;
+  return (
+    <RuntimeContext.Provider value={value}>
+      <DataModeProvider value={config.mode}>{children}</DataModeProvider>
+    </RuntimeContext.Provider>
+  );
 }
 
 export function useRuntime(): Runtime {

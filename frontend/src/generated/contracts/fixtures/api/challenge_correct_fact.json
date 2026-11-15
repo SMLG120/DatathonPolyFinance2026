@@ -1,0 +1,61 @@
+{
+  "fixture": true,
+  "fixture_id": "challenge_correct_fact",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. Portfolio weights and thresholds are fictional-scenario values.",
+  "description": "POST /investigations/inv-robert-0001/challenge. A disputed fact becomes an UNVERIFIED proposed correction with provenance. It is not applied to any calculation and the disputed evidence record is untouched.",
+  "route": "POST /investigations/{id}/challenge",
+  "http_status": 201,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "type": "CORRECT_FACT",
+    "payload": {
+      "evidence_id": "ev-spy-nvda-weight",
+      "asserted_value": 0.08,
+      "asserted_unit": "fraction",
+      "user_note": "The fund fact sheet I have shows a higher NVIDIA weight in SPY.",
+      "user_source": "SPY fact sheet, user's own copy (not retrieved by the system)"
+    }
+  },
+  "response_schema": "api.schema.json#/$defs/challenge_response",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "challenge": {
+      "challenge_id": "ch-robert-0002",
+      "investigation_id": "inv-robert-0001",
+      "type": "CORRECT_FACT",
+      "payload": {
+        "evidence_id": "ev-spy-nvda-weight",
+        "asserted_value": 0.08,
+        "asserted_unit": "fraction",
+        "user_note": "The fund fact sheet I have shows a higher NVIDIA weight in SPY.",
+        "user_source": "SPY fact sheet, user's own copy (not retrieved by the system)"
+      },
+      "created_at": "2026-11-14T15:09:00Z"
+    },
+    "proposed_correction": {
+      "correction_id": "corr-robert-0001",
+      "challenge_id": "ch-robert-0002",
+      "investigation_id": "inv-robert-0001",
+      "evidence_id": "ev-spy-nvda-weight",
+      "original_value": 0.06,
+      "original_unit": "fraction",
+      "asserted_value": 0.08,
+      "asserted_unit": "fraction",
+      "provenance": {
+        "asserted_by": "USER",
+        "asserted_at": "2026-11-14T15:09:00Z",
+        "user_note": "The fund fact sheet I have shows a higher NVIDIA weight in SPY.",
+        "user_source": "SPY fact sheet, user's own copy (not retrieved by the system)"
+      },
+      "status": "UNVERIFIED",
+      "applied_to_calculation": false
+    },
+    "interpretation": null,
+    "policy": null,
+    "investigation": null
+  }
+}

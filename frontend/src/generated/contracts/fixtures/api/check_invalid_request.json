@@ -1,0 +1,80 @@
+{
+  "fixture": true,
+  "fixture_id": "check_invalid_request",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "A well-formed request the engine cannot execute (the target is below the current direct weight, which would mean selling). HTTP 200 with execution.status INVALID_REQUEST: no rule is evaluated and nothing is defaulted.",
+  "route": "POST /check",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "robert",
+    "policy_id": "pol-robert-demo",
+    "policy_version": 1,
+    "purchase_request": {
+      "instrument_id": "RY.TO",
+      "target_direct_weight": 0.02,
+      "funding": "CASH",
+      "original_words": "Cut my Royal Bank position to 2%."
+    },
+    "draft_rules": null
+  },
+  "response_schema": "check_result.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "persona_id": "robert",
+    "portfolio_id": "pf-robert-fictional-1",
+    "policy_id": "pol-robert-demo",
+    "policy_version": 1,
+    "preview": false,
+    "calculation_version": "fixture-calc-1.0.0",
+    "valuation_date": "2026-11-12",
+    "purchase_request": {
+      "instrument_id": "RY.TO",
+      "target_direct_weight": 0.02,
+      "funding": "CASH",
+      "original_words": "Cut my Royal Bank position to 2%."
+    },
+    "execution": {
+      "status": "INVALID_REQUEST",
+      "code": "TARGET_BELOW_CURRENT_WEIGHT",
+      "message": "The requested final direct weight of RY.TO (2.0%) is below its current direct weight (5.0%). Only cash-funded purchases are simulated; selling is not supported."
+    },
+    "feasibility": null,
+    "policy_consistency": {
+      "status": "NOT_ASSESSED",
+      "conflicts": []
+    },
+    "rule_results": [],
+    "rules_not_evaluated": [],
+    "starting_portfolio_findings": [],
+    "data_coverage": [],
+    "scenario": null,
+    "goal_context": [],
+    "max_compliant": null,
+    "exposure": null,
+    "evidence": [],
+    "summary": {
+      "headline": "INVALID_REQUEST",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 0
+      },
+      "rules_evaluated": 0,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": null
+    },
+    "disclosures": [
+      "Simulation only: fictional portfolio, no real transaction, not personalized financial advice.",
+      "The purchase is funded from existing cash; every other position is unchanged. Selling, shorting and leverage are not supported.",
+      "Fees and taxes are excluded.",
+      "Fund look-through uses a dated holdings snapshot; it is not the fund's historical composition.",
+      "Historical replays describe the past. They are not forecasts and do not guarantee future results."
+    ]
+  }
+}

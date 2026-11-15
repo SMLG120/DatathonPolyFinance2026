@@ -5,3 +5,5 @@ next-env.d.ts
 *.tsbuildinfo
 /blob-report/
 /playwright/.cache/
+# Second static build used only by the end-to-end tests (see scripts/build-e2e.mjs).
+/out-live/

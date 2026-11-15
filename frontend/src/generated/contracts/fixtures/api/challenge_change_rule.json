@@ -1,0 +1,135 @@
+{
+  "fixture": true,
+  "fixture_id": "challenge_change_rule",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "POST /investigations/inv-robert-0001/challenge. Robert raises the single-company limit to 0.30: policy version 2 is created (the old rule stays in it as SUPERSEDED) and a child investigation is queued. Version 1 and its report are unchanged.",
+  "route": "POST /investigations/{id}/challenge",
+  "http_status": 202,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json",
+    "Idempotency-Key": "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6"
+  },
+  "request_body": {
+    "type": "CHANGE_RULE",
+    "payload": {
+      "rule_id": "robert-issuer-cap-1",
+      "new_threshold": 0.3,
+      "user_note": "Raise my single-company limit to 30%."
+    }
+  },
+  "response_schema": "api.schema.json#/$defs/challenge_response",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "challenge": {
+      "challenge_id": "ch-robert-0001",
+      "investigation_id": "inv-robert-0001",
+      "type": "CHANGE_RULE",
+      "payload": {
+        "rule_id": "robert-issuer-cap-1",
+        "new_threshold": 0.3,
+        "user_note": "Raise my single-company limit to 30%."
+      },
+      "created_at": "2026-11-14T15:06:00Z"
+    },
+    "proposed_correction": null,
+    "interpretation": null,
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-robert-demo",
+      "persona_id": "robert",
+      "version": 2,
+      "parent_version": 1,
+      "created_at": "2026-11-14T15:06:00Z",
+      "objectives": [
+        {
+          "objective_id": "obj-robert-1",
+          "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.7"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "SUPERSEDED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no more than 10% of the portfolio in any single company, funds included.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": "robert-issuer-cap-2"
+        },
+        {
+          "rule_id": "robert-issuer-cap-2",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.3,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "USER_ENTERED",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "USER_STATED",
+          "original_words": "Raise my single-company limit to 30%.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:06:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": "robert-issuer-cap-1",
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: replayed through 2022, the portfolio should not end the year more than 10% lower.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Issuer cap raised from 0.10 to 0.30 by the user (CHANGE_RULE challenge). Objective and loss budget unchanged.",
+      "content_hash": "sha256:64c4e6cbf03872141cdd88ef8fb703f425388dc9f8e4f258bcf379b7f9f21721"
+    },
+    "investigation": {
+      "schema_version": "1.0.0",
+      "id": "inv-robert-0002",
+      "status": "QUEUED",
+      "created_at": "2026-11-14T15:06:00Z",
+      "deadline_at": "2026-11-14T15:08:30Z",
+      "expires_at": "2026-11-15T15:06:00Z",
+      "poll": {
+        "path": "/investigations/inv-robert-0002",
+        "interval_ms": 1500
+      }
+    }
+  }
+}

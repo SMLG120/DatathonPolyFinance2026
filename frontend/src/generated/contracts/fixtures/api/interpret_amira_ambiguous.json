@@ -1,0 +1,105 @@
+{
+  "fixture": true,
+  "fixture_id": "interpret_amira_ambiguous",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "Ambiguous language ('maximum growth and strict diversification') yields a clarification question, never a contradiction verdict.",
+  "route": "POST /rules/interpret",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "amira",
+    "text": "I want maximum growth and strict diversification.",
+    "policy_id": null,
+    "policy_version": null
+  },
+  "response_schema": "interpretation.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "interpretation_id": "int-amira-0001",
+    "persona_id": "amira",
+    "created_at": "2026-11-14T15:28:00Z",
+    "model_id": "us.anthropic.claude-sonnet-5-5",
+    "original_words": "I want maximum growth and strict diversification.",
+    "objectives": [
+      {
+        "objective_id": "obj-1",
+        "original_words": "maximum growth",
+        "kind": "goal",
+        "source": "USER_STATED",
+        "case_reference": null
+      },
+      {
+        "objective_id": "obj-2",
+        "original_words": "strict diversification",
+        "kind": "preference",
+        "source": "USER_STATED",
+        "case_reference": null
+      }
+    ],
+    "proposed_rules": [],
+    "unsupported": [
+      {
+        "words": "maximum growth",
+        "code": "UNSUPPORTED_RULE_TYPE",
+        "reason": "No rule type measures growth, and the tool does not forecast returns. It is kept as a qualitative objective."
+      }
+    ],
+    "clarifications": [
+      {
+        "clarification_id": "clar-diversification-1",
+        "about_words": "strict diversification",
+        "question": "The two wishes can pull in different directions, but that is not a proven contradiction. What should 'strict diversification' mean as a rule you can check?",
+        "options": [
+          {
+            "option_id": "single-company-cap",
+            "label": "A maximum share of the portfolio in any single company",
+            "description": "Counts direct holdings and holdings through equity funds. You choose the number.",
+            "supported": true,
+            "purchase_request": null,
+            "proposed_rule": {
+              "rule_id": "draft-issuer-cap-1",
+              "rule_type": "max_issuer_exposure",
+              "parameters": {
+                "issuer_scope": "any"
+              },
+              "threshold": null,
+              "threshold_kind": "max_fraction",
+              "threshold_source": null,
+              "threshold_quote": null,
+              "unit": "fraction",
+              "status": "PROPOSED",
+              "origin": "SYSTEM_PROPOSED",
+              "original_words": "strict diversification",
+              "objective_id": "obj-2",
+              "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+              "confirmed_at": null,
+              "confirmed_by": null,
+              "supersedes_rule_id": null,
+              "superseded_by_rule_id": null
+            }
+          },
+          {
+            "option_id": "sector-cap",
+            "label": "A maximum share in any single sector",
+            "description": "Not supported yet: there is no sector-cap rule type in this version.",
+            "supported": false,
+            "proposed_rule": null,
+            "purchase_request": null
+          },
+          {
+            "option_id": "keep-qualitative",
+            "label": "Keep it as a qualitative preference only",
+            "description": "Nothing will be checked numerically for it; it stays visible as context.",
+            "supported": true,
+            "proposed_rule": null,
+            "purchase_request": null
+          }
+        ]
+      }
+    ]
+  }
+}

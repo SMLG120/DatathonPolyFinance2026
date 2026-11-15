@@ -1,112 +1,84 @@
 import { describe, expect, it } from "vitest";
-import type { Instrument, Portfolio } from "@/lib/contracts";
-import { describePurchase, portfolioRows, previewPurchase, totalWeight } from "./portfolio";
+import { FIXTURES } from "@/lib/fixtures";
+import { describePurchase, FUNDING_STATEMENT, heldWeight, instrumentName, portfolioRows, readPurchaseForm } from "./portfolio";
 
-const NVDA: Instrument = { instrument_id: "NVDA", name: "NVIDIA Corporation", asset_type: "EQUITY", currency: "USD" };
-const RY: Instrument = { instrument_id: "RY.TO", name: "Royal Bank of Canada", asset_type: "EQUITY", currency: "CAD" };
-const SPY: Instrument = { instrument_id: "SPY", name: "SPDR S&P 500 ETF Trust", asset_type: "EQUITY_FUND", currency: "USD" };
-
-const portfolio: Portfolio = {
-  portfolio_id: "p",
-  persona_id: "robert",
-  valuation_date: "2026-11-12",
-  reporting_currency: "CAD",
-  cash_weight: 0.3,
-  positions: [
-    { ...SPY, weight: 0.65 },
-    { ...RY, weight: 0.05 },
-  ],
-  is_fictional: true,
-};
-const instruments = [NVDA, RY, SPY];
+// The recorded answer of GET /portfolios/robert.
+const { scenario, instruments, purchasable_instrument_ids: purchasable } = FIXTURES.portfolioRobert.response;
+const portfolio = scenario.portfolio;
+const scripted = scenario.demo_requests.map((demo) => demo.purchase_request);
 
 describe("portfolio rows", () => {
-  it("lists the positions and then cash, adding up to the whole portfolio", () => {
-    const rows = portfolioRows(portfolio);
-    expect(rows.map((r) => r.name)).toEqual(["SPDR S&P 500 ETF Trust", "Royal Bank of Canada", "Cash (CAD)"]);
-    expect(rows.at(-1)).toMatchObject({ instrument_id: null, kind: "Cash", weight: 0.3 });
-    expect(totalWeight(portfolio)).toBeCloseTo(1, 12);
+  it("lists the positions in the order supplied, then cash, each with the weight the portfolio states", () => {
+    const rows = portfolioRows(portfolio, instruments);
+    expect(rows.map((row) => row.instrument_id)).toEqual([...portfolio.positions.map((position) => position.instrument_id), null]);
+    expect(rows.map((row) => row.weight)).toEqual([...portfolio.positions.map((position) => position.weight), portfolio.cash_weight]);
+    expect(rows.at(-1)).toMatchObject({ name: "Cash (CAD)", kind: "Cash" });
+  });
+
+  it("names instruments from the registry and falls back to the id", () => {
+    expect(instrumentName(instruments, "NVDA")).toBe("NVIDIA");
+    expect(instrumentName(instruments, "SPY")).toBe("SPDR S&P 500 ETF Trust");
+    expect(instrumentName(instruments, "ZZZ")).toBe("ZZZ");
+    expect(portfolioRows(portfolio, {})[0]).toMatchObject({ name: "XBB.TO", kind: "Not in the registry" });
+  });
+
+  it("reads the weight held now from the portfolio, and none for an instrument that is not held", () => {
+    expect(heldWeight(portfolio, "RY.TO")).toBe(0.05);
+    expect(heldWeight(portfolio, "NVDA")).toBeNull();
   });
 });
 
-describe("previewPurchase", () => {
-  it("funds a new position from cash and leaves every other position unchanged", () => {
-    const preview = previewPurchase(portfolio, instruments, "NVDA", 0.25);
-
-    expect(preview.problem).toBeNull();
-    expect(preview.request).toEqual({ instrument_id: "NVDA", target_direct_weight: 0.25 });
-    expect(preview.starting_direct).toBe(0);
-    expect(preview.additional).toBe(0.25);
-    expect(preview.cash_after).toBeCloseTo(0.05, 12);
-    expect(preview.insufficient_cash).toBe(false);
-
-    const byKey = Object.fromEntries(preview.rows.map((r) => [r.key, r]));
-    expect(byKey["SPY"]).toMatchObject({ before: 0.65, after: 0.65, changed: false });
-    expect(byKey["RY.TO"]).toMatchObject({ before: 0.05, after: 0.05, changed: false });
-    expect(byKey["NVDA"]).toMatchObject({ before: 0, after: 0.25, changed: true });
-    expect(byKey["__cash__"]!.before).toBe(0.3);
-    expect(byKey["__cash__"]!.after).toBeCloseTo(0.05, 12);
-    // Nothing is created or lost: the portfolio still adds up to 100%.
-    expect(preview.rows.reduce((sum, r) => sum + r.after, 0)).toBeCloseTo(1, 12);
+describe("readPurchaseForm", () => {
+  it("turns a complete form into a request for a FINAL direct weight, funded from cash", () => {
+    const form = readPurchaseForm(purchasable, { instrumentId: "JNJ", target: 0.08 });
+    expect(form.problem).toBeNull();
+    expect(form.request).toEqual({ instrument_id: "JNJ", target_direct_weight: 0.08, funding: "CASH", original_words: null });
   });
 
-  it("treats the target as the FINAL weight of a position already held, not as an amount to add", () => {
-    const preview = previewPurchase(portfolio, instruments, "RY.TO", 0.15);
-
-    expect(preview.starting_direct).toBe(0.05);
-    expect(preview.additional).toBeCloseTo(0.1, 12);
-    expect(preview.cash_after).toBeCloseTo(0.2, 12);
-    expect(preview.rows.find((r) => r.key === "RY.TO")).toMatchObject({ before: 0.05, after: 0.15, changed: true });
-    expect(preview.rows.filter((r) => r.key === "RY.TO")).toHaveLength(1);
+  it("is exactly the scenario's recorded request, words included, when the form holds it", () => {
+    expect(readPurchaseForm(purchasable, { instrumentId: "NVDA", target: 0.25 }, scripted).request).toEqual(scripted[0]);
+    expect(scripted[0]?.original_words).toBe("Everyone is talking about Nvidia. I want it to be 25% of my portfolio.");
   });
 
-  it("accepts a target equal to the weight already held: nothing is bought", () => {
-    const preview = previewPurchase(portfolio, instruments, "RY.TO", 0.05);
-    expect(preview.problem).toBeNull();
-    expect(preview.additional).toBe(0);
-    expect(preview.cash_after).toBe(0.3);
+  it("does not attach the scenario's words to a different request", () => {
+    expect(readPurchaseForm(purchasable, { instrumentId: "NVDA", target: 0.2 }, scripted).request?.original_words).toBeNull();
   });
 
-  it("accepts a purchase that uses exactly all the cash", () => {
-    const preview = previewPurchase(portfolio, instruments, "NVDA", 0.3);
-    expect(preview.problem).toBeNull();
-    expect(preview.insufficient_cash).toBe(false);
-    expect(preview.cash_after).toBeCloseTo(0, 12);
-  });
-
-  it("reports insufficient cash as a feasibility finding, not as an invalid request", () => {
-    const preview = previewPurchase(portfolio, instruments, "NVDA", 0.4);
-    expect(preview.problem).toBeNull();
-    expect(preview.request).not.toBeNull();
-    expect(preview.insufficient_cash).toBe(true);
-    expect(preview.cash_after).toBeCloseTo(-0.1, 12);
-  });
-
-  it("rejects a target below the weight already held: the simulation does not sell", () => {
-    const preview = previewPurchase(portfolio, instruments, "RY.TO", 0.02);
-    expect(preview.problem).toMatchObject({ code: "BELOW_CURRENT", field: "target" });
-    expect(preview.request).toBeNull();
-    expect(preview.cash_after).toBeNull();
-    // An invalid request changes nothing in the table.
-    expect(preview.rows.every((r) => r.before === r.after && !r.changed)).toBe(true);
+  it("works out nothing: no cash after the purchase, no amount added, no check against what is held", () => {
+    // A target below the weight held, and one larger than the cash available, are both sendable forms:
+    // whether they can be executed is the service's answer (execution status, feasibility).
+    const below = readPurchaseForm(purchasable, { instrumentId: "RY.TO", target: 0.02 });
+    const beyondCash = readPurchaseForm(purchasable, { instrumentId: "NVDA", target: 0.9 });
+    expect(below.problem).toBeNull();
+    expect(beyondCash.problem).toBeNull();
+    expect(Object.keys(below.request ?? {}).sort()).toEqual(["funding", "instrument_id", "original_words", "target_direct_weight"]);
   });
 
   it.each([
-    [-0.01, "NEGATIVE"],
-    [1.01, "ABOVE_ONE"],
-    [null, "NO_TARGET"],
-  ] as const)("rejects a target of %s", (target, code) => {
-    expect(previewPurchase(portfolio, instruments, "NVDA", target).problem?.code).toBe(code);
+    [{ instrumentId: null, target: 0.1 }, "NO_INSTRUMENT", "instrument"],
+    [{ instrumentId: "", target: 0.1 }, "NO_INSTRUMENT", "instrument"],
+    [{ instrumentId: "TSLA", target: 0.1 }, "UNSUPPORTED_INSTRUMENT", "instrument"],
+    [{ instrumentId: "NVDA", target: null }, "NO_TARGET", "target"],
+    [{ instrumentId: "NVDA", target: -0.01 }, "OUT_OF_RANGE", "target"],
+    [{ instrumentId: "NVDA", target: 1.01 }, "OUT_OF_RANGE", "target"],
+  ] as const)("says what is missing in the form: %j", (input, code, field) => {
+    const form = readPurchaseForm(purchasable, input);
+    expect(form.request).toBeNull();
+    expect(form.problem).toMatchObject({ code, field });
   });
 
-  it("rejects a missing or unsupported instrument", () => {
-    expect(previewPurchase(portfolio, instruments, null, 0.1).problem).toMatchObject({ code: "NO_INSTRUMENT", field: "instrument" });
-    expect(previewPurchase(portfolio, instruments, "DOGE", 0.1).problem).toMatchObject({ code: "UNSUPPORTED_INSTRUMENT", field: "instrument" });
+  it("accepts 0% and 100% as form values", () => {
+    expect(readPurchaseForm(purchasable, { instrumentId: "NVDA", target: 0 }).problem).toBeNull();
+    expect(readPurchaseForm(purchasable, { instrumentId: "NVDA", target: 1 }).problem).toBeNull();
   });
 });
 
 describe("describePurchase", () => {
   it("always states that the number is a final direct weight", () => {
-    expect(describePurchase({ instrument_id: "NVDA", target_direct_weight: 0.25 })).toBe("NVDA at a final direct weight of 25.0%");
+    expect(describePurchase(scripted[0] as (typeof scripted)[number])).toBe("NVDA at a final direct weight of 25.0%");
+  });
+
+  it("states how every purchase is funded", () => {
+    expect(FUNDING_STATEMENT).toBe("Funded from existing cash; all other positions unchanged; fees and taxes excluded.");
   });
 });

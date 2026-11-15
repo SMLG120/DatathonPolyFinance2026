@@ -1,0 +1,22 @@
+{
+  "fixture": true,
+  "fixture_id": "error_not_found",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "GET /investigations/inv-does-not-exist.",
+  "route": "GET /investigations/{id}",
+  "http_status": 404,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>"
+  },
+  "request_body": null,
+  "response_schema": "api.schema.json#/$defs/error_response",
+  "response_body": {
+    "error": {
+      "code": "NOT_FOUND",
+      "message": "No investigation with this id.",
+      "details": [],
+      "request_id": "req-fixture-0001"
+    }
+  }
+}
