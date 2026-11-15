@@ -126,13 +126,14 @@ afterwards (the file is committed in that state).
 
 Parameters other than the code location go in `PARAMETER_OVERRIDES`, for
 example `{"DataSnapshotId": "snap-2026-11-12-3390e023b308", "AllowedOrigin": "https://main.<app-id>.amplifyapp.com"}`.
-A parameter with no default and no previous value (`DataSnapshotId` on the first milestone-5 deploy) stops the
-snippet before any change set is created.
+A parameter with no default and no previous value (`DataSnapshotId`, `AllowedOrigin`) stops the snippet before any
+change set is created.
 
-**CORS origin.** The template keeps `AllowedOrigin` with the default `*` for local development, and the deployed
-stack currently has `*`. A deployment that serves a hosted frontend must pass the exact origin, scheme included and
+**CORS origin.** `AllowedOrigin` has no default in the template (validator finding F-08): a new stack cannot be
+created without stating it, and the template only accepts an exact origin or a literal `*`. The stack deployed from
+the older template still has `*`, which an update would keep as the previous value. A deployment that serves a hosted frontend must pass the exact origin, scheme included and
 without a trailing slash. `02_deploy.py` computes the value the stack would have after the change set (override,
-else the stack's current value, else the template default) and reports it as `allowed_origin`. If it is `*`, or not
+else the stack's current value) and reports it as `allowed_origin`. If it is `*`, or not
 an `https://` origin (`http://localhost...` is accepted), the report carries `cors_refusal` and, with
 `EXECUTE = True`, the change set is **not executed** (`"refused"` in the report). The only way through is
 `ALLOW_WILDCARD_ORIGIN = True`, set on purpose and set back afterwards. Nothing about the running stack changes
