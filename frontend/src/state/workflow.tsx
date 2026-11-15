@@ -514,13 +514,21 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   }, [state]);
 
   const portfolioRequest = useRef<AbortController | null>(null);
+  // Each selection starts a new session, even when selecting the same persona again.
+  // Aborting it also invalidates responses from clients that ignore AbortSignal.
+  const sessionRequest = useRef<AbortController | null>(null);
   const startKey = useActionKey();
   const challengeKey = useActionKey();
 
-  useEffect(() => () => portfolioRequest.current?.abort(), []);
+  useEffect(() => () => {
+    portfolioRequest.current?.abort();
+    sessionRequest.current?.abort();
+  }, []);
 
   const selectPersona = useCallback(
     (personaId: PersonaId) => {
+      sessionRequest.current?.abort();
+      sessionRequest.current = new AbortController();
       portfolioRequest.current?.abort();
       const controller = new AbortController();
       portfolioRequest.current = controller;
@@ -551,8 +559,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
 
   const interpretGoal = useCallback(async () => {
     const current = latest.current;
+    const session = sessionRequest.current;
     const personaId = current.personaId;
-    if (!personaId || current.interpret.status === "loading") return;
+    if (!personaId || !session || session.signal.aborted || current.interpret.status === "loading") return;
     const policy = current.policies.at(-1) ?? null;
     dispatch({ type: "interpret/started" });
     try {
@@ -561,7 +570,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         text: current.goalText.trim(),
         policy_id: policy?.policy_id ?? null,
         policy_version: policy?.version ?? null,
-      });
+      }, { signal: session.signal });
+      if (session.signal.aborted) return;
       dispatch({ type: "interpret/succeeded", personaId, interpretation });
       const rules = interpretation.proposed_rules.length;
       const questions = interpretation.clarifications.length;
@@ -570,7 +580,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
           (questions > 0 ? `, and ${questions} ${questions === 1 ? "question" : "questions"} for you.` : "."),
       );
     } catch (error) {
-      if (isAbortError(error)) return;
+      if (session.signal.aborted || isAbortError(error)) return;
       dispatch({ type: "interpret/failed", error });
     }
   }, [api, announce]);
@@ -595,8 +605,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const confirmRules = useCallback(
     async (ruleIds: string[]) => {
       const current = latest.current;
+      const session = sessionRequest.current;
       const personaId = current.personaId;
-      if (!personaId || current.confirm.status === "loading") return null;
+      if (!personaId || !session || session.signal.aborted || current.confirm.status === "loading") return null;
       const confirmations = ruleIds.flatMap((ruleId) => {
         const rule = current.proposedRules.find((candidate) => candidate.rule_id === ruleId);
         const threshold = percentInputToFraction(current.thresholdText[ruleId] ?? "");
@@ -615,12 +626,14 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
           confirmations,
           withdraw_rule_ids: [],
           change_note: null,
-        });
+        }, { signal: session.signal });
+        if (session.signal.aborted) return null;
         dispatch({ type: "confirm/succeeded", policy, ruleIds: confirmations.map((confirmation) => confirmation.rule.rule_id) });
         const active = activeRules(policy).length;
         announce(`Confirmed. Policy version ${policy.version} is in force with ${active} confirmed ${active === 1 ? "rule" : "rules"}.`);
         return policy;
       } catch (error) {
+        if (session.signal.aborted || isAbortError(error)) return null;
         dispatch({ type: "confirm/failed", error });
         return null;
       }
@@ -633,8 +646,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const startInvestigation = useCallback(
     async (purchase: PurchaseRequest, parentInvestigationId: string | null = null) => {
       const current = latest.current;
+      const session = sessionRequest.current;
       const policy = current.policies.at(-1);
-      if (!current.personaId || !policy || current.start.status === "loading") return null;
+      if (!current.personaId || !policy || !session || session.signal.aborted || current.start.status === "loading") return null;
       const signature = [current.personaId, policy.policy_id, policy.version, purchase.instrument_id, purchase.target_direct_weight, parentInvestigationId].join("|");
       dispatch({ type: "start/started" });
       try {
@@ -646,13 +660,15 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
             request: purchase,
             parent_investigation_id: parentInvestigationId,
           },
-          { idempotencyKey: startKey.keyFor(signature) },
+          { idempotencyKey: startKey.keyFor(signature), signal: session.signal },
         );
+        if (session.signal.aborted) return null;
         startKey.done();
         dispatch({ type: "start/succeeded", investigationId: accepted.id });
         announce("Investigation accepted. Waiting for its first step.");
         return accepted.id;
       } catch (error) {
+        if (session.signal.aborted || isAbortError(error)) return null;
         // contracts/api.md section 6, rule 5: after 503 WORKER_INVOCATION_FAILED the job stored under this key is
         // FAILED, so the same key would replay the 503 for ever: "The client retries with a new key." After every
         // other failure (429, a network error, no answer in time) the key is kept, so a retry cannot start a second job.
@@ -670,12 +686,15 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
 
   const submitChallenge = useCallback(
     async (investigationId: string, request: ChallengeRequest) => {
-      if (latest.current.challenge.status === "loading") return null;
+      const session = sessionRequest.current;
+      if (!session || session.signal.aborted || latest.current.challenge.status === "loading") return null;
       dispatch({ type: "challenge/started" });
       try {
         const response = await api.challengeInvestigation(investigationId, request, {
           idempotencyKey: challengeKey.keyFor(`${investigationId}|${canonical(request)}`),
+          signal: session.signal,
         });
+        if (session.signal.aborted) return null;
         challengeKey.done();
         if (response.proposed_correction) {
           dispatch({ type: "challenge/factRecorded", correction: response.proposed_correction });
@@ -691,6 +710,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         }
         return response;
       } catch (error) {
+        if (session.signal.aborted || isAbortError(error)) return null;
         // contracts/api.md section 8, CHANGE_RULE: "The client retries the challenge with a new key" after 503
         // WORKER_INVOCATION_FAILED, and only then.
         if (errorCode(error) === "WORKER_INVOCATION_FAILED") challengeKey.done();

@@ -149,6 +149,8 @@ class InvestigationWorker:
     def _claim(self, draft: dict[str, Any], lambda_request_id: str) -> None:
         if draft.get("status") != QUEUED:
             raise StateConflict("the job is not queued", draft)
+        if draft.get("internal", {}).get("policy_ready") is False:
+            raise StateConflict("the challenge policy is not ready", draft)
         now = self._clock.time()
         if now >= from_iso(draft["deadline_at"]):
             draft["status"] = FAILED
@@ -272,6 +274,8 @@ class InvestigationWorker:
     def _load(self, job: dict[str, Any]) -> tuple[Any, dict[str, Any], dict[str, Any]]:
         try:
             snapshot = self._snapshots.load()
+            if snapshot.snapshot_id != job.get("internal", {}).get("data_snapshot_id"):
+                raise DataUnavailable("the worker snapshot differs from the snapshot accepted for this job")
             policy = self._policies.get(job["policy_id"], job["policy_version"])
         except DataUnavailable as error:
             log.error("data_unavailable", reason=str(error))

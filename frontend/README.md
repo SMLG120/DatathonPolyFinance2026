@@ -10,6 +10,10 @@ never computes a verdict or a financial figure itself.
 
 Node 22.12 or newer (developed on Node 24).
 
+The scoped `minimatch` override patches GHSA-g3hv-75wg-m249 in
+`@typescript-eslint/typescript-estree`'s development dependency. Remove it
+when that package requires a patched release itself; keep the lockfile in sync.
+
 ```
 npm ci
 npm run dev        # http://localhost:3000, fixtures mode unless a base URL is set
@@ -64,6 +68,9 @@ npm start          # serves out/ on http://127.0.0.1:4173
   `POLL_INTERVAL_MS` and `POLL_DEADLINE_MS`, in both modes. A failed poll
   (network, timeout, 429, 5xx) is retried at the same interval until the
   deadline; 401, 403, 404 and 410 stop it.
+  Individual HTTP timeouts and caller cancellation cover response bodies as
+  well as headers. Selecting a persona cancels the previous session's actions;
+  even late responses that ignore cancellation cannot update the new session.
 - **Ids from the interpreter:** it numbers questions, drafts and objectives
   from 1 in every answer. A question is keyed by its answer
   (`interpretation_id`) and its id; an objective is recognised by its words; a
