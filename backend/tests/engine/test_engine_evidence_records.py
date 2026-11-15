@@ -90,3 +90,38 @@ def test_unclassified_fund_has_a_null_sector_label_record_when_it_is_a_cause():
 def test_no_null_label_record_without_the_cause():
     result = run_case("M2")  # no sector rule
     assert [r for r in records(result, "sector_label") if r["value"] is None] == []
+
+
+NO_PURCHASE_CASES = ["E09", "E11", "E15", "E16", "E21", "M1"]
+
+
+@pytest.mark.parametrize("case_id", NO_PURCHASE_CASES)
+def test_no_feasible_purchase_cites_what_proves_it(case_id):
+    """As contracts/fixtures/api/investigation_mateo_succeeded.json does: the binding rule's starting bound and its threshold."""
+    result = run_case(case_id)
+    byb_contracts.validate_check_result(result)
+    maximum = result["max_compliant"]
+    assert maximum["status"] == "NO_FEASIBLE_PURCHASE" and maximum["final_direct_weight"] is None
+    by_id = {record["evidence_id"]: record for record in result["evidence"]}
+    cited = [by_id[i] for i in maximum["evidence_ids"]]  # KeyError here = a citation of a record that does not exist
+    binding = maximum["binding_constraint"]
+    if binding["type"] == "CASH":
+        assert [(r["metric_id"], r["subject"]["portfolio_state"]) for r in cited] == [("cash_weight", "STARTING")]
+        assert cited[0]["value"] <= byb_contracts.EPS
+        return
+    rule = next(entry for entry in result["rule_results"] if entry["rule_id"] == binding["rule_id"])
+    proof, threshold = cited
+    assert threshold["metric_id"] == "rule_threshold" and threshold["subject"]["id"] == rule["rule_id"] and threshold["value"] == rule["limit"]
+    assert proof["subject"]["portfolio_state"] == "STARTING"
+    if rule["rule_type"] == "min_issuer_exposure":
+        assert proof["metric_id"] == "exposure_upper" and proof["value"] == rule["starting"]["measured"]["upper"]
+    else:
+        assert proof["metric_id"] in ("exposure_lower", "scenario_loss") and proof["value"] == rule["starting"]["measured"]["lower"]
+        # No purchase can help: before buying anything the proven bound is already at or beyond the limit.
+        assert proof["value"] >= threshold["value"] - byb_contracts.EPS
+
+
+def test_mateo_no_feasible_purchase_cites_the_energy_rule_like_the_api_fixture():
+    maximum = run_case("M1")["max_compliant"]
+    assert maximum["binding_constraint"] == {"type": "RULE", "rule_id": "mateo-excl-energy-1"}
+    assert maximum["evidence_ids"] == ["ev-rule-mateo-excl-energy-1-lo-start", "ev-thr-mateo-excl-energy-1"]

@@ -22,7 +22,11 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.4`.
+`CALCULATION_VERSION` is `byb-engine-1.0.5`.
+
+Change from 1.0.4 (citations only): a `max_compliant` of `NO_FEASIBLE_PURCHASE` now cites its proof in
+`evidence_ids` - for a binding rule, the bound measured on the starting portfolio and the rule's threshold; for
+cash, the starting cash weight. It was an empty list before.
 
 Change from 1.0.3 (evidence records only; no number, status or boundary changed), for a sector-label rule:
 

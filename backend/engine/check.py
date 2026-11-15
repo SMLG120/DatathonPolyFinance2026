@@ -948,6 +948,17 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
                 formula=f"{num(max_compliant['final_direct_weight'])} - {num(sim['feasibility']['starting_direct_weight'])} {eq(max_compliant['additional_purchase'])}",
             )
             max_compliant["evidence_ids"] = [final_id, added_id]
+        elif max_compliant["status"] == "NO_FEASIBLE_PURCHASE":
+            binding = max_compliant["binding_constraint"]
+            if binding["type"] == "RULE":
+                # What proves it: the bound measured before any purchase that is already on the wrong side of the limit
+                # (the lower bound for a maximum, the upper bound for a minimum), and the limit.
+                rule = next(r for r in evaluated if r["rule_id"] == binding["rule_id"])
+                measured = doc.measured_evs(rule, "starting")
+                proof = measured[-1:] if rule["rule_type"] == "min_issuer_exposure" else measured[:1]
+                max_compliant["evidence_ids"] = proof + [doc.threshold_ev(rule)]
+            else:
+                max_compliant["evidence_ids"] = ["ev-cash-start"]
     else:
         max_compliant = {
             "status": "WITHHELD", "final_direct_weight": None, "additional_purchase": None, "binding_constraint": None,
