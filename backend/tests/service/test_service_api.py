@@ -562,6 +562,50 @@ def test_svc30_check_of_the_stored_policy_equals_the_engine_run_directly(svc):
     assert svc.s3.objects == before and svc.lambda_client.invocations == [] and svc.bedrock.calls == []  # no storage, no worker, no model
 
 
+@pytest.mark.parametrize("slow_part", ["calculation", "data"])
+def test_svc30b_a_check_over_its_five_second_budget_returns_no_result(svc, monkeypatch, slow_part):
+    """Validator finding F-19: the 5 s budget of POST /check is measured, and an answer over it is refused."""
+    from byb_contracts.constants import CHECK_TIMEOUT_SECONDS
+    from backend.api import handler as api_handler
+    from backend import engine
+
+    ran = []
+    delay = {"seconds": 0.0}
+    real_check = engine.check_rules
+    expected = engine_direct(UNIVERSE, "robert", svc.policy, NVDA_REQUEST)
+
+    def timed_check(*args, **kwargs):
+        ran.append(1)
+        if slow_part == "calculation":
+            svc.clock.advance(delay["seconds"])
+        return real_check(*args, **kwargs)
+
+    real_policy = type(svc.api)._policy
+
+    def timed_policy(self, *args, **kwargs):
+        if slow_part == "data":
+            svc.clock.advance(delay["seconds"])
+        return real_policy(self, *args, **kwargs)
+
+    monkeypatch.setattr(api_handler.engine, "check_rules", timed_check)
+    monkeypatch.setattr(type(svc.api), "_policy", timed_policy)
+    before = dict(svc.s3.objects)
+
+    delay["seconds"] = float(CHECK_TIMEOUT_SECONDS)  # exactly on the budget: still answered
+    status, body = svc.call("POST /check", check_body(svc))
+    assert status == 200 and body == expected and ran == [1]
+
+    delay["seconds"] = CHECK_TIMEOUT_SECONDS + 0.01
+    status, body = svc.call("POST /check", check_body(svc))
+    assert_error(status, body, 500, "INTERNAL_ERROR")
+    assert "5 second budget" in body["error"]["message"] and "no result" in body["error"]["message"]
+    assert "rule_results" not in body and "summary" not in body  # no late verdict next to the error
+    stage = "after the calculation" if slow_part == "calculation" else "before the calculation"
+    assert body["error"]["details"] == [{"path": "", "issue": f"over the 5 s budget {stage} (5010 ms)"}]
+    assert len(ran) == (2 if slow_part == "calculation" else 1)  # with the budget spent on data the engine is not started
+    assert svc.s3.objects == before and svc.lambda_client.invocations == [] and svc.bedrock.calls == []
+
+
 def test_svc31_preview_evaluates_exactly_the_drafts_and_never_touches_the_stored_policy(svc):
     fixture = api_fixture("check_robert_preview")
     drafts = fixture["request_body"]["draft_rules"]
