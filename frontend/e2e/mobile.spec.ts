@@ -140,6 +140,27 @@ test.describe("mobile viewport", () => {
     await expectNoHorizontalOverflow(page, "360px, stage 6");
   });
 
+  test("Amira at 390 px: the third card, her portfolio and her clarification fit the width and pass axe", async ({ page }) => {
+    await page.goto(START_URL);
+    await expect(page.getByTestId("portfolio-table")).toBeAttached();
+    await page.getByRole("button", { name: "Use Amira’s portfolio" }).tap();
+    await expect(page.getByTestId("portfolio-table")).toContainText("Amira’s fictional portfolio");
+    await page.locator("summary", { hasText: "View the fictional portfolio" }).click();
+    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectNoHorizontalOverflow(page, "Amira, stage 1");
+    await expectNoAxeViolations(page, "Amira, mobile, stage 1");
+    await page.screenshot({ path: "test-results/screens/amira-mobile-stage1.png", fullPage: true });
+    await page.evaluate(() => (window.location.hash = "#/goals"));
+    await expect(page.getByTestId("rule-card")).toHaveCount(1);
+    await page.locator("summary", { hasText: "Add a limit in your own words" }).tap();
+    await page.getByTestId("use-scenario-sentence").tap();
+    await page.getByTestId("interpret-words").tap();
+    await expect(page.getByTestId("interpretation").getByTestId("clarification-card")).toBeVisible();
+    await expectNoHorizontalOverflow(page, "Amira, stage 2, clarification");
+    await expectNoAxeViolations(page, "Amira, mobile, stage 2");
+    await page.screenshot({ path: "test-results/screens/amira-mobile-clarification.png", fullPage: true });
+  });
+
   test("Mateo at 390 px: findings before the purchase and the wide possible range fit the width", async ({ page }) => {
     await page.goto(START_URL);
     await expect(page.getByTestId("portfolio-table")).toBeVisible();

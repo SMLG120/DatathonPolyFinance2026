@@ -115,7 +115,7 @@ export function PersonaStage() {
       lead="Pick a fictional investor to try a portfolio decision."
     >
       <Panel title="Who would you like to try?">
-        <ul className="grid gap-4 md:grid-cols-2">
+        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PERSONAS.filter((persona) => persona.available).map((persona) => (
             <PersonaOption
               key={persona.persona_id}

@@ -864,7 +864,7 @@ section 6.
 
 | Route | Fixtures |
 |---|---|
-| `GET /portfolios/{persona_id}` | `portfolio_robert`, `error_unauthorized` (401) |
+| `GET /portfolios/{persona_id}` | `portfolio_robert`, `portfolio_amira`, `error_unauthorized` (401) |
 | `POST /rules/interpret` | `interpret_mateo_clarification`, `interpret_amira_ambiguous`, `error_interpreter_timeout` (504) |
 | `POST /rules/confirm` | `confirm_robert_v1` (201), `error_policy_version_conflict` (409) |
 | `POST /check` | `check_robert_preview`, `check_mateo_preview_unknown`, `check_invalid_request`, `error_validation` (400) |

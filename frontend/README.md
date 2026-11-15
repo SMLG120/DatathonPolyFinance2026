@@ -98,7 +98,7 @@ What can be done on test data:
   already not respected before the purchase, one fund without a holdings
   file); a clarified preference. His recorded UNKNOWN preview is covered by
   component tests; no path in the interface sends that request.
-- **Amira** is listed as "Coming after core" and cannot be selected.
+- **Amira** is the third persona. Her portfolio is replayed from `portfolio_amira` in test data and comes from `GET /portfolios/amira` in live mode; her sentence gets a clarification question. The explicit min/max conflict pair in her scenario (`alternative_rule_sets`) is not offered in the interface.
 - `?simulate=job-failed`, `poll-timeout`, `portfolio-error` or `check-error`
   exercises the failure states.
 

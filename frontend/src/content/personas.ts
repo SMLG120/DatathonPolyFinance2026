@@ -57,8 +57,8 @@ export const PERSONAS: PersonaCard[] = [
     horizon: "15 years or more",
     risk_profile: "High",
     demonstrates: "Wording that needs clarification rather than a verdict.",
-    role_label: "Coming after core",
-    available: false,
+    role_label: "Third demonstration",
+    available: true,
   },
 ];
 
