@@ -31,7 +31,7 @@ import uuid
 from typing import Any, Callable
 
 from botocore.exceptions import BotoCoreError, ClientError
-from byb_contracts import SCHEMA_VERSION, schema_errors
+from byb_contracts import SCHEMA_VERSION, ContractError, schema_errors
 
 from backend import engine
 from backend.common import log
@@ -94,8 +94,15 @@ def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name} is not valid JSON")
 
 
+def _finite_float(text: str) -> float:
+    value = float(text)
+    if value != value or value in (float("inf"), float("-inf")):  # "1e999" is JSON text that parses to infinity
+        raise ValueError("a number is too large to be represented")
+    return value
+
+
 def read_json_body(event: dict[str, Any]) -> dict[str, Any]:
-    """The body as a JSON object. NaN, Infinity, non-UTF-8, non-objects and oversized bodies are 400."""
+    """The body as a JSON object. NaN, Infinity, numbers that overflow, non-UTF-8, non-objects and oversized bodies are 400."""
     raw = event.get("body")
     if raw is None or raw == "":
         raise _validation([detail("", "a JSON request body is required")])
@@ -109,9 +116,9 @@ def read_json_body(event: dict[str, Any]) -> dict[str, Any]:
     if len(raw.encode("utf-8")) > MAX_BODY_BYTES:
         raise _validation([detail("", f"the request body is larger than {MAX_BODY_BYTES} bytes")])
     try:
-        body = json.loads(raw, parse_constant=_reject_constant)
+        body = json.loads(raw, parse_constant=_reject_constant, parse_float=_finite_float)
     except (ValueError, RecursionError) as error:
-        raise _validation([detail("", "the request body is not valid JSON (NaN and Infinity are not JSON)")]) from error
+        raise _validation([detail("", "the request body is not valid JSON (NaN, Infinity and numbers too large to represent are refused)")]) from error
     if not isinstance(body, dict):
         raise _validation([detail("", "the request body must be a JSON object")])
     return body
@@ -126,6 +133,14 @@ def contract_details(errors: list[str], limit: int = 20) -> list[dict[str, str]]
             path, issue = "", error
         details.append(detail("" if path == "$" else path, issue))
     return details
+
+
+def run_engine(function: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
+    """Call an engine function; a request the engine refuses as invalid (ContractError) is the client's error: 400."""
+    try:
+        return function(*args, **kwargs)
+    except ContractError as error:
+        raise _validation(contract_details(list(error.errors)) or [detail("", "the request is not valid")]) from error
 
 
 def validate_body(body: dict[str, Any], definition: str) -> None:
@@ -289,8 +304,8 @@ class Api:
         scenario = self._scenario(snapshot, body["persona_id"])
         # In a preview the stored version only supplies the objectives for goal_context; its rules are not read.
         policy = self._policy(body["persona_id"], policy_id, version) if policy_id is not None else None
-        result = engine.check_rules(
-            scenario["portfolio"], policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
+        result = run_engine(
+            engine.check_rules, scenario["portfolio"], policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
             snapshot.controversies, draft_rules=drafts, data_sources=snapshot.data_sources or None,
         )
         log.info("check_completed", preview=result["preview"], headline=result["summary"]["headline"], data_snapshot_id=snapshot.snapshot_id,
@@ -312,7 +327,7 @@ class Api:
         request = body["request"]
         if request["instrument_id"] is not None:
             # A request the engine would refuse is never stored (contracts/api.md section 6, rule 3).
-            execution = engine.simulate_change(scenario["portfolio"], request, snapshot.instruments, policy)["execution"]
+            execution = run_engine(engine.simulate_change, scenario["portfolio"], request, snapshot.instruments, policy)["execution"]
             if execution["status"] != "OK":
                 raise ApiError(422, "INVALID_PURCHASE_REQUEST", "The purchase request cannot be evaluated.",
                                [detail("request", f"{execution['code']}: {execution['message']}")])

@@ -196,12 +196,50 @@ def test_svc11_invalid_requests_are_rejected_before_anything_is_stored(svc, muta
 @pytest.mark.parametrize(
     "raw",
     ["", "{", "[]", '"text"', "null", '{"persona_id": NaN}', '{"request": {"target_direct_weight": Infinity}}', '{"request": {"target_direct_weight": -Infinity}}',
-     "{" * 2000],
+     '{"request": {"target_direct_weight": 1e999}}', '{"request": {"target_direct_weight": -1e999}}', "{" * 2000],
 )
 @pytest.mark.parametrize("route", ["POST /investigations", "POST /check", "POST /rules/confirm", "POST /rules/interpret"])
 def test_svc12_malformed_bodies_are_rejected(svc, route, raw):
     status, body = svc.call(route, raw=raw, key=IDEMPOTENCY_KEY)
     assert_error(status, body, 400, "VALIDATION_ERROR", "")
+    assert svc.s3.keys("jobs/") == []
+
+
+@pytest.mark.parametrize("token", ["NaN", "Infinity", "-Infinity", "1e999", "-1e999"])
+def test_svc12b_non_finite_numbers_in_an_otherwise_valid_body_never_reach_the_engine(svc, token):
+    """Target weight, draft threshold and confirmed threshold: 400 at the door, nothing stored, nothing calculated."""
+    check = {"persona_id": "robert", "policy_id": svc.policy["policy_id"], "policy_version": 1, "purchase_request": dict(NVDA_REQUEST), "draft_rules": None}
+    drafts = dict(check, draft_rules=[dict(svc.policy["rules"][0])])
+    cases = [
+        ("POST /check", json.dumps(check).replace("0.25", token, 1)),
+        ("POST /check", json.dumps(drafts).replace(f'"threshold": {json.dumps(svc.policy["rules"][0]["threshold"])}', f'"threshold": {token}', 1)),
+        ("POST /investigations", json.dumps(create_body("robert", svc.policy["policy_id"], 1)).replace("0.25", token, 1)),
+        ("POST /rules/confirm", json.dumps(confirm_body("robert")).replace('"threshold": 0.1', f'"threshold": {token}', 1)),
+    ]
+    before = sorted(svc.s3.keys("policies/"))
+    for route, raw in cases:
+        assert token in raw, route
+        status, body = svc.call(route, raw=raw, key=IDEMPOTENCY_KEY)
+        assert_error(status, body, 400, "VALIDATION_ERROR", "")
+    assert svc.s3.keys("jobs/") == [] and sorted(svc.s3.keys("policies/")) == before and svc.lambda_client.invocations == []
+
+
+def test_svc12c_a_request_the_engine_refuses_is_a_400_not_a_500(svc, monkeypatch):
+    """Belt and braces: if a non-finite number ever got past the parser and the schema, the engine's ContractError is a 400."""
+    import byb_contracts
+
+    from backend import engine
+
+    def refuse(*args, **kwargs):
+        raise byb_contracts.ContractError("purchase request", ["purchase_request.target_direct_weight: is not a finite number"])
+
+    monkeypatch.setattr(engine, "check_rules", refuse)
+    monkeypatch.setattr(engine, "simulate_change", refuse)
+    check = {"persona_id": "robert", "policy_id": svc.policy["policy_id"], "policy_version": 1, "purchase_request": dict(NVDA_REQUEST), "draft_rules": None}
+    for route, body in (("POST /check", check), ("POST /investigations", create_body("robert", svc.policy["policy_id"], 1))):
+        status, answer = svc.call(route, body, key=IDEMPOTENCY_KEY)
+        assert_error(status, answer, 400, "VALIDATION_ERROR")
+        assert answer["error"]["details"] == [{"path": "purchase_request.target_direct_weight", "issue": "is not a finite number"}]
     assert svc.s3.keys("jobs/") == []
 
 
