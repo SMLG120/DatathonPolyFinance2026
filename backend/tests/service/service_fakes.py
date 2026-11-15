@@ -340,7 +340,8 @@ def build_api(s3: FakeS3, lambda_client: FakeLambda, clock: FakeClock, *, deadli
         lambda_client=lambda_client,
         config=config,
         clock=clock,
-        new_id=lambda: queue.pop(0) if queue else f"{next(counter):032x}",
+        # Deterministic and distinct in their first characters, like the uuid4 hex used in production.
+        new_id=lambda: queue.pop(0) if queue else hashlib.sha256(str(next(counter)).encode()).hexdigest()[:32],
     )
 
 

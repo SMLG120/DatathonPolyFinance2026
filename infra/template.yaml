@@ -194,11 +194,12 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: >-
-          API fn only creates/reads job documents, reads results and hands the job to the worker. No Bedrock, no
-          snapshots, no traces. ListBucket limited to jobs/ so a missing job is a 404 rather than a 403.
+          API fn creates/reads job documents, reads results, policies and the data snapshot (POST /check runs the
+          engine here), creates policy versions once, and hands the job to the worker. No Bedrock, no traces, no
+          write to snapshots/ or results/. ListBucket limited to jobs/ and policies/ (a missing object is a 404).
         must:
           - lambda:InvokeFunction on the worker fn only
-          - PutObject on jobs/ only, and only as a conditional write
+          - PutObject on jobs/ & policies/ only, and only as a conditional write; snapshots/ is read-only for every role
         mutable: review-required
     Properties:
       Description: Execution role of the Before You Buy API function.
