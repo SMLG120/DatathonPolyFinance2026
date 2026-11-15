@@ -321,10 +321,20 @@ class _Document:
             rows = [p for p in exposure["paths"] if p["kind"] == "FUND" and p["position_id"] == fund_id and p["issuer_id"] == issuer]
             fraction = sum(p["fund_fraction"] for p in rows)
             several = sum(p["rows"] for p in rows) > 1
+            period = {"type": "AS_OF", "date": fund["holdings_date"]}
+            row_ids, row_terms = [], []
+            if several:  # share classes, or one company on several rows: each reported row is its own record
+                reported = [entry for p in rows for entry in p["reported_rows"]]
+                for index, (what, row_fraction) in enumerate(reported, start=1):
+                    row_ids.append(self.ev.add(
+                        f"ev-cwrow-{fund_id}-{issuer}-{index}", "FACT", "fund_constituent_weight", row_fraction, "ISSUER", issuer, via=fund_id,
+                        period=period, sources=[fund["source_id"]], assumptions=[f"One reported row of the fund's holdings file: {what}."],
+                    ))
+                    row_terms.append(row_fraction)
             constituent = self.ev.add(
                 f"ev-cw-{fund_id}-{issuer}", "CALCULATION" if several else "FACT", "fund_constituent_weight", fraction, "ISSUER", issuer, via=fund_id,
-                period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
-                formula=f"sum of the reported rows of this company in the fund {eq(fraction)}" if several else None,
+                period=period, sources=[fund["source_id"]], derived=row_ids,
+                formula=f"sum of the reported rows of this company in the fund: {total(row_terms)} {eq(fraction)}" if several else None,
             )
             derived.append(self.ev.add(
                 f"ev-via-{issuer}-{fund_id}-{tag}", "CALCULATION", "issuer_exposure_via_fund", known, "ISSUER", issuer, via=fund_id, state=label,

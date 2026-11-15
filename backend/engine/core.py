@@ -264,14 +264,17 @@ def compute_exposure(portfolio: dict, instruments: Any, holdings: Any) -> dict:
                 bucket = sector_exposure.setdefault(sector, {})
                 bucket[issuer] = bucket.get(issuer, 0.0) + known
             key = (issuer, sector)
+            reported = (row.get("instrument_id") or row.get("name") or "unnamed row", fraction)  # kept so evidence can cite each row
             if key in merged:
                 merged[key]["weight"] += known
                 merged[key]["fund_fraction"] += fraction
                 merged[key]["rows"] += 1
+                merged[key]["reported_rows"].append(reported)
             else:
                 merged[key] = {
                     "position_id": instrument_id, "kind": "FUND", "issuer_id": issuer, "weight": known,
                     "fund_fraction": fraction, "sector": sector, "sector_source": row["sector_source"], "rows": 1,
+                    "reported_rows": [reported],
                 }
         paths.extend(merged.values())
         uncovered = weight * max(0.0, 1.0 - covered)

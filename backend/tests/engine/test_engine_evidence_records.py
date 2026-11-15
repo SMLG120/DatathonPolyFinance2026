@@ -125,3 +125,24 @@ def test_mateo_no_feasible_purchase_cites_the_energy_rule_like_the_api_fixture()
     maximum = run_case("M1")["max_compliant"]
     assert maximum["binding_constraint"] == {"type": "RULE", "rule_id": "mateo-excl-energy-1"}
     assert maximum["evidence_ids"] == ["ev-rule-mateo-excl-energy-1-lo-start", "ev-thr-mateo-excl-energy-1"]
+
+
+def test_share_classes_inside_a_fund_cite_each_reported_row():
+    """E04: FUND_A reports ISS_B on two rows (0.10 and 0.05). The aggregated 0.15 is a calculation over two cited rows."""
+    result = run_case("E04")
+    byb_contracts.validate_check_result(result)
+    by_id = {record["evidence_id"]: record for record in result["evidence"]}
+    aggregated = [r for r in result["evidence"] if r["metric_id"] == "fund_constituent_weight" and r["label"] == "CALCULATION"
+                  and r["subject"]["kind"] == "ISSUER" and r["subject"]["id"] == "ISS_B"]
+    assert aggregated, "E04 holds FUND_A, which reports ISS_B on two rows"
+    for record in aggregated:
+        rows = [by_id[i] for i in record["derived_from"]]
+        assert len(rows) >= 2 and all(r["label"] == "FACT" and r["metric_id"] == "fund_constituent_weight" and r["source_ids"] for r in rows)
+        assert all(r["subject"] == record["subject"] and r["period"] == record["period"] for r in rows)
+        assert sum(r["value"] for r in rows) == pytest.approx(record["value"], abs=1e-12)
+        assert sorted(r["value"] for r in rows) == [0.05, 0.1]
+        assert {r["assumptions"][0] for r in rows} == {"One reported row of the fund's holdings file: SYN_B1.", "One reported row of the fund's holdings file: SYN_B2."}
+        assert "0.1 + 0.05" in record["formula"]
+    # A company on a single row is still one FACT record with no calculation.
+    single = [r for r in result["evidence"] if r["metric_id"] == "fund_constituent_weight" and r["label"] == "FACT" and not r["evidence_id"].startswith("ev-cwrow-")]
+    assert all(r["derived_from"] == [] and r["formula"] is None for r in single)

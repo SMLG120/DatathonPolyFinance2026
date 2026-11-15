@@ -22,7 +22,11 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.7`.
+`CALCULATION_VERSION` is `byb-engine-1.0.8`.
+
+Change from 1.0.7 (evidence records only): when a fund reports one company on several rows (share classes), the
+aggregated `fund_constituent_weight` record now cites one FACT record per reported row in `derived_from` and prints
+the sum in its formula. Before, it was a calculation with no cited inputs.
 
 Change from 1.0.6 (the engine's own range checks, `guard.py`; no result for valid input changed). The checks below
 are made by the engine itself, before and independently of the contract validators (the tests replace every
