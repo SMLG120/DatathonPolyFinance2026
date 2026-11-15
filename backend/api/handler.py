@@ -1,39 +1,44 @@
 """Lambda entry point for the HTTP API (API Gateway HTTP API, payload 2.0).
 
-Handler string: ``backend.api.handler.handler``.
+Handler string: ``backend.api.handler.handler``. Routes and bodies are the ones
+of ``contracts/api.md`` (schema_version 1.0.0):
 
-Phase 1 routes:
+    GET  /portfolios/{persona_id}          fictional scenario, registry entries, purchasable instruments
+    POST /rules/interpret                  model-backed draft (not available in this build: 502)
+    POST /rules/confirm                    explicit confirmation -> new immutable policy version
+    POST /check                            deterministic engine run; draft_rules -> labelled preview
+    POST /investigations                   store QUEUED, invoke the worker, 202 once accepted
+    GET  /investigations/{id}              the job in any state
+    POST /investigations/{id}/challenge    CORRECT_FACT / CLARIFY_PREFERENCE / CHANGE_RULE
 
-* ``POST /investigations``      - store the validated request as a QUEUED job,
-  hand it to the worker asynchronously, answer 202 only once Lambda accepted
-  the invocation.
-* ``GET  /investigations/{id}`` - the job, with its result once SUCCEEDED.
+Authentication is done by the Lambda authorizer in front of these routes; this
+handler never sees or logs the access code. No model is called here: verdicts
+come from ``backend.engine``, and a preview never reads or changes a stored
+policy.
 
-Authentication is done by the Lambda authorizer in front of these routes;
-this handler never sees or logs the access code.
-
-The request and response shapes below are phase 1 shapes. They live in
-``parse_create_request`` and ``public_view`` so that phase 2 can swap in the
-frozen contracts without touching the lifecycle code.
+Every request body is validated against the contract schema before anything
+is read or stored; every error has the contract's error shape.
 """
 
 from __future__ import annotations
 
 import base64
 import binascii
-import hashlib
 import json
-import math
 import os
 import re
-from typing import Any
+import uuid
+from typing import Any, Callable
 
 from botocore.exceptions import BotoCoreError, ClientError
+from byb_contracts import SCHEMA_VERSION, schema_errors
 
+from backend import engine
 from backend.common import log
 from backend.common.clock import from_iso, to_iso
 from backend.common.config import ApiConfig
-from backend.common.http import ApiError, error_response, json_response
+from backend.common.data import DataUnavailable, Snapshot, SnapshotLoader
+from backend.common.http import ApiError, detail, error_response, json_response
 from backend.common.jobs import (
     FAILED,
     QUEUED,
@@ -45,21 +50,27 @@ from backend.common.jobs import (
     TerminalStateError,
     is_valid_job_id,
 )
+from backend.common.jobview import accepted_view, job_id_for, mark_failed, new_job, public_view
+from backend.common.policies import PolicyStore, PolicyVersionExists
+from backend.common.policy_ops import InvalidConfirmation, body_hash, build_changed_rule_version, build_confirmed_version
 
-JOB_SCHEMA_VERSION = 1
-MAX_BODY_BYTES = 8192
-MAX_QUESTION_CHARS = 500
+# Largest body accepted. A confirmation carrying every rule and objective in full is a few kilobytes.
+MAX_BODY_BYTES = 65536
 
-FAILURE_DISPATCH_FAILED = "DISPATCH_FAILED"
+FAILURE_WORKER_INVOCATION_FAILED = "WORKER_INVOCATION_FAILED"
 FAILURE_DEADLINE_EXCEEDED = "DEADLINE_EXCEEDED"
 
-PERSONA_IDS = frozenset({"robert", "mateo", "amira"})
-_IDEMPOTENCY_KEY_RE = re.compile(r"[A-Za-z0-9._:\-]{8,128}")
-_INSTRUMENT_ID_RE = re.compile(r"[A-Z0-9][A-Z0-9.\-]{0,14}")
-_ALLOWED_FIELDS = frozenset({"persona_id", "purchase", "policy_version", "question", "idempotency_key"})
-_PURCHASE_FIELDS = frozenset({"instrument_id", "target_direct_weight"})
+_IDEMPOTENCY_KEY_RE = re.compile(r"[A-Za-z0-9_-]{8,64}")
+_PERSONA_RE = re.compile(r"[a-z][a-z0-9_]{0,31}")
+_NUMERIC_UNITS = frozenset({"fraction", "price", "fx_rate", "days", "count"})
 
+_VALIDATION_MESSAGE = "The request body does not match the contract."
 _DISPATCH_FAILED_MESSAGE = "The investigation could not be started. Nothing was run. Retry with a new idempotency key."
+_DEADLINE_MESSAGE = "The investigation did not finish before its deadline. Nothing more will be run for it."
+_CONFLICT_MESSAGE = "The policy has a newer version than the one this confirmation was based on. Reload it and confirm again."
+_INTERPRETER_UNAVAILABLE = "The interpreter is not available in this build. Your text was kept; the scenario rules can still be confirmed without it."
+
+SCHEMA = "api.schema.json#/$defs/"
 
 
 class DispatchError(Exception):
@@ -67,12 +78,16 @@ class DispatchError(Exception):
 
 
 # --------------------------------------------------------------------------
-# Phase 1 wire shapes
+# Request parsing and validation
 # --------------------------------------------------------------------------
 
 
-def _invalid(message: str) -> ApiError:
-    return ApiError(400, "INVALID_REQUEST", message)
+def _validation(details: list[dict[str, str]], message: str = _VALIDATION_MESSAGE) -> ApiError:
+    return ApiError(400, "VALIDATION_ERROR", message, details)
+
+
+def _not_found(what: str, path: str = "") -> ApiError:
+    return ApiError(404, "NOT_FOUND", f"The service has no record of this {what}.", [detail(path, f"unknown {what}")])
 
 
 def _reject_constant(name: str) -> Any:
@@ -80,215 +95,266 @@ def _reject_constant(name: str) -> Any:
 
 
 def read_json_body(event: dict[str, Any]) -> dict[str, Any]:
+    """The body as a JSON object. NaN, Infinity, non-UTF-8, non-objects and oversized bodies are 400."""
     raw = event.get("body")
     if raw is None or raw == "":
-        raise _invalid("A JSON request body is required.")
+        raise _validation([detail("", "a JSON request body is required")])
     if event.get("isBase64Encoded"):
         try:
             raw = base64.b64decode(raw, validate=True).decode("utf-8")
         except (binascii.Error, UnicodeDecodeError, ValueError) as error:
-            raise _invalid("The request body is not valid UTF-8.") from error
+            raise _validation([detail("", "the request body is not valid UTF-8")]) from error
     if not isinstance(raw, str):
-        raise _invalid("A JSON request body is required.")
+        raise _validation([detail("", "a JSON request body is required")])
     if len(raw.encode("utf-8")) > MAX_BODY_BYTES:
-        raise ApiError(413, "REQUEST_TOO_LARGE", f"The request body is larger than {MAX_BODY_BYTES} bytes.")
+        raise _validation([detail("", f"the request body is larger than {MAX_BODY_BYTES} bytes")])
     try:
         body = json.loads(raw, parse_constant=_reject_constant)
     except (ValueError, RecursionError) as error:
-        raise _invalid("The request body is not valid JSON.") from error
+        raise _validation([detail("", "the request body is not valid JSON (NaN and Infinity are not JSON)")]) from error
     if not isinstance(body, dict):
-        raise _invalid("The request body must be a JSON object.")
+        raise _validation([detail("", "the request body must be a JSON object")])
     return body
 
 
-def read_idempotency_key(event: dict[str, Any], body: dict[str, Any]) -> str:
-    """From the ``Idempotency-Key`` header or the ``idempotency_key`` field."""
-    header = (event.get("headers") or {}).get("idempotency-key")
-    field = body.get("idempotency_key")
-    if header is not None and field is not None and header != field:
-        raise ApiError(400, "IDEMPOTENCY_KEY_MISMATCH", "The Idempotency-Key header and the idempotency_key field differ.")
-    key = header if header is not None else field
+def contract_details(errors: list[str], limit: int = 20) -> list[dict[str, str]]:
+    """``byb_contracts`` messages ("path: issue", root "$") as contract error details."""
+    details = []
+    for error in errors[:limit]:
+        path, separator, issue = error.partition(": ")
+        if not separator:
+            path, issue = "", error
+        details.append(detail("" if path == "$" else path, issue))
+    return details
+
+
+def validate_body(body: dict[str, Any], definition: str) -> None:
+    errors = schema_errors(body, SCHEMA + definition)
+    if errors:
+        raise _validation(contract_details(errors))
+
+
+def read_idempotency_key(event: dict[str, Any]) -> str:
+    """The ``Idempotency-Key`` header (API Gateway lower-cases header names)."""
+    headers = event.get("headers") or {}
+    key = next((value for name, value in headers.items() if isinstance(name, str) and name.lower() == "idempotency-key"), None)
     if key is None:
-        raise ApiError(400, "IDEMPOTENCY_KEY_REQUIRED", "Send an idempotency key (Idempotency-Key header or idempotency_key field).")
+        raise _validation([detail("headers.Idempotency-Key", "the header is required")], "A required header is missing or malformed.")
     if not isinstance(key, str) or _IDEMPOTENCY_KEY_RE.fullmatch(key) is None:
-        raise ApiError(400, "INVALID_IDEMPOTENCY_KEY", "The idempotency key must be 8 to 128 characters: letters, digits, '.', '_', ':' or '-'.")
+        raise _validation([detail("headers.Idempotency-Key", "must be 8 to 64 characters: letters, digits, '_' or '-'")],
+                          "A required header is missing or malformed.")
     return key
 
 
-def parse_create_request(body: dict[str, Any]) -> dict[str, Any]:
-    """Validate the phase 1 body and return its normalized form.
-
-    Units are portfolio fractions (10% is 0.10). ``question`` is untrusted free
-    text: it is stored and shown to the model as data, never interpreted here.
-    """
-    unknown = sorted(set(body) - _ALLOWED_FIELDS)
-    if unknown:
-        raise _invalid("Unknown field(s): " + ", ".join(str(name)[:40] for name in unknown[:5]) + ".")
-
-    persona_id = body.get("persona_id")
-    if not isinstance(persona_id, str) or persona_id not in PERSONA_IDS:
-        raise _invalid("persona_id must be one of: " + ", ".join(sorted(PERSONA_IDS)) + ".")
-
-    purchase = body.get("purchase")
-    if not isinstance(purchase, dict):
-        raise _invalid("purchase must be an object with instrument_id and target_direct_weight.")
-    unknown = sorted(set(purchase) - _PURCHASE_FIELDS)
-    if unknown:
-        raise _invalid("Unknown field(s) in purchase: " + ", ".join(str(name)[:40] for name in unknown[:5]) + ".")
-    instrument_id = purchase.get("instrument_id")
-    if not isinstance(instrument_id, str) or _INSTRUMENT_ID_RE.fullmatch(instrument_id) is None:
-        raise _invalid("purchase.instrument_id must be an instrument identifier such as NVDA or XIU.TO.")
-    weight = purchase.get("target_direct_weight")
-    if isinstance(weight, bool) or not isinstance(weight, (int, float)) or not math.isfinite(weight):
-        raise _invalid("purchase.target_direct_weight must be a number (a portfolio fraction, 10% is 0.10).")
-    if not 0 <= weight <= 1:
-        raise _invalid("purchase.target_direct_weight must be between 0 and 1 (a portfolio fraction, 10% is 0.10).")
-
-    policy_version = body.get("policy_version")
-    if policy_version is not None and (isinstance(policy_version, bool) or not isinstance(policy_version, int) or policy_version < 1):
-        raise _invalid("policy_version must be a positive integer.")
-
-    question = body.get("question")
-    if question is not None:
-        if not isinstance(question, str):
-            raise _invalid("question must be text.")
-        question = question.strip()
-        if len(question) > MAX_QUESTION_CHARS:
-            raise _invalid(f"question must be at most {MAX_QUESTION_CHARS} characters.")
-        question = question or None
-
-    return {
-        "persona_id": persona_id,
-        "purchase": {"instrument_id": instrument_id, "target_direct_weight": float(weight)},
-        "policy_version": policy_version,
-        "question": question,
-    }
-
-
-def job_id_for(idempotency_key: str) -> str:
-    """Deterministic id, so a retried POST addresses the same S3 key."""
-    digest = hashlib.sha256(b"byb/investigation/v1\x00" + idempotency_key.encode("utf-8")).hexdigest()
-    return "inv_" + digest[:32]
-
-
-def request_hash(request: dict[str, Any]) -> str:
-    canonical = json.dumps(request, separators=(",", ":"), sort_keys=True, allow_nan=False)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def new_job(job_id: str, request: dict[str, Any], now: float, deadline_seconds: int, api_request_id: str | None) -> dict[str, Any]:
-    return {
-        "schema_version": JOB_SCHEMA_VERSION,
-        "kind": "investigation",
-        "id": job_id,
-        "status": QUEUED,
-        "created_at": to_iso(now),
-        "updated_at": to_iso(now),
-        "deadline_at": to_iso(now + deadline_seconds),
-        "started_at": None,
-        "finished_at": None,
-        "request": request,
-        "request_hash": request_hash(request),
-        "steps": [],
-        "result_key": None,
-        "trace_key": None,
-        "error": None,
-        "attempt": None,
-        "created_by_request_id": api_request_id,
-    }
-
-
-def public_view(job: dict[str, Any], result: dict[str, Any] | None = None) -> dict[str, Any]:
-    """What ``GET /investigations/{id}`` returns. Internal fields stay internal."""
-    return {
-        "investigation_id": job["id"],
-        "status": job["status"],
-        "created_at": job["created_at"],
-        "updated_at": job["updated_at"],
-        "deadline_at": job["deadline_at"],
-        "started_at": job.get("started_at"),
-        "finished_at": job.get("finished_at"),
-        "request": job["request"],
-        "steps": job.get("steps", []),
-        "result": result,
-        "error": job.get("error"),
-    }
-
-
 # --------------------------------------------------------------------------
-# Lifecycle
+# The API
 # --------------------------------------------------------------------------
 
 
-class InvestigationApi:
-    def __init__(self, *, store: JobStore, lambda_client: Any, config: ApiConfig, clock: Any) -> None:
+class Api:
+    def __init__(self, *, store: JobStore, policies: PolicyStore, snapshots: SnapshotLoader, lambda_client: Any, config: ApiConfig,
+                 clock: Any, new_id: Callable[[], str] | None = None) -> None:
         self._store = store
+        self._policies = policies
+        self._snapshots = snapshots
         self._lambda = lambda_client
         self._config = config
         self._clock = clock
+        self._new_id = new_id or (lambda: uuid.uuid4().hex)
+        self._routes: dict[str, Callable[[dict[str, Any], str | None], dict[str, Any]]] = {
+            "GET /portfolios/{persona_id}": self._portfolio,
+            "POST /rules/interpret": self._interpret,
+            "POST /rules/confirm": self._confirm,
+            "POST /check": self._check,
+            "POST /investigations": self._create,
+            "GET /investigations/{id}": self._get,
+            "POST /investigations/{id}/challenge": self._challenge,
+        }
 
     def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         request_id = (event.get("requestContext") or {}).get("requestId") or getattr(context, "aws_request_id", None)
         route = event.get("routeKey")
         log.bind(component="api", request_id=request_id, route=route)
         try:
-            if route == "POST /investigations":
-                return self._create(event, request_id)
-            if route == "GET /investigations/{id}":
-                return self._get(event)
-            raise ApiError(404, "ROUTE_NOT_FOUND", "No such route.")
+            handler = self._routes.get(route) if isinstance(route, str) else None
+            if handler is None:
+                raise ApiError(404, "NOT_FOUND", "No such route.", [detail("", "unknown route")])
+            return handler(event, request_id)
         except ApiError as error:
             log.info("api_error", status=error.status, code=error.code)
-            return error_response(error.status, error.code, error.message, request_id, **error.details)
+            return error_response(error.status, error.code, error.message, request_id, error.details)
         except Exception as error:  # noqa: BLE001 - last line of defence: a structured 500, details in the log only
             log.error("api_unexpected_error", error_type=type(error).__name__, error_message=str(error))
             return error_response(500, "INTERNAL_ERROR", "The service reported an internal error.", request_id)
 
-    # ------------------------------------------------------------------ POST
+    # ---------------------------------------------------------------- lookups
+
+    def _snapshot(self) -> Snapshot:
+        try:
+            return self._snapshots.load()
+        except DataUnavailable as error:
+            log.error("data_unavailable", reason=str(error))
+            raise ApiError(500, "INTERNAL_ERROR", "The data snapshot could not be read, so nothing was calculated.") from error
+
+    def _scenario(self, snapshot: Snapshot, persona_id: Any, path: str = "persona_id") -> dict[str, Any]:
+        scenario = snapshot.scenario(persona_id) if isinstance(persona_id, str) and _PERSONA_RE.fullmatch(persona_id) else None
+        if scenario is None:
+            raise _not_found("persona", path)
+        return scenario
+
+    def _policy(self, persona_id: str, policy_id: Any, version: Any) -> dict[str, Any]:
+        policy = self._policies.get(policy_id, version)
+        if policy is None or policy.get("persona_id") != persona_id:
+            raise _not_found("policy version", "policy_version")
+        return policy
+
+    # ------------------------------------------------- GET /portfolios/{persona_id}
+
+    def _portfolio(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        snapshot = self._snapshot()
+        scenario = self._scenario(snapshot, (event.get("pathParameters") or {}).get("persona_id"), "")
+        purchasable = snapshot.purchasable_instrument_ids()
+        wanted = [position["instrument_id"] for position in scenario["portfolio"]["positions"]] + purchasable
+        registry = snapshot.registry
+        return json_response(200, {
+            "schema_version": SCHEMA_VERSION,
+            "scenario": scenario,
+            "instruments": {instrument_id: registry[instrument_id] for instrument_id in sorted(set(wanted)) if instrument_id in registry},
+            "purchasable_instrument_ids": purchasable,
+        })
+
+    # ----------------------------------------------------- POST /rules/interpret
+
+    def _interpret(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        body = read_json_body(event)
+        validate_body(body, "interpret_request")
+        if (body["policy_id"] is None) != (body["policy_version"] is None):
+            raise _validation([detail("policy_version", "policy_id and policy_version are both null or both set")])
+        self._scenario(self._snapshot(), body["persona_id"])
+        if body["policy_id"] is not None:
+            self._policy(body["persona_id"], body["policy_id"], body["policy_version"])
+        # No interpreter model is wired in this build. The contract's answer for "no valid draft" is 502;
+        # nothing is invented in its place and nothing is stored.
+        raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_UNAVAILABLE)
+
+    # ------------------------------------------------------- POST /rules/confirm
+
+    def _confirm(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        body = read_json_body(event)
+        validate_body(body, "confirm_request")
+        persona_id = body["persona_id"]
+        self._scenario(self._snapshot(), persona_id)
+        policy_id, base_version = body["policy_id"], body["base_version"]
+        base = None
+        if policy_id is None:
+            if base_version is not None:
+                raise _validation([detail("base_version", "must be null when policy_id is null (a new policy starts at version 1)")])
+            policy_id, new_version = f"pol-{persona_id.replace('_', '-')}-{self._new_id()[:12]}", 1
+        else:
+            latest = self._policies.latest_version(policy_id)
+            base = self._policies.get(policy_id, latest) if latest else None
+            if base is None or base.get("persona_id") != persona_id:
+                raise _not_found("policy", "policy_id")
+            if base_version is None:
+                raise _validation([detail("base_version", "is required when policy_id is set")])
+            if base_version != latest:
+                raise ApiError(409, "POLICY_VERSION_CONFLICT", _CONFLICT_MESSAGE,
+                               [detail("base_version", f"is {base_version}; the latest version of {policy_id} is {latest}")])
+            new_version = latest + 1
+        try:
+            policy = build_confirmed_version(request=body, base=base, policy_id=policy_id, new_version=new_version, now_iso=to_iso(self._clock.time()))
+        except InvalidConfirmation as error:
+            raise ApiError(422, "INVALID_CONFIRMATION", "The confirmation cannot be applied.", [detail(error.path, error.issue)]) from error
+        try:
+            self._policies.create(policy)
+        except PolicyVersionExists as error:
+            # Another confirmation created this version between the read and the write.
+            raise ApiError(409, "POLICY_VERSION_CONFLICT", _CONFLICT_MESSAGE,
+                           [detail("base_version", f"is {base_version}; {policy_id} gained a newer version while this request ran")]) from error
+        log.info("policy_version_created", policy_id=policy_id, version=new_version, content_hash=policy["content_hash"])
+        return json_response(201, {"schema_version": SCHEMA_VERSION, "policy": policy})
+
+    # --------------------------------------------------------------- POST /check
+
+    def _check(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        started = self._clock.time()
+        body = read_json_body(event)
+        validate_body(body, "check_request")
+        policy_id, version, drafts = body["policy_id"], body["policy_version"], body["draft_rules"]
+        if (policy_id is None) != (version is None):
+            raise _validation([detail("policy_version", "policy_id and policy_version are both null or both set")])
+        if drafts is None and policy_id is None:
+            raise _validation([detail("draft_rules", "is null, so policy_id and policy_version are required (the stored policy is evaluated)")])
+        snapshot = self._snapshot()
+        scenario = self._scenario(snapshot, body["persona_id"])
+        # In a preview the stored version only supplies the objectives for goal_context; its rules are not read.
+        policy = self._policy(body["persona_id"], policy_id, version) if policy_id is not None else None
+        result = engine.check_rules(
+            scenario["portfolio"], policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
+            snapshot.controversies, draft_rules=drafts, data_sources=snapshot.data_sources or None,
+        )
+        log.info("check_completed", preview=result["preview"], headline=result["summary"]["headline"], data_snapshot_id=snapshot.snapshot_id,
+                 calculation_version=result["calculation_version"], elapsed_ms=int(round((self._clock.time() - started) * 1000)))
+        return json_response(200, result)
+
+    # ------------------------------------------------------- POST /investigations
 
     def _create(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
         body = read_json_body(event)
-        key = read_idempotency_key(event, body)
-        request = parse_create_request(body)
-        job_id = job_id_for(key)
+        validate_body(body, "investigation_create_request")
+        key = read_idempotency_key(event)
+        snapshot = self._snapshot()
+        scenario = self._scenario(snapshot, body["persona_id"])
+        policy = self._policy(body["persona_id"], body["policy_id"], body["policy_version"])
+        parent_id = body["parent_investigation_id"]
+        if parent_id is not None and (not is_valid_job_id(parent_id) or self._store.get(parent_id) is None):
+            raise _not_found("investigation", "parent_investigation_id")
+        request = body["request"]
+        if request["instrument_id"] is not None:
+            # A request the engine would refuse is never stored (contracts/api.md section 6, rule 3).
+            execution = engine.simulate_change(scenario["portfolio"], request, snapshot.instruments, policy)["execution"]
+            if execution["status"] != "OK":
+                raise ApiError(422, "INVALID_PURCHASE_REQUEST", "The purchase request cannot be evaluated.",
+                               [detail("request", f"{execution['code']}: {execution['message']}")])
+        job_id = job_id_for("investigation", key)
         log.add_context(job_id=job_id)
+        candidate = new_job(
+            job_id=job_id, now=self._clock.time(), deadline_seconds=self._config.job_deadline_seconds, expiry_seconds=self._config.job_expiry_seconds,
+            idempotency_key=key, persona_id=body["persona_id"], policy_id=body["policy_id"], policy_version=body["policy_version"], request=request,
+            parent_investigation_id=parent_id, challenge=None, model_id=self._config.model_id, request_hash=body_hash(body),
+            snapshot_id=snapshot.snapshot_id, api_request_id=request_id,
+        )
+        return json_response(202, self._store_and_dispatch(candidate), headers={"location": f"/investigations/{job_id}"})
 
-        candidate = new_job(job_id, request, self._clock.time(), self._config.job_deadline_seconds, request_id)
-        # 1. Store first. If-None-Match makes the duplicate POST find the first job.
+    def _store_and_dispatch(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        """Store first, dispatch second, and report 202 only once Lambda accepted the invocation."""
+        job_id = candidate["id"]
+        # 1. Store first. If-None-Match makes the duplicate request find the first job.
         job, _etag, created = self._store.create(candidate)
         if not created:
-            if job.get("request_hash") != candidate["request_hash"]:
-                raise ApiError(
-                    409,
-                    "IDEMPOTENCY_KEY_REUSED",
-                    "This idempotency key was already used with a different request.",
-                    investigation_id=job_id,
-                )
+            if (job.get("internal") or {}).get("request_hash") != candidate["internal"]["request_hash"]:
+                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.",
+                               [detail("headers.Idempotency-Key", "already used with a different body")])
             job = self._expire_if_overdue(job)
             if job["status"] != QUEUED:
                 log.info("investigation_replayed", status=job["status"])
-                return self._accepted(job, replayed=True)
+                return self._accepted(job)
             # Still QUEUED: the first request may have died before dispatching.
             # Dispatching again is safe because only one worker can claim a job.
-
         # 2. Dispatch. 3. Answer 202 only if Lambda accepted the invocation.
         try:
             self._dispatch(job_id)
         except DispatchError as error:
             log.error("dispatch_failed", reason=str(error))
             job = self._mark_dispatch_failed(job_id)
-            return self._accepted(job, replayed=not created)
+            return self._accepted(job)
         log.info("investigation_accepted", created=created, deadline_at=job["deadline_at"])
-        return self._accepted(job, replayed=not created)
+        return self._accepted(job)
 
     def _dispatch(self, job_id: str) -> None:
         payload = json.dumps({"job_id": job_id}).encode("utf-8")
         try:
-            response = self._lambda.invoke(
-                FunctionName=self._config.worker_function_name,
-                InvocationType="Event",
-                Payload=payload,
-            )
+            response = self._lambda.invoke(FunctionName=self._config.worker_function_name, InvocationType="Event", Payload=payload)
         except (ClientError, BotoCoreError) as error:
             raise DispatchError(type(error).__name__) from error
         status = response.get("StatusCode")
@@ -300,8 +366,7 @@ class InvestigationApi:
             if draft.get("status") != QUEUED:
                 raise StateConflict("the job is no longer queued", draft)
             draft["status"] = FAILED
-            draft["finished_at"] = to_iso(self._clock.time())
-            draft["error"] = {"code": FAILURE_DISPATCH_FAILED, "message": _DISPATCH_FAILED_MESSAGE}
+            draft["failure"] = {"code": FAILURE_WORKER_INVOCATION_FAILED, "message": _DISPATCH_FAILED_MESSAGE, "retryable": True}
 
         try:
             return self._store.update(job_id, mutate)
@@ -311,45 +376,41 @@ class InvestigationApi:
             # Another request got it dispatched and a worker already claimed it.
             return error.job or {}
 
-    def _accepted(self, job: dict[str, Any], *, replayed: bool) -> dict[str, Any]:
-        if job["status"] == FAILED and (job.get("error") or {}).get("code") == FAILURE_DISPATCH_FAILED:
-            raise ApiError(503, FAILURE_DISPATCH_FAILED, _DISPATCH_FAILED_MESSAGE, investigation_id=job["id"])
-        location = f"/investigations/{job['id']}"
-        return json_response(
-            202,
-            {
-                "investigation_id": job["id"],
-                "status": job["status"],
-                "created_at": job["created_at"],
-                "updated_at": job["updated_at"],
-                "deadline_at": job["deadline_at"],
-                "replayed": replayed,
-                "poll": {"href": location, "interval_ms": self._config.poll_interval_ms},
-            },
-            headers={"location": location},
-        )
+    def _accepted(self, job: dict[str, Any]) -> dict[str, Any]:
+        if job["status"] == FAILED and (job.get("failure") or {}).get("code") == FAILURE_WORKER_INVOCATION_FAILED:
+            raise ApiError(503, "WORKER_INVOCATION_FAILED", _DISPATCH_FAILED_MESSAGE, [detail("headers.Idempotency-Key", "retry with a new key")])
+        return accepted_view(job, self._config.poll_interval_ms)
 
-    # ------------------------------------------------------------------- GET
+    # ------------------------------------------------- GET /investigations/{id}
 
-    def _get(self, event: dict[str, Any]) -> dict[str, Any]:
+    def _load_job(self, event: dict[str, Any]) -> dict[str, Any]:
+        """The stored job with the deadline and expiry rules applied. 404 / 410 otherwise."""
         job_id = (event.get("pathParameters") or {}).get("id")
-        not_found = ApiError(404, "INVESTIGATION_NOT_FOUND", "The service has no record of this investigation.")
         if not is_valid_job_id(job_id):
-            raise not_found
+            raise _not_found("investigation")
         log.add_context(job_id=job_id)
         found = self._store.get(job_id)
         if found is None:
-            raise not_found
-        job = self._expire_if_overdue(found[0])
-        result = None
-        if job["status"] == SUCCEEDED:
-            result = self._store.get_result(job_id)
-            if result is None:
-                log.error("result_missing_for_succeeded_job")
-                raise ApiError(500, "RESULT_UNAVAILABLE", "The result of this investigation could not be read.")
-        return json_response(200, public_view(job, result))
+            raise _not_found("investigation")
+        job = found[0]
+        if self._clock.time() >= from_iso(job["expires_at"]):
+            raise ApiError(410, "INVESTIGATION_EXPIRED", "This investigation has expired and is no longer available.",
+                           [detail("", f"expired at {job['expires_at']}")])
+        return self._expire_if_overdue(job)
 
-    # -------------------------------------------------------------- deadline
+    def _outcome(self, job: dict[str, Any]) -> dict[str, Any] | None:
+        if job["status"] != SUCCEEDED:
+            return None
+        outcome = self._store.get_result(job["id"])
+        if outcome is None:
+            log.error("result_missing_for_succeeded_job")
+            raise ApiError(500, "INTERNAL_ERROR", "The result of this investigation could not be read.")
+        return outcome
+
+    def _get(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        job = self._load_job(event)
+        corrections = self._store.list_corrections(job["id"]) if job["status"] == SUCCEEDED else []
+        return json_response(200, public_view(job, self._outcome(job), corrections))
 
     def _expire_if_overdue(self, job: dict[str, Any]) -> dict[str, Any]:
         """A job past its deadline is FAILED, even if its worker died silently.
@@ -359,15 +420,10 @@ class InvestigationApi:
         """
         if job.get("status") not in (QUEUED, RUNNING) or self._clock.time() < from_iso(job["deadline_at"]):
             return job
-        failure = {
-            "code": FAILURE_DEADLINE_EXCEEDED,
-            "message": "The investigation did not finish before its deadline. Nothing more will be run for it.",
-        }
+        failure = {"code": FAILURE_DEADLINE_EXCEEDED, "message": _DEADLINE_MESSAGE, "retryable": True}
 
         def mutate(draft: dict[str, Any]) -> None:
-            draft["status"] = FAILED
-            draft["finished_at"] = to_iso(self._clock.time())
-            draft["error"] = failure
+            mark_failed(draft, failure)
 
         try:
             expired = self._store.update(job["id"], mutate)
@@ -379,32 +435,160 @@ class InvestigationApi:
             # Could not persist right now; still report the truth. The worker
             # never writes SUCCEEDED after the deadline, so this cannot flip.
             log.warning("investigation_expired_not_persisted")
-            return dict(job, status=FAILED, error=failure)
+            reported = dict(job)
+            mark_failed(reported, failure)
+            return reported
+
+    # --------------------------------------- POST /investigations/{id}/challenge
+
+    def _challenge(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
+        body = read_json_body(event)
+        validate_body(body, "challenge_request")
+        job = self._load_job(event)
+        if job["status"] in (QUEUED, RUNNING):
+            raise ApiError(409, "INVESTIGATION_NOT_FINISHED", "The investigation is still running. Wait for it to finish before challenging it.",
+                           [detail("", f"status is {job['status']}")])
+        if job["status"] == FAILED:
+            raise ApiError(422, "UNSUPPORTED_CHALLENGE", "A failed investigation has no result to challenge.", [detail("", "status is FAILED")])
+        outcome = self._outcome(job)
+        kind = body["type"]
+        if kind == "CORRECT_FACT":
+            return self._correct_fact(job, outcome, body)
+        if kind == "CLARIFY_PREFERENCE":
+            return self._clarify_preference(job, body)
+        return self._change_rule(event, job, outcome, body, request_id)
+
+    @staticmethod
+    def _unsupported(path: str, issue: str) -> ApiError:
+        return ApiError(422, "UNSUPPORTED_CHALLENGE", "The challenge cannot be applied to this investigation.", [detail(path, issue)])
+
+    def _correct_fact(self, job: dict[str, Any], outcome: dict[str, Any] | None, body: dict[str, Any]) -> dict[str, Any]:
+        payload = body["payload"]
+        result = (outcome or {}).get("result")
+        if result is None:
+            raise self._unsupported("", "the investigation has no result")
+        record = next((r for r in result["evidence"] if r["evidence_id"] == payload["evidence_id"]), None)
+        if record is None:
+            raise self._unsupported("payload.evidence_id", "is not an evidence record of this investigation's result")
+        if payload["asserted_unit"] != record["unit"]:
+            raise self._unsupported("payload.asserted_unit", f"must be the unit of that record ({record['unit']})")
+        value = payload["asserted_value"]
+        numeric = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if (record["unit"] in _NUMERIC_UNITS) != numeric:
+            raise self._unsupported("payload.asserted_value", "must be a number for a numeric unit and a string for a date or text")
+        now = to_iso(self._clock.time())
+        suffix = self._new_id()[:12]
+        challenge = {"challenge_id": f"ch-{suffix}", "investigation_id": job["id"], "type": "CORRECT_FACT", "payload": payload, "created_at": now}
+        # Stored next to the evidence it disputes, as an unverified user assertion. Nothing is recomputed,
+        # the note and the source are kept verbatim and are never obeyed or fetched.
+        correction = {
+            "correction_id": f"corr-{suffix}", "challenge_id": challenge["challenge_id"], "investigation_id": job["id"],
+            "evidence_id": record["evidence_id"], "original_value": record["value"], "original_unit": record["unit"],
+            "asserted_value": value, "asserted_unit": payload["asserted_unit"],
+            "provenance": {"asserted_by": "USER", "asserted_at": now, "user_note": payload["user_note"], "user_source": payload["user_source"]},
+            "status": "UNVERIFIED", "applied_to_calculation": False,
+        }
+        if not self._store.put_correction(job["id"], correction):
+            raise ApiError(500, "INTERNAL_ERROR", "The correction could not be stored.")
+        log.info("correction_stored", correction_id=correction["correction_id"], evidence_id=record["evidence_id"])
+        return json_response(201, {"schema_version": SCHEMA_VERSION, "challenge": challenge, "proposed_correction": correction,
+                                   "interpretation": None, "policy": None, "investigation": None})
+
+    def _clarify_preference(self, job: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+        objective_id = body["payload"]["objective_id"]
+        if objective_id is not None:
+            policy = self._policies.get(job["policy_id"], job["policy_version"])
+            if policy is None or objective_id not in {o["objective_id"] for o in policy["objectives"]}:
+                raise self._unsupported("payload.objective_id", "is not an objective of the investigation's policy version")
+        # Same interpreter as POST /rules/interpret, and the same answer while it is not wired. Nothing stored changes.
+        raise ApiError(502, "INTERPRETER_FAILED", _INTERPRETER_UNAVAILABLE)
+
+    def _change_rule(self, event: dict[str, Any], job: dict[str, Any], outcome: dict[str, Any] | None, body: dict[str, Any],
+                     request_id: str | None) -> dict[str, Any]:
+        key = read_idempotency_key(event)
+        payload = body["payload"]
+        if (outcome or {}).get("result") is None or job["resolved_request"] is None:
+            raise self._unsupported("", "the investigation has no result")
+        child_id = job_id_for("challenge", job["id"], key)
+        request_hash = body_hash({"investigation_id": job["id"], "body": body})
+
+        existing = self._store.get(child_id)
+        if existing is not None:
+            # Replay: the same key and body give the same policy version and the same child investigation.
+            child = existing[0]
+            if (child.get("internal") or {}).get("request_hash") != request_hash:
+                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.",
+                               [detail("headers.Idempotency-Key", "already used with a different body")])
+            policy = self._policies.get(child["policy_id"], child["policy_version"])
+            if policy is None:
+                raise ApiError(500, "INTERNAL_ERROR", "The policy version of this challenge could not be read.")
+        else:
+            job_policy = self._policies.get(job["policy_id"], job["policy_version"])
+            if job_policy is None:
+                raise ApiError(500, "INTERNAL_ERROR", "The policy version of this investigation could not be read.")
+            now = self._clock.time()
+            policy = None
+            for _ in range(3):  # a concurrent confirmation may take the next number first
+                new_version = (self._policies.latest_version(job["policy_id"]) or job["policy_version"]) + 1
+                try:
+                    policy = build_changed_rule_version(job_policy=job_policy, rule_id=payload["rule_id"], new_threshold=payload["new_threshold"],
+                                                        user_note=payload["user_note"], new_version=new_version, now_iso=to_iso(now))
+                except InvalidConfirmation as error:
+                    raise self._unsupported(error.path, error.issue) from error
+                try:
+                    self._policies.create(policy)
+                    break
+                except PolicyVersionExists:
+                    policy = None
+            if policy is None:
+                raise ApiError(500, "INTERNAL_ERROR", "The new policy version could not be stored.")
+            log.info("policy_version_created", policy_id=policy["policy_id"], version=policy["version"], content_hash=policy["content_hash"],
+                     challenged_investigation=job["id"])
+            challenge = {"challenge_id": "ch-" + child_id[4:16], "investigation_id": job["id"], "type": "CHANGE_RULE", "payload": payload,
+                         "created_at": to_iso(now)}
+            # A fresh investigation under the new version. The earlier job, its result and the earlier
+            # policy version are separate immutable objects and are not touched.
+            child = new_job(
+                job_id=child_id, now=now, deadline_seconds=self._config.job_deadline_seconds, expiry_seconds=self._config.job_expiry_seconds,
+                idempotency_key=key, persona_id=job["persona_id"], policy_id=policy["policy_id"], policy_version=policy["version"],
+                request=dict(job["resolved_request"]), parent_investigation_id=job["id"], challenge=challenge, model_id=self._config.model_id,
+                request_hash=request_hash, snapshot_id=self._snapshot().snapshot_id, api_request_id=request_id,
+            )
+        log.add_context(child_job_id=child_id)
+        accepted = self._store_and_dispatch(child)
+        stored = self._store.get(child_id)
+        return json_response(202, {"schema_version": SCHEMA_VERSION, "challenge": (stored[0] if stored else child)["challenge"],
+                                   "proposed_correction": None, "interpretation": None, "policy": policy, "investigation": accepted})
 
 
-_app: InvestigationApi | None = None
+InvestigationApi = Api  # the phase 1 name, kept for callers that import it
+
+_app: Api | None = None
 
 
-def _build_app() -> InvestigationApi:
+def _build_app() -> Api:
     import boto3
     from botocore.config import Config
 
     from backend.common.clock import SystemClock
+    from backend.common.data import S3SnapshotSource
 
     config = ApiConfig.from_env()
     clock = SystemClock()
     client_config = Config(retries={"total_max_attempts": 2, "mode": "standard"}, connect_timeout=2, read_timeout=5)
     s3 = boto3.client("s3", config=client_config)
     lambda_client = boto3.client("lambda", config=client_config)
-    return InvestigationApi(
+    return Api(
         store=JobStore(s3, config.data_bucket, clock, can_list=True),
+        policies=PolicyStore(s3, config.data_bucket, can_list=True),
+        snapshots=SnapshotLoader(S3SnapshotSource(s3, config.data_bucket, config.snapshot_id), config.snapshot_id),
         lambda_client=lambda_client,
         config=config,
         clock=clock,
     )
 
 
-def _get_app() -> InvestigationApi:
+def _get_app() -> Api:
     global _app
     if _app is None:
         log.configure(os.environ.get("LOG_LEVEL", "INFO"))

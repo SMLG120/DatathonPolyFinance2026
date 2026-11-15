@@ -15,7 +15,7 @@ from backend.common.jobs import (
 )
 from service_fakes import BUCKET, FakeClock, FakeS3, client_error
 
-JOB_ID = "inv_" + "1" * 32
+JOB_ID = "inv-" + "1" * 32
 KEY = f"jobs/{JOB_ID}.json"
 
 
@@ -154,6 +154,12 @@ def test_js12_streaming_bodies_are_closed(store_env):
 
 
 def test_js13_job_id_format():
-    assert is_valid_job_id("inv_" + "a" * 32)
-    for bad in ["inv_" + "a" * 31, "inv_" + "A" * 32, "inv_" + "a" * 32 + "\n", "jobs/../x", None, 5]:
+    """The contract id pattern allows no underscore, so the phase 1 form ``inv_<hex>`` is no longer an id."""
+    import re
+
+    from byb_contracts import load_schema
+
+    assert is_valid_job_id("inv-" + "a" * 32)
+    assert re.fullmatch(load_schema("common.schema.json")["$defs"]["id"]["pattern"], "inv-" + "a" * 32)
+    for bad in ["inv_" + "a" * 32, "inv-" + "a" * 31, "inv-" + "A" * 32, "inv-" + "a" * 32 + "\n", "jobs/../x", None, 5]:
         assert not is_valid_job_id(bad)
