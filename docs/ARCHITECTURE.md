@@ -1,74 +1,78 @@
 # Architecture
 
-Technical document for Before You Buy at commit `d36e41f` (2026-11-15 UTC).
-Fictional simulation: no advice, no recommendation, no forecast, no trade.
+Technical document for Before You Buy. Fictional simulation: no advice, no
+recommendation, no forecast, no trade.
+
+**Candidate described:** local branch `integration/rc` at `deec650`, plus fixes in progress.
 
 Every element carries one of these marks:
 
-- **Implemented**: code in this commit, with its path. Tested unless stated.
-- **Deployed**: running in stack `before-you-buy` (`us-east-1`), as recorded
-  in `infra/evidence/milestone2.md` (collected 2026-11-14 23:14 UTC to
-  2026-11-15 00:29 UTC). Not re-checked for this document.
-- **Specified**: defined in `contracts/`, with fixtures, but no service code
-  in this commit.
-- **In progress**: reported by the lead on 2026-11-14 as being built
-  elsewhere; not in this commit, not verified here.
-- **Planned**: neither built nor in progress.
+- **Local**: code in the candidate, with its path, exercised by local tests
+  on fakes or emulations of AWS. Not deployed.
+- **Deployed (phase 1)**: running in stack `before-you-buy` (`us-east-1`), as
+  recorded in `infra/evidence/milestone2.md` (collected 2026-11-14 23:14 UTC
+  to 2026-11-15 00:29 UTC). This is the earlier code: two routes, a
+  placeholder calculation. It is not the candidate.
+- **Unverified**: never observed. This covers everything the candidate would
+  do in AWS: the new template in CloudFormation, API Gateway, IAM, real S3,
+  Lambda timing, and the real model with the current prompts.
+- **Planned**: not built.
+
+Local results quoted as "coordinator's run" are the integration coordinator's
+runs on the candidate with the real data, 2026-11-14/15.
 
 ## 1. Components
 
 ```mermaid
 flowchart TD
-    B["Browser: Next.js static export<br/>(Implemented on provisional types; hosting Planned)"]
-    G["API Gateway HTTP API<br/>(Deployed)"]
-    Z["Lambda authorizer<br/>(Deployed)"]
+    B["Browser: Next.js static export<br/>three.js explorer loaded lazily<br/>(Local; hosting Planned)"]
+    G["API Gateway HTTP API, 7 routes<br/>(Local template; Deployed phase 1 has 2)"]
+    Z["Lambda authorizer<br/>(Deployed phase 1; no-cache setting Unverified)"]
     P["SSM SecureString: access code<br/>(Deployed)"]
-    A["API Lambda<br/>(Deployed: 2 routes; 5 routes In progress)"]
-    W["Worker Lambda, asynchronous<br/>(Deployed with a placeholder tool)"]
-    M["Amazon Bedrock Converse<br/>us.anthropic.claude-sonnet-5-5<br/>(Deployed)"]
-    E["Deterministic engine, pure Python<br/>(Implemented; wiring In progress)"]
-    S[("Private S3 bucket<br/>snapshots/ policies/ jobs/ results/ traces/<br/>(Deployed; snapshots/ and policies/ unused)")]
+    A["API Lambda<br/>validation, /check, policies, jobs, interpreter<br/>(Local)"]
+    W["Worker Lambda, asynchronous<br/>engine first, then the tool loop<br/>(Local)"]
+    M["Amazon Bedrock Converse<br/>us.anthropic.claude-sonnet-5-5<br/>(current prompts Unverified)"]
+    E["Deterministic engine, pure Python<br/>(Local)"]
+    S[("Private S3 bucket<br/>snapshots/ policies/ jobs/ results/ traces/")]
 
     B -- "Authorization: Bearer code" --> G
     G -- "every route" --> Z
     Z -- "GetParameter" --> P
     G --> A
-    A -- "PutObject jobs/ (If-None-Match)" --> S
+    A -- "check_rules" --> E
+    A -- "interpreter only" --> M
+    A -- "policies/ and jobs/, create-only" --> S
     A -- "Invoke (Event)" --> W
-    W -- "claim job (If-Match)" --> S
+    W -- "read snapshot, claim job" --> S
+    W -- "check_rules, max_compliant_amount" --> E
     W -- "tool loop" --> M
-    W -. "check_rules, max_compliant_amount" .-> E
-    A -. "POST /check" .-> E
-    W -- "results/, traces/ (write-once)" --> S
+    W -- "results/, traces/, write-once" --> S
 ```
-
-Dotted lines are not in this commit.
 
 | Component | Responsibility | Status |
 | --- | --- | --- |
-| Interface | Six stages as one workflow; shows statuses with a word and an icon; fixtures mode with a persistent "Test data — fixtures" label | Implemented on provisional types (`frontend/src/`, `frontend/src/lib/provisional-types.ts`). Contract types and a 3D exposure explorer: In progress. Hosting: Planned (`docs/DEPLOYMENT.md`) |
-| API Gateway HTTP API | TLS endpoint, CORS preflight, throttling (20 rps / burst 40; `POST /investigations` 5 rps / burst 10), access log without headers | Deployed (`infra/template.yaml`; evidence section 14) |
-| Authorizer | Compares the bearer code with an SSM SecureString in constant time | Implemented (`backend/api/authorizer.py`), Deployed (evidence sections 3, 6) |
-| API function | Validates, stores the job, dispatches the worker, serves job state, enforces the deadline on read | Implemented (`backend/api/handler.py`), Deployed for `POST /investigations` and `GET /investigations/{id}` with pre-contract shapes. The other five routes of `contracts/api.md`: Specified; In progress |
-| Worker function | Claims the job, runs the bounded tool loop, enforces the required calculation, writes result and trace | Implemented (`backend/worker/investigation.py`, `backend/agents/`), Deployed with one placeholder tool. Real engine in the worker: In progress |
-| Engine | `check_rules`, `simulate_change`, `compute_exposure`, `replay_period`, `max_compliant_amount`; no I/O, no model, no clock | Implemented (`backend/engine/`, version `byb-engine-1.0.1` in `backend/engine/version.py`). Not deployed |
-| Contracts | 19 JSON Schemas, semantics, API contract, 26 engine cases, 24 API examples, validators, TypeScript types | Implemented (`contracts/`) |
-| Data pipeline | Acquire, normalize, audit, quality-check | Implemented (`data/scripts/`); results recorded in `docs/data-sources.md` |
-| Job store | S3 conditional writes; no database, no queue | Implemented (`backend/common/jobs.py`), Deployed |
+| Interface | Six stages as one workflow; statuses with a word and an icon; no financial arithmetic of its own; fixtures mode with a persistent "Test data — fixtures" label; 3D exposure explorer with a flat chart and table as fallback | Local (`frontend/src/`). Coordinator's run: typecheck, lint, 471 unit tests, build, 25 browser tests. Hosting: Planned |
+| API Gateway HTTP API | TLS endpoint, CORS preflight, throttling (20 rps / burst 40; investigation create and challenge 5 rps / burst 10), access log without headers | Template: Local (`infra/template.yaml`, asserted by `backend/tests/service/test_service_template.py`). Deployed (phase 1) with two routes |
+| Authorizer | Compares the bearer code with an SSM SecureString in constant time; fails closed | Code Local and Deployed (phase 1) (`backend/api/authorizer.py`). `ReauthorizeEvery: 0` with a 30 s function cache: Unverified |
+| API function | The seven routes of `contracts/api.md`: portfolio, interpret, confirm, check, create investigation, read investigation, challenge | Local (`backend/api/handler.py`) |
+| Worker function | Claims the job, runs the engine on the stored request, runs the bounded tool loop, writes result and trace | Local (`backend/worker/investigation.py`, `backend/agents/`) |
+| Interpreter | Turns the user's words into a draft; called by the API function for `POST /rules/interpret` and a `CLARIFY_PREFERENCE` challenge | Local on a scripted model (`backend/agents/interpreter.py`). Real model: Unverified |
+| Engine | `check_rules`, `simulate_change`, `compute_exposure`, `replay_period`, `max_compliant_amount`; no I/O, no model, no clock | Local (`backend/engine/`; version in `backend/engine/version.py`) |
+| Data snapshot | Holdings, prices, registries and the three scenarios under `snapshots/<id>/`, read-only for both functions | Local (`scripts/build_snapshot.py`, `backend/common/data.py`). Not uploaded |
+| Stores | Jobs and policy versions as S3 objects with conditional writes; no database, no queue | Jobs: Deployed (phase 1). Policies: Local (`backend/common/policies.py`) |
+| Contracts | JSON Schemas, semantics, API contract, engine cases, API examples, validators, TypeScript types | Local (`contracts/`) |
 
 ## 2. Request path: `POST /check`
 
-Specified in `contracts/api.md` section 5. **The route does not exist in the
-service at this commit** (`backend/api/handler.py` handles only the two
-investigation routes); it is In progress. The calculation behind it is
-Implemented and tested.
+Deterministic and bounded: no model, nothing stored (`contracts/api.md`
+section 5). Local.
 
 1. The browser sends the purchase request and either a stored policy version
    (`draft_rules: null`) or draft rules (a preview).
-2. The service validates the body against the schema. A percentage string such
-   as `"25%"` is a 400.
-3. The service calls `check_rules` once (`backend/engine/check.py`). There is
-   no model call and nothing is stored. Budget 5 s.
+2. The API function validates the body. A percentage string such as `"25%"`,
+   a NaN or an infinity is a 400.
+3. It loads the validated snapshot (cached per container) and calls
+   `check_rules` once.
 4. The answer is a complete `check_result`: execution status, feasibility,
    policy consistency, one result per rule, starting-portfolio findings, data
    coverage, the scenario replay, the maximum compliant weight, chart rows,
@@ -76,14 +80,18 @@ Implemented and tested.
 
 A preview evaluates exactly the draft rules, returns `preview: true` with a
 null policy version, and never changes the stored policy. A request the engine
-refuses (for example a target below the current weight) is a 200 with
-`execution.status: "INVALID_REQUEST"` and no rule result.
+refuses is a 200 with `execution.status: "INVALID_REQUEST"` and no rule
+result.
+
+The 5 s budget is checked after the calculation: a late result is refused, a
+running calculation is not interrupted. Locally a check on the real data takes
+about 60 ms plus about 35 ms of input guards; a cold start also loads and
+validates the 1.4 MB snapshot, about 0.3 s locally and not measured in Lambda
+(`infra/README.md`).
 
 ## 3. Request path: an investigation
 
-Lifecycle: `QUEUED -> RUNNING -> SUCCEEDED | FAILED`. Implemented and Deployed
-as described in `infra/README.md` "Lifecycle rules"; the wire shapes are those
-of phase 1, not yet of `contracts/api.md` sections 6 and 7.
+Lifecycle: `QUEUED -> RUNNING -> SUCCEEDED | FAILED`.
 
 ```mermaid
 sequenceDiagram
@@ -91,80 +99,84 @@ sequenceDiagram
     participant A as API function
     participant S as S3
     participant W as Worker
+    participant E as Engine
     participant M as Bedrock
     B->>A: POST /investigations (Idempotency-Key)
     A->>S: PutObject jobs/id.json, If-None-Match
     A->>W: Invoke (Event)
     A-->>B: 202 only after the invocation is accepted
     W->>S: QUEUED to RUNNING, If-Match
+    W->>E: check_rules on the stored request and policy version
     loop at most 6 tool rounds, 16 tool calls
         W->>M: Converse
-        M-->>W: tool request
+        M-->>W: tool request, or a selection of evidence
         W->>W: run allowlisted tool, schema-checked
         W->>S: append the step to the job
     end
-    W->>W: server-side check that the required calculation ran
     W->>S: results/id.json and traces/id.json, write-once
     W->>S: RUNNING to SUCCEEDED or FAILED
-    B->>A: GET /investigations/id (polling)
-    A-->>B: job, steps, result
+    B->>A: GET /investigations/id (every 1.5 s, up to 180 s)
+    A-->>B: job, steps, result, explanation
 ```
 
 | Rule | How it is enforced | Status |
 | --- | --- | --- |
-| Store before dispatch; 202 only after the invocation is accepted | Conditional `PutObject`, then `Invoke`; a failed dispatch marks the job `FAILED` and answers 503 | Implemented, Deployed. Live: only the success path (evidence section 16) |
-| Idempotency | Job id = `inv_` + 32 hex characters of a SHA-256 over the key; creation uses `If-None-Match: *`; same key and same body returns the same job; another body is a 409 | Implemented, Deployed (smoke-run checks, `scripts/deploy.md` section 6) |
-| Duplicate delivery | The worker claims the job by compare-and-swap; a second delivery finds it not `QUEUED` and returns | Implemented, Deployed, observed live (`infra/README.md` "Decisions") |
-| Deadline | `deadline_at` = creation + 150 s. The worker stops 5 s before it. `GET` turns an overdue job into `FAILED / DEADLINE_EXCEEDED` and stores that | Implemented, Deployed. Expiry not provoked in AWS (evidence section 16) |
-| Write-once results | Code refuses to change a terminal job; IAM allows `results/` and `traces/` only with `If-None-Match`, job documents only with `If-Match` or `If-None-Match` | Implemented, Deployed; 36 IAM simulations (evidence section 9) |
-| Bounds | 6 tool rounds, 16 tool calls, 4,096 output tokens per call, 4 attempts per model call, worker reserved concurrency 5, Lambda timeout 160 s | Implemented (`backend/agents/loop.py`, `backend/common/config.py`), Deployed |
-| Client polling deadline longer than the job deadline | Contract: 180 s. The interface at this commit uses 120 s (`frontend/src/lib/config.ts`) | Specified; the frontend value is a known defect |
-| Job expiry, 410 after `expires_at` | | Specified; not implemented (`infra/README.md` "Limitations") |
+| Store before dispatch; 202 only after the invocation is accepted | Conditional `PutObject`, then `Invoke`; a failed dispatch marks the job `FAILED / WORKER_INVOCATION_FAILED` and answers 503 | Local; the mechanism is Deployed (phase 1) |
+| Idempotency | Same key and same body returns the same job; another body is a 409. A replay of a job still `QUEUED` may invoke the worker again to recover a lost invocation; a delivery for a claimed or terminal job does nothing (`contracts/api.md` section 6) | Local |
+| Duplicate delivery | The worker claims the job by compare-and-swap; a second delivery returns without a model call | Local; observed live in phase 1 |
+| The result is the engine's | The worker runs the engine on the stored request before and independently of any model call | Local |
+| Model unavailable | The job succeeds with the same checks; every statement is a template; `agent.mode` is `DETERMINISTIC_FALLBACK` | Local, including in the browser run (`acceptance/fullstack/`) |
+| Deadline | `deadline_at` = creation + 150 s. `GET` turns an overdue job into `FAILED / DEADLINE_EXCEEDED` and stores that. The page polls for 180 s | Local, by moving the clock; never waited out in real time |
+| Write-once results and policy versions | Code refuses to change a terminal job; IAM allows `results/`, `traces/` and `policies/` only with `If-None-Match`, job documents only with a condition | Local; the new IAM statements are Unverified |
+| Bounds | 6 tool rounds, 16 tool calls, 4,096 output tokens per call, worker reserved concurrency 5, Lambda timeout 160 s; interpreter deadline 20 s, 2,048 output tokens | Local (`backend/common/config.py`, `infra/template.yaml`) |
+| Expiry | `GET` answers 410 after `expires_at` (creation + 24 h). Job documents and traces are deleted after 3 days by a bucket rule; results and policies are not deleted | Local |
 
-Not in the service at this commit, Specified in `contracts/api.md` and In
-progress: `GET /portfolios/{persona_id}`, `POST /rules/interpret`,
-`POST /rules/confirm`, `POST /investigations/{id}/challenge`, the contract's
-job document, the deterministic fallback when the model is unavailable
-(`agent.mode: DETERMINISTIC_FALLBACK`; in phase 1 a model failure fails the
-job), and storing policy versions (no role may write to `policies/` in the
-deployed stack).
+Failure codes of a job: `DEADLINE_EXCEEDED`, `WORKER_INVOCATION_FAILED`,
+`WORKER_ERROR`, `ENGINE_ERROR`, `DATA_UNAVAILABLE`. A model problem is a
+fallback, not a failure.
+
+Other routes, all Local: `GET /portfolios/{persona_id}` serves the scenario
+from the snapshot; `POST /rules/confirm` writes a new policy version;
+`POST /investigations/{id}/challenge` stores an unverified correction
+(`CORRECT_FACT`), returns a new draft (`CLARIFY_PREFERENCE`), or creates a new
+policy version and a child investigation (`CHANGE_RULE`).
 
 ## 4. Trust boundaries
 
 | Zone | Trusted for | Not trusted for | Control |
 | --- | --- | --- | --- |
-| Browser | Displaying what the API returns | Any verdict, threshold provenance, financial arithmetic, holding a secret in the bundle | Verdicts and stored rules are written server-side. The access code is typed at runtime and kept in `sessionStorage` (`frontend/src/lib/access-code.ts`). Moving the remaining arithmetic out of the browser is In progress (`docs/PLAN.md` P9) |
-| API | Validation, job creation, serving stored state | Calling the model on the investigation path | Separate IAM role: no Bedrock permission, no read of `traces/` (`infra/README.md` "IAM") |
-| Worker | Running tools, writing the result | Overwriting a terminal job, writing unconditionally | Conditional writes enforced by IAM |
-| Model | Choosing which allowlisted tools to call, wording an explanation | Producing or changing a number, a status, a rule or a policy | Section 5 |
-| User text and source text | Being data | Being instructions | The stored request is wrapped as untrusted data (`backend/agents/prompts.py`); injected-instruction probes did not change the calculation, 6 of 6 (evidence section 14). Wrapping third-party text returned by tools the same way is In progress (`docs/PLAN.md` P9) |
-| Data snapshot | Facts with a source, a date and a hash | Being complete or historical | Interval semantics (section 6); the snapshot is read-only for both functions (no role may write `snapshots/`) |
+| Browser | Displaying what the API returns | Any verdict, threshold provenance, financial arithmetic, holding a secret in the bundle | Verdicts and stored rules are written server-side. The browser run compares every displayed figure with the API response (`acceptance/fullstack/README.md`). The access code is typed at runtime and kept in `sessionStorage` |
+| API function | Validation, `/check`, policy and job creation, serving stored state | Writing snapshots, results or traces; changing a stored policy version | Its role can create `policies/*` and `jobs/*` objects only conditionally and can read `snapshots/*`. It may call Bedrock for the interpreter only through the one inference profile (`infra/template.yaml`) |
+| Worker | Running the engine and tools, writing the result | Overwriting a terminal job, writing a policy, creating a job | Conditional writes enforced by IAM; no write on `policies/` |
+| Model | Choosing which allowlisted tools to call; selecting evidence records; marking spans of the user's text | Producing or changing a number, a status, a rule, a policy, or any sentence shown to the user | Section 5 |
+| User text and source text | Being data | Being instructions | Wrapped as `untrusted_text` before the model sees them (`backend/agents/tools.py`). Injected-instruction probes left the calculation unchanged in phase 1, 6 of 6 (`infra/evidence/milestone2.md` section 14); the local browser run repeats this with a hostile scripted model |
+| Data snapshot | Facts with a source, a date and a hash | Being complete or historical | Validated when built and when loaded; interval semantics for what is missing; read-only for both functions |
 
 ## 5. What the model may and may not do
 
-The model may: read the stored request, call tools from an allowlist, and
-write explanatory text. It may not: decide a status, change a number, confirm
-or alter a policy, choose a security, or skip a rule.
-
 | Enforcement | Status |
 | --- | --- |
-| A tool call runs only if its name is registered and its arguments pass that tool's schema; anything else is recorded as `REJECTED` and not executed (`backend/agents/tools.py`) | Implemented, Deployed. Rejection is unit-tested; an unknown tool was not provoked live |
-| After the loop the worker checks that the required calculation ran with the stored request's arguments and runs it itself if not; the result is built from that run (`backend/worker/investigation.py`) | Implemented, Deployed. The server-run path never occurred live: in all 32 recorded investigations the model called the tool correctly (evidence section 16) |
-| The result is the engine's output; `check_rules` and `max_compliant_amount` are run by the server whatever the model did (`initiated_by: "SERVER"` in `contracts/fixtures/api/investigation_robert_succeeded.json`) | Specified; In progress. In the deployed phase the single tool is a placeholder and no verdict is produced |
-| Steps shown to the user are tool events with template summaries, never model reasoning | Implemented, Deployed |
-| A model-written sentence is kept only if it cites evidence records for the right metric, subject, unit and period; otherwise a template is used (`contracts/SEMANTICS.md` section 13) | Specified; not implemented. The deployed result says `verified_against_evidence: false` (`infra/README.md` "Limitations") |
-| The interpreter never emits a number the user did not write; a system-proposed rule has a null threshold and is inactive until confirmed (`contracts/SEMANTICS.md` section 14) | Specified; In progress |
+| A tool call runs only if its name is on the allowlist and its arguments pass that tool's schema; anything else is recorded as rejected and not executed (`backend/agents/tools.py`) | Local |
+| The engine result does not depend on the model: the worker computes it from the stored request and policy version | Local |
+| **No sentence written by the model is returned.** Decisive sentences are the engine's templates. The model's final answer may only list pairs of a template id from a closed set and an evidence id of the result; the server writes the sentence from the record. Raw model output is kept only in the private trace (`backend/agents/explain.py`) | Local |
+| Steps shown to the user are tool events with template summaries, never model reasoning | Local. **Open: validation finding F-20 (HIGH), model-chosen strings in public tool steps; fix in progress** |
+| The interpreter's model output has no numeric member and no free text that reaches the client: it marks spans, which must be found in the user's text, and picks codes from closed lists. A threshold is read by the server from the user's own words, only as a single percentage in the same sentence; otherwise the user is asked (`backend/agents/interpreter.py`) | Local on a scripted model |
+| Unusable interpreter output is retried once, then answered 502; a timeout is 504. Nothing is stored and no policy is read or written | Local |
+| The interpreter and the investigator cannot confirm or alter a policy: only `POST /rules/confirm` and a `CHANGE_RULE` challenge do, with the number the user sent | Local |
 
 Runtime model: `us.anthropic.claude-sonnet-5-5` on Amazon Bedrock, a stack
-parameter. The development model (Claude Fable 5.2 in Claude Code) is not used
-by the application.
+parameter. Prompt versions `investigator-4` and `interpreter-1`
+(`backend/agents/prompts.py`) have never been sent to the real model:
+Unverified. The development model (Claude Fable 5.2 in Claude Code) is not
+used by the application.
 
 ## 6. Results the engine produces
 
-Implemented in `backend/engine/`; normative text in `contracts/SEMANTICS.md`.
+Local (`backend/engine/`); normative text in `contracts/SEMANTICS.md`.
 
 - **Units.** Portfolio fractions (10% = 0.10), tolerance 1e-9; equality with a
-  limit passes.
+  limit passes. Every number is finite: NaN and infinities are rejected by the
+  validators and, independently, by the engine.
 - **Intervals.** For each fund, known exposure is `fund weight x reported
   issuer weight`; the part of the fund no file reports is possible extra
   exposure to any issuer. A maximum rule is PASS when the upper bound is
@@ -181,8 +193,9 @@ Implemented in `backend/engine/`; normative text in `contracts/SEMANTICS.md`.
   the deepest fall is context only.
 - **Maximum compliant weight.** A closed form (every bound is linear in the
   target weight), then the same evaluator re-run at the result. Withheld when
-  no target is proven to pass. A rounding fix (round down instead of to
-  nearest; effect at most 5e-10) is In progress.
+  no target is proven to pass.
+
+Outcomes on the real data are in `docs/WORKFLOWS.md`.
 
 ## 7. Evidence model
 
@@ -195,21 +208,24 @@ Every number shown is backed by a record in `result.evidence`
 | `label` | `FACT` (from a cited source, or a threshold the user stated and confirmed), `FICTIONAL_SCENARIO`, `ASSUMPTION`, `CALCULATION` |
 | `metric_id`, `value`, `unit`, `currency` | What was measured |
 | `subject`, `period` | The instrument, issuer or portfolio state, and the date or range |
-| `source_ids` | Records in the source registry (`data/processed/sources.json`) |
+| `source_ids` | Records in the source registry |
 | `assumptions` | Modelling choices that apply |
 | `derived_from`, `formula` | The calculation path: the records a calculation used, and the formula printed with the numbers |
 | `calculation_version`, `policy_version` | Engine version and the policy version evaluated (null in a preview) |
 
-Example on the real data (Implemented; `backend/engine/evidence/robert_max_compliant.md`):
-the record `ev-max-final` lists eleven records in `derived_from` (both
-thresholds, NVIDIA's look-through records and bounds, the unattributed fund
-weight, the starting scenario return, NVDA's scenario return, starting cash and
-starting weight), and the engine tests recompute the boundary from those
-records alone.
+Example on the real data (`backend/engine/evidence/robert_max_compliant.md`,
+generated with an earlier engine version; the coordinator's run gives the same
+boundary): the record `ev-max-final` lists in `derived_from` both thresholds,
+NVIDIA's look-through records and bounds, the unattributed fund weight, the
+starting scenario return, NVDA's scenario return, starting cash and starting
+weight; the engine tests recompute the boundary from those records alone.
 
 A disputed fact is stored as an `UNVERIFIED` proposed correction next to the
-record. It changes no calculation (`contracts/api.md` section 8; Specified, In
-progress).
+record. It changes no calculation (Local; `acceptance/fullstack/`).
+
+Known gap: the API example fixture `investigation_mateo_succeeded` shows
+numbers that no record of its `evidence[]` backs (finding L1, open, a fixture
+defect; `acceptance/mateo/FINDINGS.md`).
 
 ## 8. Policy versions
 
@@ -218,60 +234,67 @@ progress).
 
 - A rule is `PROPOSED`, `CONFIRMED` or `SUPERSEDED`. Only confirmed rules with
   a number are evaluated.
-- A version is immutable. Changing a rule creates version n+1 in which the old
-  rule stays as `SUPERSEDED` and its replacement follows it. Earlier versions
-  and their reports stay retrievable.
+- A version is immutable: it is created with `If-None-Match: *` and never
+  rewritten (`backend/common/policies.py`). Changing a rule creates version
+  n+1 in which the old rule stays as `SUPERSEDED` and its replacement follows
+  it. Earlier versions and their reports stay retrievable.
 - The server writes the stored rule and its provenance; the client does not.
 
-Status: the schema, the validators and the engine's handling of superseded
-rules are Implemented (fixture R2). Creating and storing versions through
-`POST /rules/confirm` and a `CHANGE_RULE` challenge is Specified and In
-progress.
+Status: Local. In the browser run on the real data, Robert's version 1 report
+is still retrievable and unchanged after version 2 is created (coordinator's
+run). Policy versions do not expire.
 
 ## 9. Data snapshot identity
 
-- Holdings: one snapshot per fund, holdings date 2026-11-12, source ids
-  `ssga_spy_holdings_2026-11-14` and `ishares_xiu_holdings_2026-11-14`
-  (`backend/engine/evidence/robert_max_compliant.md` section A). Raw-file
-  SHA-256 values are in `data/manifests/raw_files_manifest.json`.
-- The build is deterministic: two consecutive builds were byte-identical
-  (`docs/data-sources.md` section 1).
-- Valuation date 2026-11-12; reporting currency CAD.
-- A result carries `valuation_date`, `calculation_version`, and per fund the
-  `holdings_date`, `coverage_fraction` and `source_id` (`data_coverage`).
-  Schema 1.0.0 has no single snapshot identifier or hash in a result.
-- Loading the snapshot into `snapshots/` in S3 and reading it in the worker:
-  In progress. No upload step exists in this commit (`docs/DEPLOYMENT.md`).
+- A snapshot is a directory of nine files (a manifest plus eight) built by
+  `scripts/build_snapshot.py` from `data/processed/` and
+  `contracts/scenarios/`. Its id, `snap-<valuation date>-<12 hex>`, is derived
+  from the SHA-256 of every file: other data, other id.
+- For the data of 2026-11-14 the script printed
+  `snap-2026-11-12-3390e023b308` (`scripts/deploy.md` section 3b).
+- A snapshot is never modified in place. The id in use is the stack parameter
+  `DataSnapshotId`; new data is a new id and a parameter change.
+- Both functions verify the manifest id, the hash of every file, strict JSON,
+  the contract validators and coverage consistency before serving anything; a
+  snapshot that fails serves nothing.
+- Every investigation records the id it used in the job's internal part, the
+  stored result's inputs, the trace and the logs. The id is **not** a member
+  of the result or job documents that `GET` returns (schema 1.0.0 is frozen).
+- Holdings: one snapshot per fund, holdings date 2026-11-12. Valuation date
+  2026-11-12; reporting currency CAD.
+
+Status: Local. No snapshot has been uploaded.
 
 ## 10. Security model and its disclosed limits
 
 | Control | Status |
 | --- | --- |
-| One shared bearer access code, checked by the authorizer against an SSM SecureString; typed at runtime, kept in `sessionStorage`, never in the bundle or the repository | Implemented, Deployed |
-| Private bucket: Block Public Access, SSE-S3, TLS-only bucket policy | Deployed (evidence section 8) |
-| One IAM role per function, inline policies, no `*` action and no `Resource: "*"` | Deployed (evidence section 9) |
-| No secret in logs, objects or outputs | Checked (evidence section 10) |
-| CORS allow-list of one origin; security headers on the hosted site | Planned (`docs/DEPLOYMENT.md`). The allowed origin is `*` today |
+| One shared bearer access code, checked by the authorizer against an SSM SecureString; typed at runtime, kept in `sessionStorage`, never in the bundle or the repository | Deployed (phase 1) |
+| Private bucket: Block Public Access, SSE-S3, TLS-only bucket policy | Deployed (phase 1) (`infra/evidence/milestone2.md` section 8) |
+| One IAM role per function, inline policies, no `*` action and no `Resource: "*"` | Phase-1 roles Deployed and simulated. The candidate's added statements (policies, snapshots, the interpreter's Bedrock grant on the API role) are Unverified, and the validator's static review of the API role is being re-judged |
+| CORS: one exact origin, no default, guard against `*` in the deploy snippet | Local (`infra/template.yaml`, `scripts/mcp/02_deploy.py`). The deployed stack still allows `*` |
+| A rotated code is refused within 30 s | Local; Unverified in AWS (`scripts/deploy.md` section 7). On the deployed stack the worst case is about 6 minutes |
+| Security headers on the hosted site | Planned (`docs/DEPLOYMENT.md`) |
 
 Limits, stated plainly:
 
 - The access code is demonstration-grade. It is not user identity: everyone
-  who has it sees the same fictional data, and there is no isolation between
-  users. This is acceptable only because all data is fictional.
-- A rotated code is accepted within 60 s; the old one can be accepted for up
-  to 300 s (`scripts/deploy.md` section 7).
+  who has it sees the same fictional data and each other's investigations if
+  they know an id. Acceptable only because all data is fictional.
 - CORS is not authentication.
-- No alarm, dashboard, tracing or dead-letter queue (`infra/README.md`
-  "Limitations").
+- No alarm, dashboard, tracing or dead-letter queue.
+- The account id and the API host appear in tracked files. They are not
+  credentials.
 - The account is a workshop account deleted at the end of 2026-11-16.
 
 ## 11. Validation
 
-- Python tests at this commit: 1083 passed, 3 skipped (the real-data engine
-  tests, which need git-ignored files). Command in the README, section 6.
-- Engine fixtures: 26 hand-calculated cases; a separate plain implementation
-  re-derives every expected number and 35 deliberate mutations are caught
-  (`contracts/fixtures/engine/HAND_CALCS.md`).
-- Deployed slice: `infra/evidence/milestone2.md`; what it does not prove is in
-  its section 16.
-- Independent validation: In progress; nothing in this commit.
+| What | Result | Source |
+| --- | --- | --- |
+| Backend, engine and contract tests | 1685 passed, 9 skipped, in a checkout without the git-ignored data | our run, README section 6 |
+| Backend, contracts and Mateo suites with the real data | 1883 passed, 1 known test under re-judgement | coordinator's run |
+| Mateo acceptance | Statuses, bounds, findings and coverage equal an independent recomputation on the synthetic and the real data; two low findings open (L1, B1) | `acceptance/mateo/FINDINGS.md` |
+| Full-stack browser run on the real data | 30 of 31; the one failure expects a model-written sentence the backend no longer returns. Frontend findings F-01 to F-08, none blocking | coordinator's run; `acceptance/fullstack/FINDINGS.md` |
+| Independent validation | Third pass on `d223714`: 1268 passed, 6 strict expected failures; "go with disclosed limits", conditional on fixing F-20. Fourth pass in progress | reported by the coordinator; criteria in `validation/ACCEPTANCE.md` |
+| Phase-1 deployment | Real requests recorded; what it does not prove is in section 16 of the evidence file | `infra/evidence/milestone2.md` |
+| The candidate in AWS | **Nothing.** The manual and live checks M1 to M3 and L1 to L6 of `validation/ACCEPTANCE.md` have not been run | |
