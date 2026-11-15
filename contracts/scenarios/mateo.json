@@ -212,7 +212,7 @@
     {
       "seq": 5,
       "stage": "VERDICT_EVIDENCE",
-      "description": "The Energy exclusion is already breached by the starting portfolio through XIU.TO (a finding about the starting portfolio, kept apart from the effect of the purchase). ESGV is unknown because its holdings were not acquired. The controversy rule reports only what dated registry records support; every company without a record stays 'not assessed', never 'clean'."
+      "description": "Both rules are already breached by the starting portfolio through XIU.TO: two findings about the starting portfolio, kept apart from the effect of the purchase. The controversy rule fails on dated registry records (Enbridge and Canadian Natural Resources before the purchase; Exxon Mobil is added by SPY); every company without a record stays 'not assessed', never 'clean'. What SPY adds to the Energy exclusion is shown as unresolved, because the SPY holdings file has no sector labels. ESGV is unknown because its holdings were not acquired."
     },
     {
       "seq": 6,

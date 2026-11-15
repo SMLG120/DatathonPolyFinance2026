@@ -21,7 +21,7 @@ def _expected_maximum(case_id):
 
 SUPPORTED = [c for c in CASE_IDS if _expected_maximum(c) == "SUPPORTED"]
 NO_PURCHASE = [c for c in CASE_IDS if _expected_maximum(c) == "NO_FEASIBLE_PURCHASE"]
-WITHHELD_UNKNOWN = ["E05", "E06", "E17", "E19", "E20"]
+WITHHELD_UNKNOWN = ["E05", "E06", "E17", "E19", "E20", "M2"]
 OK_CASES = [c for c in CASE_IDS if case(c)["expected"]["execution"]["status"] == "OK"]
 
 
@@ -430,3 +430,92 @@ def test_callers_errors_are_raised_not_reported():
         engine.check_rules(held, None, request("SYN_A", 0.15), *args)
     with pytest.raises(ValueError):
         engine.max_compliant_amount(held, case("E01")["inputs"]["policy"], request("NOPE", 0.15), *args)
+
+
+# --------------------------------------------------------------------------- boundary evidence and formula text
+
+@pytest.mark.parametrize("case_id", ["R1", "R2"])
+def test_boundary_evidence_cites_every_input_of_the_closed_form(case_id):
+    from engine_helpers import boundary_from_its_evidence
+    result = run_case(case_id)
+    maximum = result["max_compliant"]
+    records = {record["evidence_id"]: record for record in result["evidence"]}
+    final_id, added_id = maximum["evidence_ids"]
+    # The boundary can be recomputed from the cited records alone, and it is the serialized value.
+    assert boundary_from_its_evidence(result) == maximum["final_direct_weight"] == records[final_id]["value"]
+    cited = records[final_id]["derived_from"]
+    metrics = {records[i]["metric_id"] for i in cited}
+    assert {"rule_threshold", "scenario_terminal_return", "scenario_instrument_return", "issuer_exposure_via_fund",
+            "unattributed_fund_weight", "cash_weight", "position_weight"} <= metrics
+    assert set(cited) <= set(records[added_id]["derived_from"]) and final_id in records[added_id]["derived_from"]
+    # Dropping any input record makes the recomputation fail: no link is decorative, none is missing.
+    inputs = [i for i in cited if records[i]["metric_id"] not in ("exposure_lower", "exposure_upper")]
+    assert len(inputs) >= 8
+    for dropped in inputs:
+        with pytest.raises(AssertionError):
+            boundary_from_its_evidence(result, [i for i in cited if i != dropped])
+
+
+@pytest.mark.parametrize("case_id", SUPPORTED)
+def test_boundary_evidence_links_for_every_supported_fixture(case_id):
+    result = run_case(case_id)
+    records = {record["evidence_id"]: record for record in result["evidence"]}
+    final = records[result["max_compliant"]["evidence_ids"][0]]
+    cited = [records[i] for i in final["derived_from"]]
+
+    def has(metric, state=None, subject=None):
+        return any(r["metric_id"] == metric and (state is None or r["subject"]["portfolio_state"] == state)
+                   and (subject is None or r["subject"]["id"] == subject) for r in cited)
+
+    assert has("cash_weight", "STARTING") and has("position_weight", "STARTING", result["purchase_request"]["instrument_id"])
+    for entry in result["rule_results"]:
+        assert has("rule_threshold", subject=entry["rule_id"])
+        if entry["rule_type"] == "scenario_loss_budget":
+            assert has("scenario_terminal_return", "STARTING")
+            assert has("scenario_instrument_return", subject=result["purchase_request"]["instrument_id"])
+        else:
+            assert has("exposure_lower", "STARTING") and has("exposure_upper", "STARTING")
+            unattributed = {r["evidence_id"] for r in result["evidence"]
+                            if r["metric_id"] == "unattributed_fund_weight" and r["subject"]["portfolio_state"] == "STARTING"}
+            assert unattributed <= set(final["derived_from"])
+
+
+@pytest.mark.parametrize("case_id", CASE_IDS)
+def test_formula_text_never_contradicts_the_serialized_value(case_id):
+    """A formula that ends in "= x" states the value (within the contract tolerance); a rounded one says "≈"."""
+    import re
+    result = run_case(case_id)
+    checked = 0
+    for record in result["evidence"]:
+        formula = record["formula"]
+        if not formula or not isinstance(record["value"], (int, float)):
+            continue
+        match = re.search(r"(=|≈) \(?(-?[0-9]+(?:\.[0-9]+)?)\)?$", formula)
+        if not match:
+            continue
+        checked += 1
+        printed = float(match.group(2))
+        assert len(match.group(2).partition(".")[2]) <= 9
+        if match.group(1) == "=":
+            assert abs(printed - record["value"]) <= 1e-12, (record["evidence_id"], formula, record["value"])
+        else:
+            assert abs(printed - record["value"]) <= 5.0000001e-10, (record["evidence_id"], formula, record["value"])
+    if result["execution"]["status"] == "OK":
+        assert checked > 0
+    maximum = result["max_compliant"]
+    if maximum and maximum["status"] == "SUPPORTED":
+        from backend.engine.text import num
+        final, added = maximum["final_direct_weight"], maximum["additional_purchase"]
+        records = {record["evidence_id"]: record for record in result["evidence"]}
+        assert records[maximum["evidence_ids"][0]]["formula"].endswith("= " + num(final))
+        assert num(final) in maximum["reason"] and num(added) in maximum["reason"]
+        assert "≈" not in num(final)  # the result carries 9 decimals, so the 9-decimal text is the value itself
+
+
+def test_display_numbers_say_when_they_are_rounded():
+    from backend.engine.text import eq, num, pct, points
+    assert num(0.083924028) == "0.083924028" and eq(0.083924028) == "= 0.083924028"
+    assert num(0.08392402835504706) == "≈0.083924028" and eq(0.08392402835504706) == "≈ 0.083924028"
+    assert num(-0.35) == "(-0.35)" and num(0.0) == "0" and num(0.1 + 0.2) == "0.3"  # float noise is not "approximately"
+    assert pct(0.10) == "10.00%" and pct(0.262275954) == "about 26.23%"
+    assert points(0.0525) == "5.25" and points(0.07783541303221173) == "about 7.78" and points(0.003, signed=True) == "+0.30"

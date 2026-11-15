@@ -1,4 +1,8 @@
-"""The three synthetic universes used by contracts/fixtures/engine. All numbers are invented."""
+"""The three synthetic universes used by contracts/fixtures/engine. Every weight, price and rate is invented.
+
+The Mateo-shaped registry is the one place that follows real data: its three fixture records copy the issuer,
+the event date and the nature of the project's registry records (see mateo_universe). They are not sources.
+"""
 
 from __future__ import annotations
 
@@ -145,8 +149,17 @@ def robert_universe():
     )
 
 
+# Issuer, event date and nature of the three records held in data/processed/controversies.json on 2026-11-14,
+# followed by the record id in that file. Only these three attributes are copied; the fixture records are not sources.
+MIRRORED_REGISTRY_RECORDS = (
+    ("EXXON_MOBIL", "2017-10-31", "SETTLEMENT", "exxon-mobil-2017-10-31-epa-clean-air-act-settlement"),
+    ("ENBRIDGE", "2016-07-20", "SETTLEMENT", "enbridge-2016-07-20-epa-clean-water-act-settlement"),
+    ("CANADIAN_NATURAL_RESOURCES", "2024-07-15", "REGULATORY_FINDING", "canadian-natural-resources-2024-07-15-aer-administrative-penalty"),
+)
+
+
 def mateo_universe():
-    """Mateo's real D7 instrument ids with INVENTED fund weights and sector rows. ESGV has no holdings file (D7)."""
+    """Mateo's real D7 instrument ids with INVENTED fund weights. SPY rows carry no sector label; ESGV has no holdings file (D7)."""
     instruments = [
         instrument("XBB.TO", "XBB.TO", "iShares Core Canadian Universe Bond Index ETF", "etf_bond", "CAD", "Bonds (Canada aggregate)", S),
         instrument("XIU.TO", "XIU.TO", "iShares S&P/TSX 60 Index ETF", "etf_equity", "CAD", "Broad market (Canada)", S),
@@ -167,16 +180,33 @@ def mateo_universe():
             ("ROYAL_BANK_OF_CANADA", "RY.TO", "Royal Bank of Canada (synthetic weight)", 0.08, "Financials"),
             ("CANADIAN_NATIONAL_RAILWAY", "CNR.TO", "Canadian National Railway (synthetic weight)", 0.03, "Industrials"),
         ] + [(f"SYN_CA_ISSUER_{i}", f"SYN_CA{i}", f"Synthetic Canadian filler company {i}", 0.20, "Financials") for i in range(1, 5)]),
+        # No sector label on any SPY row, as in the project's processed SPY holdings (0 of 503 rows labelled on 2026-11-14).
         fund_holdings("SPY", [
-            ("EXXON_MOBIL", "XOM", "Exxon Mobil (synthetic weight)", 0.02, "Energy"),
-            ("MICROSOFT", "MSFT", "Microsoft (synthetic weight)", 0.06, "Information Technology"),
-        ] + [(f"SYN_US_ISSUER_{i}", f"SYN_US{i}", f"Synthetic U.S. filler company {i}", 0.23, "Industrials") for i in range(1, 5)]),
+            ("EXXON_MOBIL", "XOM", "Exxon Mobil (synthetic weight)", 0.02, None),
+            ("MICROSOFT", "MSFT", "Microsoft (synthetic weight)", 0.06, None),
+        ] + [(f"SYN_US_ISSUER_{i}", f"SYN_US{i}", f"Synthetic U.S. filler company {i}", 0.23, None) for i in range(1, 5)]),
     ]
-    controversies = {"schema_version": SCHEMA_VERSION, "registry_scope": _registry_scope([]), "records": []}
+    controversies = {
+        "schema_version": SCHEMA_VERSION,
+        "registry_scope": _registry_scope(sorted(issuer for issuer, _, _, _ in MIRRORED_REGISTRY_RECORDS)),
+        "records": [{
+            "record_id": f"SYN-MIRROR-{number}",
+            "issuer_id": issuer,
+            "event_date": event_date,
+            "nature": nature,
+            "summary": "SYNTHETIC fixture record. It copies only the issuer, the event date and the nature of the record "
+                       f"'{real_id}' held in data/processed/controversies.json on 2026-11-14. It is not a source: "
+                       "the sourced summary is in that file.",
+            "source_ids": [S],
+            "coverage_note": "Synthetic: one mirrored record for this issuer; nothing else was looked for.",
+        } for number, (issuer, event_date, nature, real_id) in enumerate(MIRRORED_REGISTRY_RECORDS, start=1)],
+    }
     universe = _universe(
         "mateo_synthetic_universe",
-        "The instrument ids are Mateo's real D7 holdings, but the XIU.TO and SPY constituent weights and sector rows here are "
-        "INVENTED. ESGV deliberately has no holdings file. The controversy registry is empty. "
+        "The instrument ids are Mateo's real D7 holdings, but the XIU.TO and SPY constituent weights and the XIU.TO sector rows "
+        "here are INVENTED. The SPY rows carry no sector label, as in the project's processed SPY holdings. ESGV deliberately has "
+        "no holdings file. The controversy registry holds three SYNTHETIC records that copy only the issuer, event date and nature "
+        "of the three records of the project's registry (data/processed/controversies.json, 2026-11-14); they are not sources. "
         "No prices are needed (no scenario rule); the single FX row is a schema placeholder.",
         instruments, funds, {}, [["2026-11-12", 1.4]], controversies,
     )

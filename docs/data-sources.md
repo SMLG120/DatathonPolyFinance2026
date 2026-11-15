@@ -2,14 +2,17 @@
 
 Owner: data-evidence agent. Everything below was produced on **2026-11-14 (UTC)** by the scripts in
 `data/scripts/`; every number comes from a file whose SHA-256 is listed here or in
-`data/manifests/raw_files_manifest.json`. Fictional simulation only: nothing here is advice.
+`data/manifests/raw_files_manifest.json`. The text was revised on 2026-11-15 (Milestone 1 closeout); no data
+file changed. Fictional simulation only: nothing here is advice.
 
 Read first:
 
 - Holdings are **one dated snapshot (as of 2026-11-12)**. It is used only for today's look-through and is
   **not a historical composition** (section 5).
-- The SPY holdings file prints **no sector for any constituent**. Constituent-level sector rules are therefore
-  UNKNOWN for SPY (section 5.3).
+- In the SPY holdings file **all 503 constituent sectors are null**, so sector rules are **UNKNOWN through SPY**
+  (section 5.3).
+- The SPY and XIU holdings files were downloaded by script and are **kept by the owner's decision**, because
+  their provenance and contents validate (section 5.5).
 - Redistribution of the issuer-derived files is **not settled** (section 6). They are git-ignored until the lead decides.
 - The controversy registry holds 3 records for 3 issuers. **Absence means "not assessed", never "no controversy"** (section 7).
 
@@ -30,8 +33,9 @@ python3 -I data/scripts/selftest_quality_checks.py               # seeds 30 defe
 uv run --no-project --with openpyxl --with defusedxml python3 -I data/scripts/quality_checks.py --openpyxl
 ```
 
-- XIU and the BlackRock terms page are **not** fetched automatically (BlackRock's terms, section 6): download
-  them with a web browser and register the saved file with `--from-file`.
+- The build and the checks read local files only; only `acquire_*.py` use the network, and only when a person
+  runs them. They do not fetch XIU or the BlackRock terms page by default (BlackRock's terms, section 6). The
+  holdings files already held are used as they are (section 5.5).
 - Raw files live in `data/raw/` (git-ignored, read-only, never overwritten). A later acquisition creates a new
   file and a new `source_id` (suffix = UTC retrieval date); the build uses the latest snapshot per fund, or the
   one pinned with `--use SOURCE_ID`. **A new snapshot changes the numbers in this document.**
@@ -103,7 +107,8 @@ Full `processing`, `terms` and `limitations` text per source: `data/processed/so
 All were HTTP 200. Retrieval method: one HTTP GET per file by `acquire_*.py` (User-Agent
 `before-you-buy-datathon-prototype/1.0`), **except** two BlackRock files that the agent fetched with `curl`
 while exploring and then registered with `--from-file`: the XIU CSV (22:30:01, before BlackRock's terms had
-been read) and the terms page itself (22:34:58, `curl` run with a browser-like User-Agent string).
+been read) and the terms page itself (22:34:58, `curl` run with a browser-like User-Agent string). The owner
+has decided to keep both holdings files as fetched (section 5.5).
 
 Every other automated request made to blackrock.com, all on 2026-11-14: the XIU product page and a first test
 of the CSV URL (22:26, before the terms were read), and `robots.txt` (22:36:39, 75 seconds after the clause on
@@ -159,8 +164,11 @@ Terms: section 6. Limitations: sections 5, 7, 8 and 9.
   MSFT, CNR.TO, FTS.TO, proposed SPY) the base observation is **2021-12-31** and the end observation is
   **2022-12-30**, with 250 (TSX) or 251 (U.S.) observations after the base. A USD/CAD rate exists on both dates
   (age 0 days; 1.2678 and 1.3544); the oldest rate used inside the window is 4 days old.
-- **`build_dataset.py`** (mentioned by `STARTER_README.md`) is **absent**: searched by file name only in this
-  repository and in `/Users/smlgmac/Datathon PolyFinance 2026`; no file opened.
+- **`build_dataset.py`** (mentioned by `STARTER_README.md`):
+  Not located in the current checkout; user reports it exists in alphaforge_starter.
+  What the audit searched: file names only, in this repository and in
+  `/Users/smlgmac/Datathon PolyFinance 2026`; no file or archive was opened. Whether the organizers delivered
+  the script was not verified here (`docs/PLAN.md`, P5).
 - `data_quality_warnings.txt` says "No warnings."; the three findings above (ZST.TO, CNQ.TO, FX gaps) are ours.
 
 ## 4. Calendar and FX conventions
@@ -184,16 +192,29 @@ Terms: section 6. Limitations: sections 5, 7, 8 and 9.
 | Lines in the file | 505 | 65 |
 | Equity constituents (`n_holdings`) | 503 | 60 |
 | `coverage_fraction` = sum of constituent weights | **0.99871325** | **0.9977** |
-| Non-constituent lines | cash "US DOLLAR" 0.00096144; unlisted "CONTRA HOLOGIC INCORPO" (`2602335D`) 0.00000003 | CAD cash 0.0020; USD cash 0.0004; cash collateral 0.0001; index future `PTZ6` 0.0; unlisted Constellation Software line `2299955D` 0.0 |
-| `non_constituent_weight` | 0.00096147 | 0.0025 |
+| Uncovered fraction = `1 − coverage_fraction` | 0.00128675 | 0.0023 |
+| Cash lines, as printed | "US DOLLAR" 0.00096144 | "CAD CASH" 0.0020; "USD CASH" 0.0004; "CASH COLLATERAL CAD MLPFT" 0.0001 |
+| Futures lines, as printed | none | "S&P/TSE 60 INDEX DEC 26" (`PTZ6`): weight 0.0000, notional value 39,219,180.00 |
+| Other lines, as printed | "CONTRA HOLOGIC INCORPO" (`2602335D`) 0.00000003 | "CONSTELLATION SOFTWARE INC" (`2299955D`): weight 0.0000, market value 0.98 |
+| `non_constituent_weight` = the three rows above | 0.00096147 | 0.0025 |
 | All printed lines | 0.99967472 | 1.0002 |
-| Weight precision in the file | 6 decimals (percent) | 2 decimals (percent) |
+| Remaining gap = `1 − all printed lines` | 0.00032528 | −0.0002 |
+| Printed precision of a weight | 6 decimals of a percent | 2 decimals of a percent |
+| Largest total rounding error at that precision | 505 lines × 0.000000005 = 0.000002525 | 65 lines × 0.00005 = 0.00325 |
+| The remaining gap is | **unresolved**: about 129 times the rounding bound, and no line or note in the file accounts for it | **rounding**: well inside the bound (cross-check below) |
 
-- `coverage_fraction + non_constituent_weight` is not exactly 1: SPY leaves 0.00032528 unitemised; XIU's lines
-  sum to 1.0002 because each weight is rounded to 0.01%. The engine treats `1 − coverage_fraction` as unknown.
-- Cross-checks: every stored weight equals the printed percent / 100 (Q12). XIU printed weights agree with
-  market value / total market value within 0.004984 percentage points. An independent read of the SPY
-  spreadsheet with `openpyxl` returns the same 4,061 cells (Q25).
+- **Coverage residuals.** These are the printed weights, summed as printed; nothing is normalized. SPY's
+  uncovered 0.00128675 is cash 0.00096144, one unlisted line 0.00000003 and an unresolved 0.00032528. XIU.TO's
+  uncovered 0.0023 is cash and cash collateral 0.0025, less 0.0002 of rounding. XIU's index future is printed
+  with weight 0 (its notional is 0.00165520 of the lines' total market value) and is not looked through.
+- **How the engine treats it** (lead decision D4): for a fund held at weight `w`, `w × (1 − coverage_fraction)`
+  is possible exposure to any issuer and is added to the upper bound. Cash lines are not netted out, the
+  uncovered fraction is never treated as zero, and no weight is rescaled.
+- Cross-checks: every stored weight equals the printed percent / 100 (Q12). Each XIU printed weight equals
+  market value / total market value within 0.004984 percentage points; by market value the constituents are
+  0.99749446 of all lines and cash is 0.00250554. An independent read of the SPY spreadsheet with `openpyxl`
+  returns the same 4,061 cells (Q25). The SPY file has no market-value column, so its weights cannot be
+  recomputed from the file.
 - ESGV and QQQ are absent from `holdings.json`: no holdings file, coverage 0, **entirely unknown exposure**.
 
 Numbers for the demos:
@@ -241,20 +262,20 @@ Numbers for the demos:
   0.1275, Information Technology 0.0962, Industrials 0.0825, Consumer Staples 0.0351, Consumer Discretionary
   0.0333, Utilities 0.0260, Communication 0.0157, Real Estate 0.0022. Energy = ENB 0.0359, CNQ 0.0345, SU
   0.0276, TRP 0.0229, CVE 0.0129, CCO 0.0106, PPL 0.0099, IMO 0.0065, TOU 0.0058.
-- **SPY**: the Sector column is "-" on **all 503** lines, so every constituent sector is null and no
-  constituent-level sector total exists. The same issuer's product page publishes fund-level totals as of
-  2026-11-12, kept in `fund_sector_breakdowns.json` (not part of the contracts): Information Technology 0.3615,
-  Financials 0.1250, Health Care 0.1038, Consumer Discretionary 0.0953, Communication Services 0.0888,
-  Industrials 0.0822, Consumer Staples 0.0508, **Energy 0.0358**, Utilities 0.0210, Real Estate 0.0185,
-  Materials 0.0173 (sum 1.0000, so the breakdown appears to exclude cash). These totals do not say which
-  constituent is in which sector.
+- **SPY**: the Sector column is "-" on **all 503** lines. All 503 constituent sectors are therefore null, no
+  constituent-level sector total exists, and **sector rules are UNKNOWN through SPY**. The same issuer's
+  product page publishes fund-level totals as of 2026-11-12, kept in `fund_sector_breakdowns.json` (not part of
+  the contracts): Information Technology 0.3615, Financials 0.1250, Health Care 0.1038, Consumer Discretionary
+  0.0953, Communication Services 0.0888, Industrials 0.0822, Consumer Staples 0.0508, **Energy 0.0358**,
+  Utilities 0.0210, Real Estate 0.0185, Materials 0.0173 (sum 1.0000, so the breakdown appears to exclude
+  cash). These totals do not say which constituent is in which sector.
 - The 31 starter instruments keep the organizers' label in `instruments.json` (`sector_source`
   `starter_assets_universe`); 50 further XIU constituents carry BlackRock's label; the other 493 have none.
 - Labels are stored verbatim and differ between sources ("Communication" at BlackRock, "Communication Services"
   at State Street and in the starter file).
 - Consequence for a `fund_reported_sector = Energy` rule: 0.1666 of any XIU.TO position is known Energy
-  exposure; for SPY nothing is known at constituent level, so the whole position is unknown (the issuer's own
-  fund-level figure is 0.0358). Whether the engine may use the fund-level figure is the lead's decision.
+  exposure. Through SPY the rule is UNKNOWN: the whole SPY position is possible Energy exposure (upper bound),
+  never zero. The fund-level figure (0.0358) classifies no constituent and is not part of the contracts.
 
 ### 5.4 Assumptions
 
@@ -265,6 +286,42 @@ Numbers for the demos:
   2021-11-12 to 2026-11-12 history; companies that were delisted, merged or dropped from an index are absent.
   A replay on this universe understates what an investor in 2022 could have held and lost.
 - The index future in XIU and the two unlisted lines are not looked through.
+
+### 5.5 Local holdings files
+
+- **Directory.** `data/raw/etf_holdings/` is the local directory for issuer holdings files; it is git-ignored.
+  The build reads holdings only from there: it takes the file named in the manifest, checks its SHA-256 and
+  stops if the file is missing or differs. The build and the demo read local files only and never depend on
+  live issuer access: `build_processed.py` makes no network request, and the demo reads a snapshot of the
+  processed files (`docs/PLAN.md`, P6).
+- **Decision.** Both files in use were downloaded by script. The owner has decided to keep them, because their
+  provenance and contents validate:
+
+  | Check | `SPY_2026-11-14.xlsx` | `XIU_2026-11-14.csv` |
+  | --- | --- | --- |
+  | URL | issuer's own site, ssga.com (section 2.2) | issuer's own site, blackrock.com (section 2.2) |
+  | HTTP status | 200 | 200 |
+  | Retrieval timestamp (UTC) | 2026-11-14T22:42:15Z | 2026-11-14T22:30:01Z |
+  | SHA-256 (full value in section 2.2) | `ed54e845…5c10` | `9caae3aa…7527` |
+  | As-of date printed in the file | "As of 12-Nov-2026" | "Nov 12, 2026" |
+  | Parser cross-check | 505 lines parsed; `openpyxl` reads the same 4,061 cells | 65 lines parsed; each printed weight equals market value / total within 0.004984 percentage points |
+  | How it was fetched | one GET by `acquire_holdings.py` | `curl`, before BlackRock's terms had been read |
+
+  The retrieval disclosures stay in section 2.2 and the issuers' terms in section 6.
+- **How a person obtains each file** (link labels as shown on 2026-11-14; the XIU label was read from an
+  exploratory page copy that is not in the manifest):
+  - SPY: open https://www.ssga.com/us/en/intermediary/etfs/state-street-spdr-sp-500-etf-trust-spy, go to
+    "Top Holdings" and click "Daily" after "Download All Holdings:". Then run
+    `python3 -I data/scripts/acquire_holdings.py --item SPY --from-file <saved .xlsx> --retrieved-at <UTC ISO time>`.
+  - XIU: open https://www.blackrock.com/ca/investors/en/products/239832/ishares-sptsx-60-index-etf, go to
+    "Holdings" and click "Download Holdings". Then run
+    `python3 -I data/scripts/acquire_holdings.py --item XIU --from-file <saved .csv> --retrieved-at <UTC ISO time>`.
+  - `--retrieved-at` is the time of the download with a time zone, for example `2026-11-15T14:00:00Z`.
+    Registration makes no network request. It validates the file, copies it read-only to
+    `data/raw/etf_holdings/<FUND>_<UTC date>.<ext>` and records it in the manifest. A file with a new date is
+    a new snapshot: the build then uses it, and the numbers in this document change.
+  - To rebuild from the two files already held, copy them into `data/raw/etf_holdings/` under the names above;
+    their manifest records already exist.
 
 ## 6. Terms of use and redistribution
 
@@ -301,7 +358,7 @@ Our reading:
 | --- | --- |
 | Commit raw issuer files? | No, for both issuers. `data/raw/` is git-ignored. |
 | Publish the normalized snapshot (`holdings.json`, `instruments.json`, `fund_sector_breakdowns.json`, `build_report.json`) in a public repository? | **Not permitted on a plain reading of either issuer's terms without permission. Legally unclear** for bare facts such as weights. **The lead decides.** Until then the four files are ignored by `data/.gitignore`; deleting four lines there publishes them. |
-| Automated retrieval of XIU? | Not permitted without BlackRock's permission; a web browser is allowed. `acquire_holdings.py` refuses XIU unless `--from-file` or `--allow-automated XIU` is given. The registered XIU file was fetched with `curl` before the terms were read; a human re-download through a browser would give clean provenance (and probably a newer snapshot). |
+| Automated retrieval of XIU? | BlackRock's terms do not permit it without permission; a web browser is allowed. `acquire_holdings.py` therefore refuses XIU unless `--from-file` or `--allow-automated XIU` is given. The registered XIU file was fetched with `curl` before the terms were read (section 2.2). **Owner's decision: the script-downloaded SPY and XIU files are kept**, because their provenance and contents validate (section 5.5). |
 | Cite and summarise EPA and AER pages? | Permitted for non-commercial educational use with attribution. |
 
 ## 7. Controversy registry (`controversies.json`)

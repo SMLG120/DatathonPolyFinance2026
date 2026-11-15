@@ -383,6 +383,50 @@ Preview request (rule objects shortened; `fixtures/api/check_robert_preview.json
 }
 ```
 
+A rule that can be neither proven to pass nor proven to fail has status `UNKNOWN`: both bounds, a
+`null` gap and at least one `unknown_causes` entry. Show it as unknown, never as a pass. Example: a
+draft limit of 0.20 on any single company, on a portfolio that holds a fund without a holdings file
+(`fixtures/api/check_mateo_preview_unknown.json`, sent without a policy, so `goal_context` is empty):
+
+<!-- fixture: check_mateo_preview_unknown response_body excerpt -->
+```json
+{
+  "preview": true,
+  "policy_id": null,
+  "policy_version": null,
+  "rule_results": [
+    {
+      "rule_id": "mateo-issuer-cap-draft",
+      "rule_type": "max_issuer_exposure",
+      "status": "UNKNOWN",
+      "measured": { "lower": 0.059, "upper": 0.213 },
+      "limit": 0.2,
+      "gap": null,
+      "breaching_subjects": [],
+      "unknown_causes": ["MISSING_HOLDINGS", "PARTIAL_HOLDINGS"],
+      "starting": { "status": "UNKNOWN", "measured": { "lower": 0.056, "upper": 0.21 } }
+    }
+  ],
+  "starting_portfolio_findings": [],
+  "goal_context": [],
+  "max_compliant": {
+    "status": "WITHHELD",
+    "final_direct_weight": null,
+    "additional_purchase": null,
+    "binding_constraint": null,
+    "verified_by_rerun": false
+  },
+  "summary": {
+    "headline": "NO_FAIL_BUT_UNKNOWN",
+    "counts": { "pass": 0, "fail": 0, "unknown": 1 },
+    "rules_evaluated": 1,
+    "rules_not_evaluated": 0,
+    "starting_portfolio_breaches": 0,
+    "feasibility_status": "FEASIBLE"
+  }
+}
+```
+
 | Status | Body |
 |---|---|
 | 200 | `check_result.schema.json`, **including** a request the engine refuses (`execution.status: "INVALID_REQUEST"`) and a controlled engine failure (`execution.status: "ERROR"`) |
@@ -819,7 +863,7 @@ section 6.
 | `GET /portfolios/{persona_id}` | `portfolio_robert`, `error_unauthorized` (401) |
 | `POST /rules/interpret` | `interpret_mateo_clarification`, `interpret_amira_ambiguous`, `error_interpreter_timeout` (504) |
 | `POST /rules/confirm` | `confirm_robert_v1` (201), `error_policy_version_conflict` (409) |
-| `POST /check` | `check_robert_preview`, `check_invalid_request`, `error_validation` (400) |
+| `POST /check` | `check_robert_preview`, `check_mateo_preview_unknown`, `check_invalid_request`, `error_validation` (400) |
 | `POST /investigations` | `investigation_accepted` (202) |
 | `GET /investigations/{id}` | `investigation_robert_queued`, `investigation_robert_running`, `investigation_robert_succeeded`, `investigation_robert_after_challenge_succeeded`, `investigation_robert_with_correction`, `investigation_mateo_succeeded`, `investigation_amira_clarification`, `investigation_failed`, `error_not_found` (404) |
 | `POST /investigations/{id}/challenge` | `challenge_correct_fact` (201), `challenge_clarify_preference` (200), `challenge_change_rule` (202) |

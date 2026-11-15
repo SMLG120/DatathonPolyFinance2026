@@ -2,7 +2,7 @@
   "fixture": true,
   "universe_id": "mateo_synthetic_universe",
   "synthetic": true,
-  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. The instrument ids are Mateo's real D7 holdings, but the XIU.TO and SPY constituent weights and sector rows here are INVENTED. ESGV deliberately has no holdings file. The controversy registry is empty. No prices are needed (no scenario rule); the single FX row is a schema placeholder.",
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. The instrument ids are Mateo's real D7 holdings, but the XIU.TO and SPY constituent weights and the XIU.TO sector rows here are INVENTED. The SPY rows carry no sector label, as in the project's processed SPY holdings. ESGV deliberately has no holdings file. The controversy registry holds three SYNTHETIC records that copy only the issuer, event date and nature of the three records of the project's registry (data/processed/controversies.json, 2026-11-14); they are not sources. No prices are needed (no scenario rule); the single FX row is a schema placeholder.",
   "instruments": {
     "schema_version": "1.0.0",
     "instruments": {
@@ -320,8 +320,8 @@
             "instrument_id": "XOM",
             "name": "Exxon Mobil (synthetic weight)",
             "weight_fraction": 0.02,
-            "sector": "Energy",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           },
           {
             "fund_id": "SPY",
@@ -329,8 +329,8 @@
             "instrument_id": "MSFT",
             "name": "Microsoft (synthetic weight)",
             "weight_fraction": 0.06,
-            "sector": "Information Technology",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           },
           {
             "fund_id": "SPY",
@@ -338,8 +338,8 @@
             "instrument_id": "SYN_US1",
             "name": "Synthetic U.S. filler company 1",
             "weight_fraction": 0.23,
-            "sector": "Industrials",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           },
           {
             "fund_id": "SPY",
@@ -347,8 +347,8 @@
             "instrument_id": "SYN_US2",
             "name": "Synthetic U.S. filler company 2",
             "weight_fraction": 0.23,
-            "sector": "Industrials",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           },
           {
             "fund_id": "SPY",
@@ -356,8 +356,8 @@
             "instrument_id": "SYN_US3",
             "name": "Synthetic U.S. filler company 3",
             "weight_fraction": 0.23,
-            "sector": "Industrials",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           },
           {
             "fund_id": "SPY",
@@ -365,8 +365,8 @@
             "instrument_id": "SYN_US4",
             "name": "Synthetic U.S. filler company 4",
             "weight_fraction": 0.23,
-            "sector": "Industrials",
-            "sector_source": "SYNTHETIC_FIXTURE"
+            "sector": null,
+            "sector_source": null
           }
         ]
       }
@@ -387,14 +387,52 @@
     "schema_version": "1.0.0",
     "registry_scope": {
       "purpose": "SYNTHETIC registry for engine tests. Not real research.",
-      "issuers_researched": [],
+      "issuers_researched": [
+        "CANADIAN_NATURAL_RESOURCES",
+        "ENBRIDGE",
+        "EXXON_MOBIL"
+      ],
       "research_date": "2026-11-14",
       "absence_meaning": "Absence from this registry means NOT ASSESSED, never 'no controversy'.",
       "source_policy": "Synthetic test data only.",
       "not_evidence": "A sector label is never evidence of a controversy.",
       "limits": "Synthetic."
     },
-    "records": []
+    "records": [
+      {
+        "record_id": "SYN-MIRROR-1",
+        "issuer_id": "EXXON_MOBIL",
+        "event_date": "2017-10-31",
+        "nature": "SETTLEMENT",
+        "summary": "SYNTHETIC fixture record. It copies only the issuer, the event date and the nature of the record 'exxon-mobil-2017-10-31-epa-clean-air-act-settlement' held in data/processed/controversies.json on 2026-11-14. It is not a source: the sourced summary is in that file.",
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "coverage_note": "Synthetic: one mirrored record for this issuer; nothing else was looked for."
+      },
+      {
+        "record_id": "SYN-MIRROR-2",
+        "issuer_id": "ENBRIDGE",
+        "event_date": "2016-07-20",
+        "nature": "SETTLEMENT",
+        "summary": "SYNTHETIC fixture record. It copies only the issuer, the event date and the nature of the record 'enbridge-2016-07-20-epa-clean-water-act-settlement' held in data/processed/controversies.json on 2026-11-14. It is not a source: the sourced summary is in that file.",
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "coverage_note": "Synthetic: one mirrored record for this issuer; nothing else was looked for."
+      },
+      {
+        "record_id": "SYN-MIRROR-3",
+        "issuer_id": "CANADIAN_NATURAL_RESOURCES",
+        "event_date": "2024-07-15",
+        "nature": "REGULATORY_FINDING",
+        "summary": "SYNTHETIC fixture record. It copies only the issuer, the event date and the nature of the record 'canadian-natural-resources-2024-07-15-aer-administrative-penalty' held in data/processed/controversies.json on 2026-11-14. It is not a source: the sourced summary is in that file.",
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "coverage_note": "Synthetic: one mirrored record for this issuer; nothing else was looked for."
+      }
+    ]
   },
   "sources": {
     "schema_version": "1.0.0",

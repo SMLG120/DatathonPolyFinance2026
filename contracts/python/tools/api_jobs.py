@@ -169,26 +169,33 @@ def mateo_job():
          ["ev-energy-threshold", "ev-controversy-threshold"]),
         ("simulate_change", "MODEL", "SPY to a final direct weight of 15.0%, funded from cash.", "Additional purchase 15.0%; cash after the purchase 10.0%; feasible.",
          ["ev-w-spy-start", "ev-w-spy-target", "ev-cash-after"]),
-        ("get_holdings", "MODEL", "Funds XIU.TO, ESGV and SPY.", "XIU.TO: 98.0% covered, as of 2026-11-12. SPY: 100.0% covered, as of 2026-11-12. ESGV: no holdings file held; treated as unknown, not as zero.",
-         ["ev-xiu-coverage", "ev-esgv-unattributed", "ev-xiu-unattributed"]),
-        ("compute_exposure", "MODEL", "Holdings labelled Energy, portfolio before and after the purchase.", "Energy label: 1.4% to 16.8% before the purchase; 1.7% to 17.1% after it.",
+        ("get_holdings", "MODEL", "Funds XIU.TO, ESGV and SPY.",
+         "XIU.TO: 98.0% covered, as of 2026-11-12, every row with a sector label. SPY: 100.0% covered, as of 2026-11-12, no row with a sector label. "
+         "ESGV: no holdings file held; treated as unknown, not as zero.",
+         ["ev-xiu-coverage", "ev-spy-coverage", "ev-spy-sector-labels", "ev-esgv-unattributed", "ev-xiu-unattributed"]),
+        ("compute_exposure", "MODEL", "Holdings labelled Energy, portfolio before and after the purchase.",
+         "Energy label: 1.4% to 16.8% before the purchase; 1.4% to 31.8% after it. The SPY rows have no sector label: nothing proven, up to 15.0% possible.",
          ["ev-energy-lower-start", "ev-energy-upper-start", "ev-energy-lower", "ev-energy-upper"]),
-        ("lookup_controversy_evidence", "MODEL", "Every company held directly or through XIU.TO and SPY.", "No registry record for any held company. The registry researched none of them: not assessed.",
-         ["ev-controversy-lower", "ev-controversy-upper"]),
-        ("check_rules", "SERVER", "Every confirmed rule of policy version 1.", "2 rules evaluated: 0 PASS, 1 FAIL, 1 UNKNOWN. 1 rule was already breached before the purchase.",
-         ["ev-energy-gap", "ev-controversy-upper"]),
+        ("lookup_controversy_evidence", "MODEL", "Every company held directly or through XIU.TO and SPY.",
+         "3 matching registry records: Enbridge (SETTLEMENT, 2016-07-20), Canadian Natural Resources (REGULATORY_FINDING, 2024-07-15), "
+         "Exxon Mobil (SETTLEMENT, 2017-10-31). Every other company: no record, not assessed.",
+         ["ev-record-enb", "ev-record-cnq", "ev-record-xom"]),
+        ("check_rules", "SERVER", "Every confirmed rule of policy version 1.", "2 rules evaluated: 0 PASS, 2 FAIL, 0 UNKNOWN. 2 rules were already breached before the purchase.",
+         ["ev-energy-gap", "ev-controversy-gap"]),
         ("max_compliant_amount", "SERVER", "SPY, cash funding, every confirmed rule.", "No feasible purchase: the Energy-label exclusion is already breached by the starting portfolio.",
          ["ev-energy-lower-start", "ev-energy-threshold"]),
     ]
     steps = [step(i, tool, by, t(3 * i), t(3 * i + 2), "OK", inp, out, evidence) for i, (tool, by, inp, out, evidence) in enumerate(rows, start=1)]
-    finding = result["starting_portfolio_findings"][0]
+    findings = {f["rule_id"]: f for f in result["starting_portfolio_findings"]}
     explanation = [
-        statement("st-1", finding["reason"], finding["evidence_ids"]),
-        statement("st-2", by_id["mateo-excl-energy-1"]["reason"], by_id["mateo-excl-energy-1"]["evidence_ids"]),
-        statement("st-3", by_id["mateo-controversy-1"]["reason"], by_id["mateo-controversy-1"]["evidence_ids"]),
-        statement("st-4", result["max_compliant"]["reason"], result["max_compliant"]["evidence_ids"]),
-        statement("st-5", "The Energy label is the sector reported in each fund's holdings file. It is not a list of oil producers and it says nothing about controversies.", []),
-        statement("st-6", DISCLAIMER, []),
+        statement("st-1", findings["mateo-excl-energy-1"]["reason"], findings["mateo-excl-energy-1"]["evidence_ids"]),
+        statement("st-2", findings["mateo-controversy-1"]["reason"], findings["mateo-controversy-1"]["evidence_ids"]),
+        statement("st-3", by_id["mateo-excl-energy-1"]["reason"], by_id["mateo-excl-energy-1"]["evidence_ids"]),
+        statement("st-4", by_id["mateo-controversy-1"]["reason"], by_id["mateo-controversy-1"]["evidence_ids"]),
+        statement("st-5", result["max_compliant"]["reason"], result["max_compliant"]["evidence_ids"]),
+        statement("st-6", "The Energy label is the sector reported in each fund's holdings file. It is not a list of oil producers and it says nothing about controversies. "
+                          "A registry record shows that a dated event is on file with its source; companies without a record were not assessed.", []),
+        statement("st-7", DISCLAIMER, []),
     ]
     return job("inv-mateo-0001", "SUCCEEDED", "2026-11-14T15:12:00Z", "2026-11-14T15:12:27Z", "e5f60718-2930-4a4b-8c5d-6e7f8091a2b3", "mateo",
                "pol-mateo-demo", 1, MATEO_REQUEST, rounds=5, steps=steps, result=result, explanation=explanation)

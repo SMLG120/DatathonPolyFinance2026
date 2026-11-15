@@ -2,7 +2,7 @@
   "fixture": true,
   "fixture_id": "challenge_correct_fact",
   "synthetic": true,
-  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Portfolio weights and thresholds are fictional-scenario values.",
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. Portfolio weights and thresholds are fictional-scenario values.",
   "description": "POST /investigations/inv-robert-0001/challenge. A disputed fact becomes an UNVERIFIED proposed correction with provenance. It is not applied to any calculation and the disputed evidence record is untouched.",
   "route": "POST /investigations/{id}/challenge",
   "http_status": 201,

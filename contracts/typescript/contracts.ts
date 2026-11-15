@@ -522,7 +522,8 @@ export type EvidencePeriod = AsOfPeriod | RangePeriod;
 
 /**
  * One inspectable number or fact behind a result.
- * `value` is a string for units `date` and `text`, a number otherwise.
+ * `value` is a string for units `date` and `text`, a number otherwise; null when it could not be
+ * computed or the source reports none (a `sector_label` the holdings file does not give).
  * `currency` is set only for unit `price`.
  */
 export interface EvidenceRecord {

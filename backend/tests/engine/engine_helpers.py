@@ -15,7 +15,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "contracts" / "fixtures" / "engine"
 SCENARIOS = REPO_ROOT / "contracts" / "scenarios"
 PROCESSED = REPO_ROOT / "data" / "processed"
-CASE_IDS = [f"E{n:02d}" for n in range(1, 23)] + ["R1", "R2", "M1"]
+CASE_IDS = [f"E{n:02d}" for n in range(1, 23)] + ["R1", "R2", "M1", "M2"]
 
 
 @lru_cache(maxsize=None)
@@ -110,3 +110,63 @@ def all_pass_and_funded(result: dict) -> bool:
         and bool(result["rule_results"])
         and all(entry["status"] == "PASS" for entry in result["rule_results"])
     )
+
+
+def boundary_from_its_evidence(result: dict, derived_from=None) -> float:
+    """Recompute the maximum compliant final weight from the records ``ev-max-final`` cites, and nothing else.
+
+    Supports the Robert-shaped case: a direct equity purchase under any-issuer caps and scenario loss budgets.
+    Raises AssertionError when a record the closed form needs is not cited, so a missing ``derived_from`` link
+    fails the test that calls this.
+    """
+    records = {record["evidence_id"]: record for record in result["evidence"]}
+    final_record = records[result["max_compliant"]["evidence_ids"][0]]
+    assert final_record["metric_id"] == "max_compliant_final_weight"
+    cited_ids = final_record["derived_from"] if derived_from is None else derived_from
+    cited = [records[i] for i in cited_ids]
+
+    def pick(metric, state=None, subject=None):
+        return [r for r in cited if r["metric_id"] == metric and (state is None or r["subject"]["portfolio_state"] == state)
+                and (subject is None or r["subject"]["id"] == subject)]
+
+    def everywhere(metric, state, subject=None):
+        return [r for r in result["evidence"] if r["metric_id"] == metric and r["subject"]["portfolio_state"] == state
+                and (subject is None or r["subject"]["id"] == subject)]
+
+    instrument_id = result["purchase_request"]["instrument_id"]
+    added = result["feasibility"]["additional_purchase"]
+    assert added > 0, "helper needs a request that buys something"
+    issuer = next(e["issuer_id"] for e in result["exposure"]["issuers"] if abs(e["proposed"]["direct"] - e["starting"]["direct"] - added) < 1e-12)
+    cash = pick("cash_weight", "STARTING")
+    start_weight = pick("position_weight", "STARTING", instrument_id)
+    assert len(cash) == 1, "starting cash is not cited"
+    assert len(start_weight) == 1, "the starting direct weight is not cited"
+    w0 = start_weight[0]["value"]
+    ends = [w0 + cash[0]["value"]]
+    for entry in result["rule_results"]:
+        threshold = pick("rule_threshold", subject=entry["rule_id"])
+        assert len(threshold) == 1, f"the threshold of {entry['rule_id']} is not cited"
+        limit = threshold[0]["value"]
+        if entry["rule_type"] == "scenario_loss_budget":
+            start_return = pick("scenario_terminal_return", "STARTING")
+            instrument_return = pick("scenario_instrument_return", subject=instrument_id)
+            assert len(start_return) == 1, "the starting scenario return is not cited"
+            assert len(instrument_return) == 1, "the instrument's scenario return is not cited"
+            loss, slope = -start_return[0]["value"], -instrument_return[0]["value"]
+            assert slope > 0, "helper supports a purchase that adds to the loss"
+            ends.append(w0 + (limit - loss) / slope)
+        elif entry["rule_type"] == "max_issuer_exposure":
+            direct, via, extra = (pick(m, "STARTING", s) for m, s in (
+                ("issuer_direct_exposure", issuer), ("issuer_exposure_via_fund", issuer), ("unattributed_fund_weight", None)))
+            for cited_records, metric, subject, what in (
+                (direct, "issuer_direct_exposure", issuer, "direct exposure"),
+                (via, "issuer_exposure_via_fund", issuer, "look-through exposure"),
+                (extra, "unattributed_fund_weight", None, "unattributed fund weight"),
+            ):
+                wanted = {r["evidence_id"] for r in everywhere(metric, "STARTING", subject)}
+                assert {r["evidence_id"] for r in cited_records} == wanted, f"{what} records not cited: {sorted(wanted)}"
+            known = sum(r["value"] for r in direct) + sum(r["value"] for r in via)
+            ends.append(w0 + limit - known - sum(r["value"] for r in extra))
+        else:
+            raise AssertionError(f"helper does not support {entry['rule_type']}")
+    return min(1.0, round(min(ends), 9))

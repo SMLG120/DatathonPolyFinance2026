@@ -13,7 +13,7 @@ import pytest
 from byb_contracts import check_result_errors
 
 from backend import engine
-from engine_helpers import PROCESSED, SCENARIOS, all_pass_and_funded, confirm, load, make_policy
+from engine_helpers import PROCESSED, SCENARIOS, all_pass_and_funded, boundary_from_its_evidence, confirm, load, make_policy
 
 REQUIRED = ("holdings.json", "instruments.json", "market_data.json")
 pytestmark = pytest.mark.skipif(
@@ -120,6 +120,15 @@ def test_robert_nvda_to_25_percent_then_cap_raised_to_30(data, capsys):
         if maximum["status"] != "SUPPORTED":
             continue
         final = maximum["final_direct_weight"]
+        # The boundary evidence cites every input of the closed form: recomputing from those records alone gives the value.
+        records = {record["evidence_id"]: record for record in result["evidence"]}
+        final_record, added_record = (records[i] for i in maximum["evidence_ids"])
+        assert boundary_from_its_evidence(result) == final == final_record["value"]
+        assert set(final_record["derived_from"]) <= set(added_record["derived_from"])
+        for dropped in [i for i in final_record["derived_from"] if records[i]["metric_id"] not in ("exposure_lower", "exposure_upper")]:
+            with pytest.raises(AssertionError):
+                boundary_from_its_evidence(result, [i for i in final_record["derived_from"] if i != dropped])
+        assert f"{final:.9f}".rstrip("0") in maximum["reason"] and f"= {final:.9f}".rstrip("0") in final_record["formula"]
         assert all_pass_and_funded(check(data, held, policy, dict(purchase, target_direct_weight=final)))
         assert not all_pass_and_funded(check(data, held, policy, dict(purchase, target_direct_weight=final + 1e-6)))
 

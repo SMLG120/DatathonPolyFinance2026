@@ -468,7 +468,10 @@ def main() -> int:
         searched.append({"root": str(root), "file_names_examined": n_names})
         print(f"  searched by file name only: {root} ({n_names} file names examined, no file opened)")
     print(f"  files named build_dataset*: {found or 'NONE FOUND'}")
-    print("  -> build_dataset.py is ABSENT." if not found else "  -> a candidate exists; inspect it manually.")
+    # Wording fixed by the lead (docs/PLAN.md, P5). This search lists file names only and never opens an
+    # archive, so it cannot confirm or refute the user's report; organizer delivery is not verified here.
+    print("  -> Not located in the current checkout; user reports it exists in alphaforge_starter." if not found
+          else "  -> a candidate exists; inspect it manually.")
     FINDINGS["build_dataset_py"] = {"searched": searched, "found": found}
 
     # ------------------------------------------------------------------ result

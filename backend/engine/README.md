@@ -22,6 +22,17 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
+`CALCULATION_VERSION` is `byb-engine-1.0.1`. Change from 1.0.0 (evidence and display text only; no serialized
+number, status or boundary changed):
+
+- `ev-max-final` and `ev-max-added` now list in `derived_from` every record the closed-form boundary uses, for the
+  binding and the non-binding constraints: thresholds, the starting scenario return and the instrument's scenario
+  return, the purchased issuer's look-through records and bounds before the purchase, the unattributed fund weight,
+  starting cash and the starting direct weight.
+- Formula and reason text prints up to 9 decimals and marks a rounded number with "≈" (formulas) or "about"
+  (sentences), so the text never contradicts the serialized value. The unrounded boundary is not part of the result;
+  `evidence/robert_max_compliant.py` reproduces it.
+
 Tests, from the repository root:
 
 ```

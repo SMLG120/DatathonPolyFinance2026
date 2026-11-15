@@ -1,14 +1,16 @@
 # Hand calculations for the engine fixtures
 
-Every number in the `expected` block of `E01.json` ... `E22.json`, `R1.json`, `R2.json` and `M1.json` is derived
-here by hand. **All inputs are synthetic**: the fund weights, coverage figures, prices, FX rates and the one
-controversy record were invented so the arithmetic is short. None of it is real data about SPY, XIU.TO, NVDA or
-any other instrument, even where a fixture borrows a real ticker.
+Every number in the `expected` block of `E01.json` ... `E22.json`, `R1.json`, `R2.json`, `M1.json` and `M2.json`
+is derived here by hand. **All inputs are synthetic**: the fund weights, coverage figures, prices and FX rates
+were invented so the arithmetic is short, and the controversy records are test records (the three in the
+Mateo-shaped universe copy only the issuer, the event date and the nature of the records in the project's
+registry). None of it is real data about SPY, XIU.TO, NVDA or any other instrument, even where a fixture borrows
+a real ticker.
 
 The arithmetic was re-checked independently of how it was typed in: `contracts/python/tests/test_hand_calcs.py`
 re-derives every expected number with a separate plain implementation (`reference_calc.py`), confirms every
-maximum-compliant boundary with a brute-force scan over target weights, and proves with 30 deliberate mutations
-that a wrong number is caught. If a fixture and this file ever disagree, the fixture is wrong.
+maximum-compliant boundary with a brute-force scan over target weights, and proves with 35 deliberate
+mutations that a wrong number is caught. If a fixture and this file ever disagree, the fixture is wrong.
 
 ## Conventions used below
 
@@ -392,35 +394,117 @@ budget is unchanged. Same portfolio and request as R1, so every measurement is t
 
 ## Mateo-shaped universe (`mateo_synthetic_universe.json`)
 
-Instrument ids from Mateo's fictional portfolio; constituent weights and sector rows are **invented**.
+Instrument ids from Mateo's fictional portfolio. The constituent weights and the XIU.TO sector rows are
+**invented**. Two features follow the project's processed data as it stood on 2026-11-14, so that the fixture
+does not show a cleaner picture than the product can have: the SPY rows have no sector label, and the registry
+holds records for the same three issuers.
 
 - XIU.TO (coverage 0.98, every row labelled): ENB.TO 0.04 Energy, CNQ.TO 0.03 Energy, RY.TO 0.08 Financials,
   CNR.TO 0.03 Industrials, four filler companies 0.20 each (Financials).
-- SPY (coverage 1.00, every row labelled): XOM 0.02 Energy, MSFT 0.06 Information Technology, four filler
-  companies 0.23 each (Industrials).
-- ESGV: no holdings file. Controversy registry: empty, no issuer researched.
+  Sum `0.04 + 0.03 + 0.08 + 0.03 + 4 x 0.20 = 0.98`.
+- SPY (coverage 1.00, **no row has a sector label**): XOM 0.02, MSFT 0.06, four filler companies 0.23 each.
+  Sum `0.02 + 0.06 + 4 x 0.23 = 1.00`. The project's processed SPY holdings carry no constituent sector either
+  (0 of 503 rows labelled).
+- ESGV: no holdings file (LEAD_DECISIONS D7).
+- Direct holdings are labelled in the instrument registry: MSFT Information Technology, CNR.TO Industrials,
+  FTS.TO Utilities.
+- Controversy registry: three **synthetic** records. `SYN-MIRROR-1` Exxon Mobil, 2017-10-31, SETTLEMENT;
+  `SYN-MIRROR-2` Enbridge, 2016-07-20, SETTLEMENT; `SYN-MIRROR-3` Canadian Natural Resources, 2024-07-15,
+  REGULATORY_FINDING. They copy only the issuer, the event date and the nature of the three records in
+  `data/processed/controversies.json`. They are not sources and carry no real summary. Issuers researched:
+  those three.
+
+Portfolio (M1 and M2): cash 0.25, XBB.TO 0.25, XIU.TO 0.20, ESGV 0.15, MSFT 0.05, CNR.TO 0.05, FTS.TO 0.05
+(sum 1.00). Request (M1 and M2): SPY to 0.15, not held before.
+
+Look-through shared by M1 and M2:
+
+- Feasibility: additional `0.15 - 0 = 0.15`; cash after `0.25 - 0.15 = 0.10`. FEASIBLE.
+- Out of scope: XBB.TO 0.25 (bond fund), in neither bound.
+- Uncovered weight: XIU.TO `0.20 x (1 - 0.98) = 0.004`; ESGV 0.15 (no file); SPY `0.15 x (1 - 1.00) = 0`.
+  `U = 0.004 + 0.15 = 0.154`, before and after the purchase.
+- Known exposure, starting: Enbridge `0.20 x 0.04 = 0.008`; Canadian Natural Resources `0.20 x 0.03 = 0.006`;
+  Royal Bank `0.20 x 0.08 = 0.016`; Canadian National Railway `0.05 + 0.20 x 0.03 = 0.056`; each Canadian filler
+  `0.20 x 0.20 = 0.04`; Microsoft 0.05; Fortis 0.05.
+- Known exposure added by SPY at 0.15: Exxon Mobil `0.15 x 0.02 = 0.003`; Microsoft `0.15 x 0.06 = 0.009`
+  (total `0.05 + 0.009 = 0.059`); each U.S. filler `0.15 x 0.23 = 0.0345`.
+- Coverage: XIU.TO weight 0.20, coverage 0.98, sector-labelled 0.98, uncovered 0.004, PARTIAL. ESGV weight 0.15,
+  coverage 0, sector-labelled 0, uncovered 0.15, MISSING. SPY weight 0.15, coverage 1.00, sector-labelled 0.00,
+  uncovered 0, COVERED. (COVERED describes the constituent list; the missing labels show in the
+  sector-labelled figure and in the UNCLASSIFIED_SECTOR cause.)
 
 ## M1 Mateo-shaped: SPY to 0.15 with an Energy-label exclusion and a controversy exclusion
 
-Portfolio: cash 0.25, XBB.TO 0.25, XIU.TO 0.20, ESGV 0.15, MSFT 0.05, CNR.TO 0.05, FTS.TO 0.05.
-Rules: holdings labelled Energy at most 0; issuers with a REGULATORY_FINDING, COURT_RULING or SETTLEMENT record
-at most 0. Request: SPY to 0.15 (not held before).
+Rules, in policy order: (1) holdings labelled Energy at most 0; (2) issuers with a REGULATORY_FINDING,
+COURT_RULING or SETTLEMENT record at most 0, any event date. Both are max-type rules with limit 0, so the
+interval rule reads: PASS if `upper <= 0`, FAIL if `lower > 0`, otherwise UNKNOWN.
 
-- Feasibility: additional 0.15; cash after `0.25 - 0.15 = 0.10`.
-- Out of scope: XBB.TO 0.25.
-- Energy, starting. Known through XIU.TO: Enbridge `0.20 x 0.04 = 0.008`, Canadian Natural Resources
-  `0.20 x 0.03 = 0.006`; total 0.014. Direct holdings are labelled Information Technology, Industrials and
-  Utilities. Unknown: XIU.TO `0.20 x 0.02 = 0.004`, ESGV 0.15 (no file); `U = 0.154`. Lower 0.014, upper
-  `0.014 + 0.154 = 0.168`. `0.014 > 0`: FAIL before any purchase, `gap = 0.014` (starting-portfolio finding).
-- Energy, proposed. SPY adds Exxon Mobil `0.15 x 0.02 = 0.003` and nothing unknown. Lower `0.017`, upper
-  `0.017 + 0.154 = 0.171`: FAIL, `gap = 0.017`. Purchase effect +0.003 on both bounds.
-  Breaching: Enbridge [0.008, 0.162], Canadian Natural Resources [0.006, 0.160], Exxon Mobil [0.003, 0.157]
-  (each lower bound plus `U = 0.154`).
-- Controversy. No record matches: lower 0. Upper = in-scope equity weight: starting
-  `0.20 + 0.15 + 0.05 + 0.05 + 0.05 = 0.50`, proposed `0.50 + 0.15 = 0.65`. UNKNOWN, gap null. Causes
-  REGISTRY_ABSENCE, MISSING_HOLDINGS (ESGV), PARTIAL_HOLDINGS (XIU.TO).
-- Coverage: XIU.TO 0.20, coverage 0.98, uncovered 0.004, PARTIAL; ESGV 0.15, MISSING, uncovered 0.15;
-  SPY 0.15, COVERED.
-- Maximum compliant: the known Energy share is at least 0.014 at every target. NO_FEASIBLE_PURCHASE; the Energy
-  exclusion is the constraint.
-- Summary: 1 FAIL, 1 UNKNOWN, 1 starting-portfolio breach. Headline HAS_FAIL.
+Energy-label exclusion (`mateo-excl-energy-1`):
+
+- Starting lower. Rows labelled Energy: Enbridge 0.008 and Canadian Natural Resources 0.006, both through XIU.TO.
+  No direct holding is labelled Energy. Lower `0.008 + 0.006 = 0.014`.
+- Starting upper. Add everything whose label is not known: `U = 0.154`; no row held before the purchase lacks
+  a label, so unclassified is 0. Upper `0.014 + 0.154 + 0 = 0.168`.
+- Starting status. `lower = 0.014 > 0`: FAIL before any purchase, `gap = 0.014 - 0 = 0.014`. This is a
+  starting-portfolio finding.
+- Proposed lower. No SPY row has a sector label, so no SPY row is proven to be Energy, Exxon Mobil included:
+  a missing label is unknown and is not filled in from another source. Lower stays `0.014`.
+- Proposed upper. Every SPY row is unclassified: `0.15 x 1.00 = 0.15`. Upper `0.014 + 0.154 + 0.15 = 0.318`.
+- Proposed status. `lower = 0.014 > 0`: FAIL, `gap = 0.014`. FAIL needs only the lower bound; the unknown part
+  above it cannot undo a proven breach, and it cannot turn the result into UNKNOWN.
+- Purchase effect: lower `0.014 - 0.014 = 0`, upper `0.318 - 0.168 = +0.15`. What the SPY purchase adds to this
+  rule is unresolved: 0 is proven, up to +0.15 is possible. The breach itself exists without the purchase.
+- Breaching subjects (issuers with proven Energy-labelled exposure, each with its own bounds
+  `[lower, lower + U]`): Enbridge `[0.008, 0.008 + 0.154] = [0.008, 0.162]`, Canadian Natural Resources
+  `[0.006, 0.006 + 0.154] = [0.006, 0.160]`. Exxon Mobil is not a breaching subject of this rule: its row has
+  no label.
+- Causes of the unknown part: MISSING_HOLDINGS (ESGV), PARTIAL_HOLDINGS (XIU.TO), UNCLASSIFIED_SECTOR (SPY rows).
+
+Controversy exclusion (`mateo-controversy-1`):
+
+- Flagged issuers: each of the three registry records has a nature in the rule's list, and the rule has no
+  date limit. Exxon Mobil, Enbridge and Canadian Natural Resources are flagged.
+- Starting. Lower: Enbridge 0.008 + Canadian Natural Resources 0.006 = `0.014` (Exxon Mobil is not held).
+  Upper = all in-scope equity weight, because an issuer without a record is not assessed:
+  `0.20 + 0.15 + 0.05 + 0.05 + 0.05 = 0.50`. `lower = 0.014 > 0`: FAIL, `gap = 0.014`. A second
+  starting-portfolio finding.
+- Proposed. Lower: SPY adds Exxon Mobil 0.003 (the issuer comes from the constituent row; no sector label is
+  needed): `0.014 + 0.003 = 0.017`. Upper `0.50 + 0.15 = 0.65`. `lower = 0.017 > 0`: FAIL, `gap = 0.017`.
+- Purchase effect: lower `0.017 - 0.014 = +0.003` (proven: Exxon Mobil through SPY), upper
+  `0.65 - 0.50 = +0.15`.
+- Breaching subjects: Enbridge [0.008, 0.162], Canadian Natural Resources [0.006, 0.160], Exxon Mobil
+  `[0.003, 0.003 + 0.154] = [0.003, 0.157]`. The starting-portfolio finding lists the first two only.
+- Causes of the unknown part: REGISTRY_ABSENCE (issuers without a record are not assessed), MISSING_HOLDINGS
+  (ESGV), PARTIAL_HOLDINGS (XIU.TO).
+
+Whole result:
+
+- Maximum compliant: the Energy rule's lower bound is 0.014 at every target `w` in `(0, 0.25]` (it does not
+  depend on `w`), so the rule is FAIL at every target. NO_FEASIBLE_PURCHASE. The constraint is the first rule in
+  policy order that fails just above the starting weight: the Energy exclusion. (The controversy rule fails
+  there too, with lower `0.014 + 0.02 w`.)
+- Summary: 0 PASS, 2 FAIL, 0 UNKNOWN, 2 starting-portfolio breaches. Headline HAS_FAIL.
+- What stays unknown is carried inside the two FAIL results: the upper bounds, the causes and the purchase
+  effects. A status is exactly one of PASS, FAIL, UNKNOWN, and a proven breach is FAIL. M2 shows a rule whose
+  status itself is UNKNOWN on the same data.
+
+## M2 Mateo-shaped: a 0.20 single-company limit is UNKNOWN because ESGV has no holdings file
+
+Same universe, portfolio and request as M1. One rule: no issuer above 0.20 (`mateo-issuer-cap-draft`). It is a
+what-if limit and is not part of Mateo's demo policy; the API example built from this case is a preview of a
+draft rule. Max-type: PASS if `upper <= 0.20`, FAIL if `lower > 0.20`, otherwise UNKNOWN.
+
+- Starting. Largest known exposure: Canadian National Railway 0.056 (then Microsoft 0.05, Fortis 0.05, the
+  Canadian fillers 0.04). Lower 0.056, upper `0.056 + U = 0.056 + 0.154 = 0.21`. `upper = 0.21 > 0.20`: not
+  PASS. `lower = 0.056 <= 0.20`: not FAIL. UNKNOWN.
+- Proposed. Largest known exposure: Microsoft 0.059 (then Canadian National Railway 0.056, Fortis 0.05, the
+  Canadian fillers 0.04, the U.S. fillers 0.0345). Lower 0.059, upper `0.059 + 0.154 = 0.213`.
+  `0.213 > 0.20` and `0.059 <= 0.20`: UNKNOWN, gap null.
+- Why it cannot be decided: the 0.154 that no file lists (ESGV 0.15, XIU.TO 0.004) could be entirely one
+  company that is already held, or none of it. Causes MISSING_HOLDINGS (ESGV), PARTIAL_HOLDINGS (XIU.TO).
+  No breaching subject. No starting-portfolio finding (the starting status is UNKNOWN, not FAIL).
+- Maximum compliant: for `w` in `(0, 0.25]` the largest known exposure is the largest of 0.056, `0.05 + 0.06 w`
+  and `0.23 w`. At `w = 0.25` these are 0.056, 0.065 and 0.0575, so the lower bound stays between 0.056 and
+  0.065: never above 0.20, no target is proven to fail. The upper bound is at least `0.056 + 0.154 = 0.21`:
+  above 0.20, no target is proven to pass. WITHHELD: no number is given.
+- Summary: 0 PASS, 0 FAIL, 1 UNKNOWN, no starting-portfolio breach. Headline NO_FAIL_BUT_UNKNOWN.

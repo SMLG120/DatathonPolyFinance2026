@@ -35,6 +35,7 @@ from .core import (
     replay_state,
     simulate_change,
 )
+from .text import eq, num, pct, points, span, total
 from .version import CALCULATION_VERSION
 
 STATES = ("starting", "proposed")
@@ -51,32 +52,6 @@ UNKNOWN_CAUSE_TEXT = {
 }
 UNSOURCED_MARKET_DATA = "Taken from the market data supplied to the engine; no source id was supplied with it."
 UNATTRIBUTED_NOTE = "The part of a fund not covered by its holdings file could be any issuer; it is never treated as zero."
-
-
-# --------------------------------------------------------------------------- formatting (display text only)
-
-def num(value: float) -> str:
-    text = f"{value:.6f}".rstrip("0").rstrip(".")
-    if text in ("-0", ""):
-        text = "0"
-    return f"({text})" if text.startswith("-") else text
-
-
-def pct(value: float) -> str:
-    text = f"{value * 100:.2f}"
-    return ("0.00" if text == "-0.00" else text) + "%"
-
-
-def span(measured: Optional[dict]) -> str:
-    if measured is None:
-        return "not computable"
-    if abs(measured["upper"] - measured["lower"]) < 5e-7:
-        return pct(measured["lower"])
-    return f"between {pct(measured['lower'])} and {pct(measured['upper'])}"
-
-
-def total(values: list) -> str:
-    return " + ".join(num(v) for v in values) if values else "0"
 
 
 # --------------------------------------------------------------------------- analysis (numbers only)
@@ -191,6 +166,9 @@ class Evidence:
     def id(self, key: str) -> str:
         return self._ids[key]
 
+    def record(self, evidence_id: str) -> dict:
+        return next(record for record in self.records if record["evidence_id"] == evidence_id)
+
     def add(self, key: str, label: str, metric_id: str, value: Any, kind: str, subject_id: str, *, state: str = "NOT_APPLICABLE",
             via: Optional[str] = None, unit: str = "fraction", period: Optional[dict] = None, sources: Any = (),
             assumptions: Any = (), derived: Any = (), formula: Optional[str] = None, currency: Optional[str] = None) -> str:
@@ -270,7 +248,7 @@ class _Document:
             "ev-cash-after", "CALCULATION", "cash_after_purchase", feasibility["cash_after"], "PORTFOLIO", self.portfolio_id, state="PROPOSED",
             assumptions=["Funded from cash; every other position unchanged; fees and taxes excluded."],
             derived=["ev-cash-start", start, target],
-            formula=f"{num(feasibility['cash_before'])} - ({num(feasibility['target_direct_weight'])} - {num(feasibility['starting_direct_weight'])}) = {num(feasibility['cash_after'])}",
+            formula=f"{num(feasibility['cash_before'])} - ({num(feasibility['target_direct_weight'])} - {num(feasibility['starting_direct_weight'])}) {eq(feasibility['cash_after'])}",
         )
 
     def weight_ev(self, instrument_id: str, state: str) -> str:
@@ -299,7 +277,7 @@ class _Document:
         return self.ev.add(
             f"ev-cov-{fund_id}", "CALCULATION", "fund_coverage_fraction", fund["coverage_fraction"], "FUND", fund_id, period=period,
             sources=[fund["source_id"]], assumptions=["Reported weights are summed as published; nothing is rescaled."],
-            formula=f"sum of the reported constituent weights = {num(fund['coverage_fraction'])}",
+            formula=f"sum of the reported constituent weights {eq(fund['coverage_fraction'])}",
         )
 
     def unattributed_evs(self, state: str) -> list[str]:
@@ -309,7 +287,7 @@ class _Document:
             ids.append(self.ev.add(
                 f"ev-unattr-{fund_id}-{STATE_TAG[state]}", "CALCULATION", "unattributed_fund_weight", fund["uncovered_portfolio_weight"], "FUND", fund_id,
                 state=STATE_LABEL[state], assumptions=[UNATTRIBUTED_NOTE], derived=[self.weight_ev(fund_id, state), self.coverage_ev(fund_id)],
-                formula=f"{num(fund['portfolio_weight'])} x max(0, 1 - {num(fund['coverage_fraction'])}) = {num(fund['uncovered_portfolio_weight'])}",
+                formula=f"{num(fund['portfolio_weight'])} x max(0, 1 - {num(fund['coverage_fraction'])}) {eq(fund['uncovered_portfolio_weight'])}",
             ))
         return ids
 
@@ -330,7 +308,7 @@ class _Document:
             derived.append(self.ev.add(
                 f"ev-dir-{issuer}-{tag}", "CALCULATION", "issuer_direct_exposure", direct, "ISSUER", issuer, state=label,
                 derived=[self.weight_ev(i, state) for i, _ in held],
-                formula=f"{total([w for _, w in held])} = {num(direct)}" + (" (share classes of one company added together)" if len(held) > 1 else ""),
+                formula=f"{total([w for _, w in held])} {eq(direct)}" + (" (share classes of one company added together)" if len(held) > 1 else ""),
             ))
             terms.append(direct)
         for fund_id, known in exposure["via_fund"].get(issuer, {}).items():
@@ -341,24 +319,24 @@ class _Document:
             constituent = self.ev.add(
                 f"ev-cw-{fund_id}-{issuer}", "CALCULATION" if several else "FACT", "fund_constituent_weight", fraction, "ISSUER", issuer, via=fund_id,
                 period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
-                formula=f"sum of the reported rows of this company in the fund = {num(fraction)}" if several else None,
+                formula=f"sum of the reported rows of this company in the fund {eq(fraction)}" if several else None,
             )
             derived.append(self.ev.add(
                 f"ev-via-{issuer}-{fund_id}-{tag}", "CALCULATION", "issuer_exposure_via_fund", known, "ISSUER", issuer, via=fund_id, state=label,
-                derived=[self.weight_ev(fund_id, state), constituent], formula=f"{num(self.position_weight(fund_id, state))} x {num(fraction)} = {num(known)}",
+                derived=[self.weight_ev(fund_id, state), constituent], formula=f"{num(self.position_weight(fund_id, state))} x {num(fraction)} {eq(known)}",
             ))
             terms.append(known)
         lower = exposure["lower"].get(issuer, 0.0)
         lower_id = self.ev.add(
             lower_key, "CALCULATION", "exposure_lower", lower, "ISSUER", issuer, state=label,
             derived=derived or self.scope_weight_evs(state),
-            formula=f"{total(terms)} = {num(lower)}" if terms else "no direct holding and no reported fund constituent of this company = 0",
+            formula=f"{total(terms)} {eq(lower)}" if terms else "no direct holding and no reported fund constituent of this company = 0",
         )
         extra = exposure["possible_extra"]
         upper_id = self.ev.add(
             upper_key, "CALCULATION", "exposure_upper", lower + extra, "ISSUER", issuer, state=label,
             assumptions=[UNATTRIBUTED_NOTE] if extra > 0 else [], derived=[lower_id] + self.unattributed_evs(state),
-            formula=f"{num(lower)} + {num(extra)} = {num(lower + extra)}",
+            formula=f"{num(lower)} + {num(extra)} {eq(lower + extra)}",
         )
         return lower_id, upper_id
 
@@ -418,14 +396,14 @@ class _Document:
             lower_id = self.ev.add(
                 f"ev-rule-{rule_id}-lo-{tag}", "CALCULATION", "exposure_lower", lower, "RULE", rule_id, state=label,
                 derived=derived or self.scope_weight_evs(state), sources=sources,
-                formula=(f"{what}: " + " + ".join(terms) + f" = {num(lower)}") if terms else f"{what}: none known = 0",
+                formula=(f"{what}: " + " + ".join(terms) + f" {eq(lower)}") if terms else f"{what}: none known = 0",
             )
         if kind == "CONTROVERSY":
             in_scope = [w for i, w in held_positions(self.sim[f"{state}_portfolio"]) if self.registry[i]["equity_scope"]]
             upper_id = self.ev.add(
                 f"ev-rule-{rule_id}-up-{tag}", "CALCULATION", "exposure_upper", upper, "RULE", rule_id, state=label,
                 assumptions=["A company without a matching registry record is not assessed, so all in-scope equity weight could be concerned."],
-                derived=self.scope_weight_evs(state), formula=f"all in-scope equity weight: {total(in_scope)} = {num(upper)}",
+                derived=self.scope_weight_evs(state), formula=f"all in-scope equity weight: {total(in_scope)} {eq(upper)}",
             )
         elif kind == "SECTOR":
             unclassified = exposure["unclassified_weight"]
@@ -433,13 +411,13 @@ class _Document:
                 f"ev-rule-{rule_id}-up-{tag}", "CALCULATION", "exposure_upper", upper, "RULE", rule_id, state=label,
                 assumptions=[UNATTRIBUTED_NOTE, "A holding without a sector label counts toward the upper bound only."],
                 derived=[lower_id] + self.unattributed_evs(state) + (self.scope_weight_evs(state) if unclassified > 0 else []),
-                formula=f"{num(lower)} + {num(extra)} (not reported by the funds) + {num(unclassified)} (reported without a sector label) = {num(upper)}",
+                formula=f"{num(lower)} + {num(extra)} (not reported by the funds) + {num(unclassified)} (reported without a sector label) {eq(upper)}",
             )
         else:
             upper_id = self.ev.add(
                 f"ev-rule-{rule_id}-up-{tag}", "CALCULATION", "exposure_upper", upper, "RULE", rule_id, state=label,
                 assumptions=[UNATTRIBUTED_NOTE] if extra > 0 else [], derived=[lower_id] + self.unattributed_evs(state),
-                formula=f"{num(lower)} + {num(extra)} = {num(upper)}",
+                formula=f"{num(lower)} + {num(extra)} {eq(upper)}",
             )
         return [lower_id, upper_id]
 
@@ -450,10 +428,10 @@ class _Document:
         measured, limit, status = result["measured"], rule["threshold"], result["status"]
         if rule["rule_type"] == "min_issuer_exposure":
             used = measured["upper"] if status == "FAIL" else measured["lower"]
-            formula = f"{num(limit)} - {num(used)} = {num(result['gap'])}"
+            formula = f"{num(limit)} - {num(used)} {eq(result['gap'])}"
         else:
             used = measured["lower"] if status == "FAIL" else measured["upper"]
-            formula = f"{num(used)} - {num(limit)} = {num(result['gap'])}"
+            formula = f"{num(used)} - {num(limit)} {eq(result['gap'])}"
         key = f"ev-gap-{rule['rule_id']}" + ("-start" if state == "starting" else "")
         return self.ev.add(
             key, "CALCULATION", "gap_to_limit", result["gap"], "RULE", rule["rule_id"], state=STATE_LABEL[state],
@@ -487,6 +465,42 @@ class _Document:
                         "ISSUER", issuer, unit="text", period={"type": "AS_OF", "date": record["event_date"]}, sources=record["source_ids"],
                         assumptions=[record["coverage_note"]],
                     ))
+        return ids
+
+    def boundary_evs(self, rule: dict, limiting: Optional[dict]) -> list[str]:
+        """Every record the closed-form boundary of one rule is computed from (SEMANTICS section 11).
+
+        The boundary starts from the STARTING portfolio: the limit, the value
+        measured before the purchase (with the look-through paths and the
+        unattributed fund weight behind it) and what one unit of the purchased
+        instrument adds to it.
+        """
+        ids = [self.threshold_ev(rule)]
+        kind = R.rule_kind(rule)
+        if kind == "SCENARIO":
+            return ids + [self.scenario_evs("starting")[0], self.return_ev(self.requested)]
+        issuer = None
+        if kind == "ONE_ISSUER":
+            issuer = R.rule_issuer(rule)
+        elif kind == "ANY_ISSUER" and limiting is not None:
+            issuer = limiting["issuer"]
+        if issuer is not None:
+            lower_id, upper_id = self.issuer_evs(issuer, "starting")
+            paths = [i for i in self.ev.record(lower_id)["derived_from"]
+                     if self.ev.record(i)["metric_id"] in ("issuer_direct_exposure", "issuer_exposure_via_fund")]
+            ids += paths + [lower_id, upper_id]
+        else:
+            ids += self.measured_evs(rule, "starting")
+        if kind != "CONTROVERSY":
+            ids += self.unattributed_evs("starting")
+        requested = self.registry[self.requested]
+        if requested["is_fund"] and requested["equity_scope"] and self.requested in self.fund_info:
+            ids.append(self.coverage_ev(self.requested))  # buying a fund: its reported weights set the slope
+            if issuer is not None:
+                self.issuer_evs(issuer, "proposed")
+                key = f"ev-cw-{self.requested}-{issuer}"
+                if self.ev.has(key):
+                    ids.append(self.ev.id(key))
         return ids
 
     # ----- scenario
@@ -530,7 +544,7 @@ class _Document:
             key, "CALCULATION", "scenario_instrument_return", history["return_cad"], "INSTRUMENT", instrument_id,
             period={"type": "RANGE", "start_date": scenario["base_date"], "end_date": scenario["end_date"]},
             assumptions=["Adjusted close; USD prices converted to CAD with the latest Bank of Canada rate on or before each date."],
-            derived=derived, formula=f"{sides['end']} / {sides['base']} - 1 = {num(history['return_cad'])}",
+            derived=derived, formula=f"{sides['end']} / {sides['base']} - 1 {eq(history['return_cad'])}",
         )
 
     def scenario_evs(self, state: str) -> tuple[Optional[str], Optional[str]]:
@@ -549,7 +563,7 @@ class _Document:
             f"ev-scn-ret-{tag}", "CALCULATION", "scenario_terminal_return", measures["scenario_terminal_return"], "PORTFOLIO", self.portfolio_id,
             state=label, period=period, assumptions=scenario["assumptions"],
             derived=weights + [self.return_ev(i) for i, _ in positions],
-            formula=" + ".join(terms + [f"{num(cash)} x 0 (cash)"]) + f" = {num(measures['scenario_terminal_return'])}",
+            formula=" + ".join(terms + [f"{num(cash)} x 0 (cash)"]) + f" {eq(measures['scenario_terminal_return'])}",
         )
         trough = self.a["replay"]["states"][state]["_trough_value"]
         when = f" on {measures['max_drawdown_date']}" if measures["max_drawdown_date"] else ""
@@ -571,7 +585,7 @@ class _Document:
         return self.ev.add(
             f"ev-scn-loss-{STATE_TAG[state]}", "CALCULATION", "scenario_loss", 0.0 - value, "PORTFOLIO", self.portfolio_id, state=STATE_LABEL[state],
             period={"type": "RANGE", "start_date": scenario["base_date"], "end_date": scenario["end_date"]},
-            derived=[terminal], formula=f"-{num(value)} = {num(0.0 - value)}",
+            derived=[terminal], formula=f"0 - {num(value)} {eq(0.0 - value)}",
         )
 
     # ----- text
@@ -609,7 +623,7 @@ class _Document:
             return f"{prefix}{when}, {what} is {measured}, within {limit_words}."
         if result["status"] == "FAIL":
             side = "below" if minimum else "above"
-            return f"{prefix}{when}, {what} is {measured}, at least {abs(result['gap']) * 100:.2f} percentage points {side} {limit_words}."
+            return f"{prefix}{when}, {what} is {measured}, at least {points(abs(result['gap']))} percentage points {side} {limit_words}."
         why = "; ".join(UNKNOWN_CAUSE_TEXT[c] for c in causes)
         return f"{prefix}{when}, {what} is {measured}: it can be neither shown to respect nor shown to breach {limit_words} ({why})."
 
@@ -758,8 +772,8 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
                 "evidence_ids": list(dict.fromkeys(finding_ids)),
                 "reason": (
                     "Already breached before any purchase: " + doc.reason(rule, "starting", []) +
-                    f" The purchase itself changes the measured bounds by {effect['lower_change'] * 100:+.2f} (lower) and "
-                    f"{effect['upper_change'] * 100:+.2f} (upper) percentage points."
+                    f" The purchase itself changes the measured bounds by {points(effect['lower_change'], signed=True)} (lower) and "
+                    f"{points(effect['upper_change'], signed=True)} (upper) percentage points."
                 ),
             })
 
@@ -880,15 +894,19 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
             analysis, portfolio, policy, request, instruments, holdings, market_data, controversies, draft_rules, data_sources)
         if max_compliant["status"] == "SUPPORTED":
             start_id = doc.weight_ev(doc.requested, "starting")
+            inputs = []
+            for rule in evaluated:  # binding and non-binding constraints alike
+                inputs += doc.boundary_evs(rule, detail["rules"][rule["rule_id"]]["limiting"])
+            inputs += ["ev-cash-start", start_id]
             final_id = ev.add(
                 "ev-max-final", "CALCULATION", "max_compliant_final_weight", max_compliant["final_direct_weight"], "INSTRUMENT", doc.requested, state="PROPOSED",
                 assumptions=["Closed form: every bound is linear in the target weight. Verified by re-running the same checks at this weight."],
-                derived=[doc.threshold_ev(rule) for rule in evaluated] + ["ev-cash-start", start_id], formula=detail["formula"],
+                derived=inputs, formula=detail["formula"],
             )
             added_id = ev.add(
                 "ev-max-added", "CALCULATION", "max_compliant_additional_purchase", max_compliant["additional_purchase"], "INSTRUMENT", doc.requested, state="PROPOSED",
-                derived=[final_id, start_id],
-                formula=f"{num(max_compliant['final_direct_weight'])} - {num(sim['feasibility']['starting_direct_weight'])} = {num(max_compliant['additional_purchase'])}",
+                derived=[final_id, start_id] + inputs,
+                formula=f"{num(max_compliant['final_direct_weight'])} - {num(sim['feasibility']['starting_direct_weight'])} {eq(max_compliant['additional_purchase'])}",
             )
             max_compliant["evidence_ids"] = [final_id, added_id]
     else:

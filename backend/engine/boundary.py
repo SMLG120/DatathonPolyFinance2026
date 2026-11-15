@@ -19,6 +19,7 @@ from byb_contracts import EPS
 
 from . import rules as R
 from .core import compute_exposure
+from .text import eq, num, pct
 
 INF = float("inf")
 
@@ -50,7 +51,9 @@ def _above(a: float, b: float, limit: float) -> Optional[tuple[str, float]]:
 
 
 def linear_components(rule: dict, start: dict, unit: dict, flagged: Optional[dict], loss_start: Optional[float], unit_return: Optional[float]) -> Optional[list]:
-    """The rule's bounds as affine functions of d: a list of (lower a, lower b, upper a, upper b).
+    """The rule's bounds as affine functions of d: a list of (issuer, lower a, lower b, upper a, upper b).
+
+    ``issuer`` names the company a component of the any-issuer cap is about; it is None otherwise.
 
     ``start`` is the exposure of the starting portfolio, ``unit`` the exposure of
     one unit of the requested instrument. A max-type rule PASSES when every
@@ -61,17 +64,17 @@ def linear_components(rule: dict, start: dict, unit: dict, flagged: Optional[dic
     if kind == "SCENARIO":
         if loss_start is None or unit_return is None:
             return None
-        return [(loss_start, -unit_return, loss_start, -unit_return)]
+        return [(None, loss_start, -unit_return, loss_start, -unit_return)]
     extra_a, extra_b = start["possible_extra"], unit["possible_extra"]
     if kind == "ANY_ISSUER":
-        components = [(0.0, 0.0, extra_a, extra_b)]
+        components = [(None, 0.0, 0.0, extra_a, extra_b)]
         for issuer in sorted(set(start["lower"]) | set(unit["lower"])):
             a, b = start["lower"].get(issuer, 0.0), unit["lower"].get(issuer, 0.0)
-            components.append((a, b, a + extra_a, b + extra_b))
+            components.append((issuer, a, b, a + extra_a, b + extra_b))
         return components
     a = R.exposure_bounds(rule, start, flagged)
     b = R.exposure_bounds(rule, unit, flagged)
-    return [(a["lower"], b["lower"], a["upper"], b["upper"])]
+    return [(None, a["lower"], b["lower"], a["upper"], b["upper"])]
 
 
 def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments, holdings, market_data, controversies,
@@ -112,8 +115,8 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
             rule_high[rule_id] = None
             fail_rays[rule_id] = []
             continue
-        low, high, rays = -INF, INF, []
-        for lower_a, lower_b, upper_a, upper_b in components:
+        low, high, rays, limiting = -INF, INF, [], None
+        for issuer, lower_a, lower_b, upper_a, upper_b in components:
             if rule["rule_type"] == "min_issuer_exposure":
                 passing = _at_most(-lower_a, -lower_b, -limit)
                 failing = _above(-upper_a, -upper_b, -limit)
@@ -123,6 +126,9 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
             if passing is None:
                 low, high = INF, -INF
             else:
+                if passing[1] < high and rule["rule_type"] != "min_issuer_exposure":
+                    # The component whose upper bound reaches the limit first: it sets this rule's upper end.
+                    limiting = {"issuer": issuer, "start_upper": upper_a, "slope": upper_b}
                 low, high = max(low, passing[0]), min(high, passing[1])
             if failing is not None:
                 rays.append(failing)
@@ -132,7 +138,7 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
             pass_low, pass_high = INF, -INF
         else:
             pass_low, pass_high = max(pass_low, low), min(pass_high, high)
-        detail["rules"][rule_id] = {"pass_interval": rule_high[rule_id], "fail_rays": rays}
+        detail["rules"][rule_id] = {"pass_interval": rule_high[rule_id], "fail_rays": rays, "limiting": limiting}
 
     # SUPPORTED: some funded target more than EPS above w0 where every rule is PASS.
     if not unknown_rules and pass_high > EPS and pass_low <= pass_high + EPS:
@@ -150,9 +156,23 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
         )
         if not confirmed or additional <= EPS:
             return _withheld("Withheld: the closed-form boundary was not confirmed when the same checks were re-run at that weight."), detail
-        ends = [f"{r['rule_id']}: {start_weight + rule_high[r['rule_id']][1]:.9g}" for r in evaluated if rule_high[r["rule_id"]][1] < INF]
-        ends.append(f"cash: {start_weight:.9g} + {cash:.9g} = {start_weight + cash:.9g}")
-        detail["formula"] = "largest final direct weight at which every evaluated rule passes = min(" + "; ".join(ends) + f") = {final:.9g}"
+        ends = []
+        for rule in evaluated:
+            limiting = detail["rules"][rule["rule_id"]]["limiting"]
+            if limiting is None:
+                ends.append(f"{rule['rule_id']}: passes at every funded weight above its lower end, no upper end")
+                continue
+            who = f" ({limiting['issuer']})" if limiting["issuer"] else ""
+            ends.append(
+                f"{rule['rule_id']}{who}: {num(start_weight)} + ({num(rule['threshold'])} - {num(limiting['start_upper'])}) / {num(limiting['slope'])} "
+                f"{eq(start_weight + rule_high[rule['rule_id']][1])}"
+            )
+        ends.append(f"cash: {num(start_weight)} + {num(cash)} {eq(start_weight + cash)}")
+        detail["formula"] = (
+            "upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / "
+            "(change of that value per unit of weight bought): " + "; ".join(ends)
+            + f". Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded to 9 decimals {eq(final)}"
+        )
         what = f"the rule {binding} stops passing just above it" if binding else "cash runs out there"
         return {
             "status": "SUPPORTED",
@@ -162,7 +182,7 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
             "verified_by_rerun": True,
             "reason": (
                 f"The largest final direct weight of {instrument_id} at which every evaluated rule passes with cash funding is "
-                f"{final * 100:.4f}% of the portfolio (an additional purchase of {additional * 100:.4f}%); {what}. "
+                f"{num(final)} of the portfolio ({pct(final)}), an additional purchase of {num(additional)} ({pct(additional)}); {what}. "
                 "Verified by re-running the same checks at that weight."
             ),
             "evidence_ids": [],

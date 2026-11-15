@@ -4,7 +4,7 @@ The JSON Schemas in `schemas/` fix the shape of every object. This file fixes wh
 formalizes `docs/LEAD_DECISIONS.md` (D2 to D7) and fills the gaps those decisions leave open. Where a helper
 exists in `python/byb_contracts`, use it instead of re-deriving the value.
 
-Worked examples for every rule below are in `fixtures/engine/HAND_CALCS.md` (cited as E01 ... M1).
+Worked examples for every rule below are in `fixtures/engine/HAND_CALCS.md` (cited as E01 ... M2).
 
 ## 1. Units, tolerance, rounding
 
@@ -117,7 +117,9 @@ Max-type: FAIL `lower - limit`, PASS `upper - limit`. Min-type: FAIL `limit - up
 - **Sector label** (E15, M1). The label is matched exactly, case-sensitively. For a fund constituent it is the
   `sector` of the holdings row; for a direct equity it is the registry `sector`. A fund's own registry label is
   never applied to its constituents. A row (or direct equity) whose `sector` is null is **unclassified**: its
-  weight counts toward the upper bound only. Label vocabularies of different sources are not harmonized.
+  weight counts toward the upper bound only, and the label is not filled in from another source. A fund whose
+  file has no labels therefore proves nothing and adds its whole listed weight as possible (M1).
+  Label vocabularies of different sources are not harmonized.
 - **Controversy** (E16, E17, M1). An issuer is flagged when at least one registry record has a `nature` in
   `criteria.natures` and, if `event_date_from` is set, an `event_date` on or after it. The upper bound is the
   total weight of in-scope positions (direct equities plus the whole weight of equity funds), because an issuer
@@ -129,7 +131,8 @@ Max-type: FAIL `lower - limit`, PASS `upper - limit`. Min-type: FAIL `limit - up
   `lower[issuer] > limit`; for one issuer, that issuer; for exclusions, the named, labelled or flagged issuers
   with a positive known exposure. Each is reported with its own bounds `lower[issuer]` and `lower[issuer] + U`,
   sorted by `lower` descending then `subject_id`, at most 10.
-- `unknown_causes` (may be non-empty with PASS or FAIL): `PARTIAL_HOLDINGS` when a held equity fund is PARTIAL;
+- `unknown_causes` (of the proposed portfolio; may be non-empty with PASS or FAIL): `PARTIAL_HOLDINGS` when a held
+  equity fund is PARTIAL;
   `MISSING_HOLDINGS` when one is MISSING; `UNCLASSIFIED_SECTOR` when `unclassified > 0` (sector rule);
   `REGISTRY_ABSENCE` when `upper > lower` (controversy rule); `INSUFFICIENT_HISTORY` (scenario rule). An UNKNOWN
   result names at least one cause.
@@ -195,7 +198,9 @@ empty, policy consistency is `NOT_ASSESSED`.
 - `starting_portfolio_findings`: one entry for each evaluated rule whose `starting.status` is FAIL, and only
   those. `measured`, `gap` and `breaching_subjects` describe the starting portfolio;
   `purchase_effect = proposed bounds - starting bounds`. This keeps a breach that existed before the purchase
-  apart from what the purchase adds (E09, E15, M1).
+  apart from what the purchase adds (E09, E15, M1). `lower_change` is what the purchase is proven to add and
+  `upper_change` the most it could add. When they differ, the effect is partly unresolved and is reported as
+  that range, never as its lower end (M1, sector rule: 0 proven, up to 0.15 possible).
 - `data_coverage`: one entry per equity fund held in the proposed portfolio, in portfolio order.
   `uncovered_portfolio_weight = portfolio_weight x max(0, 1 - coverage_fraction)`; `sector_labelled_fraction` is
   the sum of the weights of rows that carry a sector label; a MISSING fund has coverage 0 and null
@@ -232,7 +237,7 @@ targets where it is not FAIL. The ends solve a linear equation; no search is nee
   evaluated rule and `FEASIBLE`. If the re-run does not confirm it, report `WITHHELD`.
 - `NO_FEASIBLE_PURCHASE` when every target in `T` has at least one rule with a proven FAIL (E09, E11, E15, E16,
   M1). The constraint is the first evaluated rule in policy order that is FAIL just above `w0`.
-- `WITHHELD` otherwise: no target is proven to pass, yet not every target is proven to fail (E05, E06, E17).
+- `WITHHELD` otherwise: no target is proven to pass, yet not every target is proven to fail (E05, E06, E17, M2).
   Unknown data never yields a number.
 
 ## 12. Engine fixtures and the subset match
@@ -258,6 +263,10 @@ All fixture numbers are synthetic. Never show them as real holdings or prices.
   printed with the numbers used.
 - `subject`, `unit`, `period` and `portfolio_state` say what the number is about. A statement may cite a record
   only for a claim about that metric, subject, unit and period. Matching digits is not validation.
+- Text records. `sector_label`: the label as the source reports it, or null when the source reports none for
+  that subject (one constituent, or a whole fund when none of its rows has a label). `controversy_record`: the
+  value is the registry `record_id`, the subject is the issuer, `period` is the event date and `source_ids` are
+  the record's sources. A record says that a dated event is on file; it is not a judgement of the company.
 - Investigation `explanation[]`: `TEMPLATE` statements are rendered by the service. A `MODEL_VALIDATED`
   statement is model-written text accepted only after that check; it cites at least one record. If validation
   fails, the service drops the statement or falls back to templates (`agent.mode`

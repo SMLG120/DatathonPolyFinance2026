@@ -2,8 +2,8 @@
   "fixture": true,
   "fixture_id": "investigation_mateo_succeeded",
   "synthetic": true,
-  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Portfolio weights and thresholds are fictional-scenario values.",
-  "description": "Mateo: the Energy-label exclusion is already breached by the STARTING portfolio (a starting-portfolio finding), ESGV has no holdings file (coverage MISSING) and the controversy rule is UNKNOWN because registry absence is not a pass. HAND_CALCS.md M1.",
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. Portfolio weights and thresholds are fictional-scenario values.",
+  "description": "Mateo: both rules are already breached by the STARTING portfolio through XIU.TO (two starting-portfolio findings). The purchase is proven to add Exxon Mobil to the controversy rule; what it adds to the Energy-label rule is unresolved (0 proven, up to 0.15 possible) because the SPY rows carry no sector label. ESGV has no holdings file (coverage MISSING). HAND_CALCS.md M1.",
   "route": "GET /investigations/{id}",
   "http_status": 200,
   "request_headers": {
@@ -96,9 +96,11 @@
         "finished_at": "2026-11-14T15:12:14Z",
         "status": "OK",
         "input_summary": "Funds XIU.TO, ESGV and SPY.",
-        "result_summary": "XIU.TO: 98.0% covered, as of 2026-11-12. SPY: 100.0% covered, as of 2026-11-12. ESGV: no holdings file held; treated as unknown, not as zero.",
+        "result_summary": "XIU.TO: 98.0% covered, as of 2026-11-12, every row with a sector label. SPY: 100.0% covered, as of 2026-11-12, no row with a sector label. ESGV: no holdings file held; treated as unknown, not as zero.",
         "evidence_ids": [
           "ev-xiu-coverage",
+          "ev-spy-coverage",
+          "ev-spy-sector-labels",
           "ev-esgv-unattributed",
           "ev-xiu-unattributed"
         ]
@@ -111,7 +113,7 @@
         "finished_at": "2026-11-14T15:12:17Z",
         "status": "OK",
         "input_summary": "Holdings labelled Energy, portfolio before and after the purchase.",
-        "result_summary": "Energy label: 1.4% to 16.8% before the purchase; 1.7% to 17.1% after it.",
+        "result_summary": "Energy label: 1.4% to 16.8% before the purchase; 1.4% to 31.8% after it. The SPY rows have no sector label: nothing proven, up to 15.0% possible.",
         "evidence_ids": [
           "ev-energy-lower-start",
           "ev-energy-upper-start",
@@ -127,10 +129,11 @@
         "finished_at": "2026-11-14T15:12:20Z",
         "status": "OK",
         "input_summary": "Every company held directly or through XIU.TO and SPY.",
-        "result_summary": "No registry record for any held company. The registry researched none of them: not assessed.",
+        "result_summary": "3 matching registry records: Enbridge (SETTLEMENT, 2016-07-20), Canadian Natural Resources (REGULATORY_FINDING, 2024-07-15), Exxon Mobil (SETTLEMENT, 2017-10-31). Every other company: no record, not assessed.",
         "evidence_ids": [
-          "ev-controversy-lower",
-          "ev-controversy-upper"
+          "ev-record-enb",
+          "ev-record-cnq",
+          "ev-record-xom"
         ]
       },
       {
@@ -141,10 +144,10 @@
         "finished_at": "2026-11-14T15:12:23Z",
         "status": "OK",
         "input_summary": "Every confirmed rule of policy version 1.",
-        "result_summary": "2 rules evaluated: 0 PASS, 1 FAIL, 1 UNKNOWN. 1 rule was already breached before the purchase.",
+        "result_summary": "2 rules evaluated: 0 PASS, 2 FAIL, 0 UNKNOWN. 2 rules were already breached before the purchase.",
         "evidence_ids": [
           "ev-energy-gap",
-          "ev-controversy-upper"
+          "ev-controversy-gap"
         ]
       },
       {
@@ -202,8 +205,62 @@
           "rule_type": "exclusion",
           "status": "FAIL",
           "measured": {
+            "lower": 0.014,
+            "upper": 0.318
+          },
+          "limit": 0.0,
+          "gap": 0.014,
+          "breaching_subjects": [
+            {
+              "subject_kind": "ISSUER",
+              "subject_id": "ENBRIDGE",
+              "lower": 0.008,
+              "upper": 0.162
+            },
+            {
+              "subject_kind": "ISSUER",
+              "subject_id": "CANADIAN_NATURAL_RESOURCES",
+              "lower": 0.006,
+              "upper": 0.16
+            }
+          ],
+          "out_of_scope": [
+            {
+              "instrument_id": "XBB.TO",
+              "weight": 0.25,
+              "reason": "Bond fund: outside the scope of the company-exposure rules; not assessed."
+            }
+          ],
+          "unknown_causes": [
+            "MISSING_HOLDINGS",
+            "PARTIAL_HOLDINGS",
+            "UNCLASSIFIED_SECTOR"
+          ],
+          "starting": {
+            "status": "FAIL",
+            "measured": {
+              "lower": 0.014,
+              "upper": 0.168
+            }
+          },
+          "evidence_ids": [
+            "ev-energy-lower",
+            "ev-energy-upper",
+            "ev-energy-threshold",
+            "ev-energy-gap",
+            "ev-spy-sector-labels",
+            "ev-esgv-unattributed",
+            "ev-xiu-unattributed"
+          ],
+          "reason": "Holdings labelled Energy are between 1.4% and 31.8% of the portfolio after the purchase. Proven: 1.4% through XIU.TO (Enbridge, Canadian Natural Resources), held before the purchase. The confirmed tolerance is 0.0%: the rule fails by 1.4 percentage points. What the SPY purchase adds to this rule is unresolved: 0.0% is proven and up to 15.0% is possible, because the SPY holdings file reports no sector label for any constituent. A further 15.4% cannot be ruled out because ESGV has no holdings file and XIU.TO is 98% covered."
+        },
+        {
+          "rule_id": "mateo-controversy-1",
+          "rule_type": "controversy_exclusion",
+          "status": "FAIL",
+          "measured": {
             "lower": 0.017,
-            "upper": 0.171
+            "upper": 0.65
           },
           "limit": 0.0,
           "gap": 0.017,
@@ -236,61 +293,26 @@
           ],
           "unknown_causes": [
             "MISSING_HOLDINGS",
-            "PARTIAL_HOLDINGS"
+            "PARTIAL_HOLDINGS",
+            "REGISTRY_ABSENCE"
           ],
           "starting": {
             "status": "FAIL",
             "measured": {
               "lower": 0.014,
-              "upper": 0.168
-            }
-          },
-          "evidence_ids": [
-            "ev-energy-lower",
-            "ev-energy-upper",
-            "ev-energy-threshold",
-            "ev-energy-gap",
-            "ev-esgv-unattributed",
-            "ev-xiu-unattributed"
-          ],
-          "reason": "Holdings labelled Energy are between 1.7% and 17.1% of the portfolio after the purchase: 1.4% through XIU.TO (Enbridge, Canadian Natural Resources), 0.3% through SPY (Exxon Mobil), and up to 15.4% that cannot be ruled out because ESGV has no holdings file and XIU.TO is 98% covered. The confirmed tolerance is 0.0%: the rule fails."
-        },
-        {
-          "rule_id": "mateo-controversy-1",
-          "rule_type": "controversy_exclusion",
-          "status": "UNKNOWN",
-          "measured": {
-            "lower": 0.0,
-            "upper": 0.65
-          },
-          "limit": 0.0,
-          "gap": null,
-          "breaching_subjects": [],
-          "out_of_scope": [
-            {
-              "instrument_id": "XBB.TO",
-              "weight": 0.25,
-              "reason": "Bond fund: outside the scope of the company-exposure rules; not assessed."
-            }
-          ],
-          "unknown_causes": [
-            "MISSING_HOLDINGS",
-            "PARTIAL_HOLDINGS",
-            "REGISTRY_ABSENCE"
-          ],
-          "starting": {
-            "status": "UNKNOWN",
-            "measured": {
-              "lower": 0.0,
               "upper": 0.5
             }
           },
           "evidence_ids": [
             "ev-controversy-lower",
             "ev-controversy-upper",
-            "ev-controversy-threshold"
+            "ev-controversy-threshold",
+            "ev-controversy-gap",
+            "ev-record-enb",
+            "ev-record-cnq",
+            "ev-record-xom"
           ],
-          "reason": "No held company has a matching record in the controversy registry, and the registry covers none of the held companies. Absence from the registry means not assessed, so this rule is UNKNOWN, not passed."
+          "reason": "Exposure to companies with a matching registry record (regulatory finding, court ruling or settlement) is between 1.7% and 65.0% of the portfolio after the purchase. Proven: Enbridge 0.8% and Canadian Natural Resources 0.6% through XIU.TO, held before the purchase, and Exxon Mobil 0.3% through SPY, added by the purchase. The confirmed tolerance is 0.0%: the rule fails by 1.7 percentage points. Every other company is not assessed: absence from the registry is unknown, never a pass."
         }
       ],
       "rules_not_evaluated": [],
@@ -319,15 +341,54 @@
             }
           ],
           "purchase_effect": {
-            "lower_change": 0.003,
-            "upper_change": 0.003
+            "lower_change": 0.0,
+            "upper_change": 0.15
           },
           "evidence_ids": [
             "ev-energy-lower-start",
             "ev-energy-upper-start",
-            "ev-energy-threshold"
+            "ev-energy-threshold",
+            "ev-energy-lower",
+            "ev-energy-upper",
+            "ev-spy-sector-labels"
           ],
-          "reason": "Before any purchase, holdings labelled Energy are already between 1.4% and 16.8% of the portfolio (through XIU.TO), above the confirmed tolerance of 0.0%. The purchase itself adds 0.3% (Exxon Mobil through SPY)."
+          "reason": "Before any purchase, holdings labelled Energy are already between 1.4% and 16.8% of the portfolio (Enbridge and Canadian Natural Resources through XIU.TO), above the confirmed tolerance of 0.0%. What the SPY purchase adds to this rule is unresolved: 0.0% is proven and up to 15.0% is possible, because the SPY holdings file reports no sector label for any constituent."
+        },
+        {
+          "rule_id": "mateo-controversy-1",
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.014,
+            "upper": 0.5
+          },
+          "limit": 0.0,
+          "gap": 0.014,
+          "breaching_subjects": [
+            {
+              "subject_kind": "ISSUER",
+              "subject_id": "ENBRIDGE",
+              "lower": 0.008,
+              "upper": 0.162
+            },
+            {
+              "subject_kind": "ISSUER",
+              "subject_id": "CANADIAN_NATURAL_RESOURCES",
+              "lower": 0.006,
+              "upper": 0.16
+            }
+          ],
+          "purchase_effect": {
+            "lower_change": 0.003,
+            "upper_change": 0.15
+          },
+          "evidence_ids": [
+            "ev-controversy-lower-start",
+            "ev-controversy-upper-start",
+            "ev-controversy-threshold",
+            "ev-xom-via-spy",
+            "ev-controversy-upper"
+          ],
+          "reason": "Before any purchase, exposure to companies with a matching registry record is already between 1.4% and 50.0% of the portfolio (Enbridge and Canadian Natural Resources through XIU.TO), above the confirmed tolerance of 0.0%. The SPY purchase adds a proven 0.3% (Exxon Mobil) and up to 15.0%."
         }
       ],
       "data_coverage": [
@@ -355,7 +416,7 @@
           "fund_id": "SPY",
           "portfolio_weight": 0.15,
           "coverage_fraction": 1.0,
-          "sector_labelled_fraction": 1.0,
+          "sector_labelled_fraction": 0.0,
           "uncovered_portfolio_weight": 0.0,
           "status": "COVERED",
           "holdings_date": "2026-11-12",
@@ -367,10 +428,10 @@
         {
           "objective_id": "obj-mateo-1",
           "context_type": "LINKED_RULE_RESULTS",
-          "text": "Two rules are linked to this objective as context: the Energy-label exclusion (FAIL) and the controversy exclusion (UNKNOWN). The objective itself is qualitative and has no PASS or FAIL.",
+          "text": "Two rules are linked to this objective as context: the Energy-label exclusion (FAIL) and the controversy exclusion (FAIL). The objective itself is qualitative and has no PASS or FAIL.",
           "evidence_ids": [
             "ev-energy-gap",
-            "ev-controversy-upper"
+            "ev-controversy-gap"
           ]
         },
         {
@@ -394,7 +455,7 @@
           "rule_id": "mateo-excl-energy-1"
         },
         "verified_by_rerun": false,
-        "reason": "No purchase of SPY can make every confirmed rule pass with cash funding: the Energy-label exclusion is already breached by the starting portfolio (1.4% through XIU.TO), and buying does not reduce it. Bringing it to 0 would require selling, which this funding path does not support.",
+        "reason": "No purchase of SPY can make every confirmed rule pass with cash funding: the Energy-label exclusion is already breached by the starting portfolio (1.4% through XIU.TO), and buying does not reduce it. Bringing it to 0 would require selling, which this funding path does not support. The controversy exclusion is breached before the purchase as well.",
         "evidence_ids": [
           "ev-energy-lower-start",
           "ev-energy-threshold"
@@ -749,6 +810,78 @@
           "policy_version": 1
         },
         {
+          "evidence_id": "ev-w-msft",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.05,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "MSFT",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-cnr",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.05,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "CNR.TO",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-fts",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.05,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "FTS.TO",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
           "evidence_id": "ev-cash-start",
           "label": "FICTIONAL_SCENARIO",
           "metric_id": "cash_weight",
@@ -803,162 +936,6 @@
           "policy_version": 1
         },
         {
-          "evidence_id": "ev-xiu-enb-weight",
-          "label": "FACT",
-          "metric_id": "fund_constituent_weight",
-          "value": 0.04,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "ENBRIDGE",
-            "via_fund_id": "XIU.TO",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-xiu-cnq-weight",
-          "label": "FACT",
-          "metric_id": "fund_constituent_weight",
-          "value": 0.03,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "CANADIAN_NATURAL_RESOURCES",
-            "via_fund_id": "XIU.TO",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-spy-xom-weight",
-          "label": "FACT",
-          "metric_id": "fund_constituent_weight",
-          "value": 0.02,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "EXXON_MOBIL",
-            "via_fund_id": "SPY",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-xiu-enb-sector",
-          "label": "FACT",
-          "metric_id": "sector_label",
-          "value": "Energy",
-          "unit": "text",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "ENBRIDGE",
-            "via_fund_id": "XIU.TO",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-xiu-cnq-sector",
-          "label": "FACT",
-          "metric_id": "sector_label",
-          "value": "Energy",
-          "unit": "text",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "CANADIAN_NATURAL_RESOURCES",
-            "via_fund_id": "XIU.TO",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-spy-xom-sector",
-          "label": "FACT",
-          "metric_id": "sector_label",
-          "value": "Energy",
-          "unit": "text",
-          "currency": null,
-          "subject": {
-            "kind": "ISSUER",
-            "id": "EXXON_MOBIL",
-            "via_fund_id": "SPY",
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [
-            "SYNTHETIC_FIXTURE"
-          ],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
           "evidence_id": "ev-xiu-coverage",
           "label": "CALCULATION",
           "metric_id": "fund_coverage_fraction",
@@ -981,6 +958,32 @@
           "assumptions": [],
           "derived_from": [],
           "formula": "sum of the reported constituent weights = 0.98",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-spy-coverage",
+          "label": "CALCULATION",
+          "metric_id": "fund_coverage_fraction",
+          "value": 1.0,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "FUND",
+            "id": "SPY",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": "sum of the reported constituent weights = 1.00",
           "calculation_version": "fixture-calc-1.0.0",
           "policy_version": 1
         },
@@ -1039,272 +1042,6 @@
             "ev-w-esgv"
           ],
           "formula": "0.15 x (1 - 0) = 0.15",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-lower-start",
-          "label": "CALCULATION",
-          "metric_id": "exposure_lower",
-          "value": 0.014,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "STARTING"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [
-            "ev-w-xiu",
-            "ev-xiu-enb-weight",
-            "ev-xiu-cnq-weight",
-            "ev-xiu-enb-sector",
-            "ev-xiu-cnq-sector"
-          ],
-          "formula": "0.20 x (0.04 + 0.03) = 0.014",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-upper-start",
-          "label": "CALCULATION",
-          "metric_id": "exposure_upper",
-          "value": 0.168,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "STARTING"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [
-            "ev-energy-lower-start",
-            "ev-xiu-unattributed",
-            "ev-esgv-unattributed"
-          ],
-          "formula": "0.014 + 0.004 + 0.15 = 0.168",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-lower",
-          "label": "CALCULATION",
-          "metric_id": "exposure_lower",
-          "value": 0.017,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "PROPOSED"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [
-            "ev-energy-lower-start",
-            "ev-w-spy-target",
-            "ev-spy-xom-weight",
-            "ev-spy-xom-sector"
-          ],
-          "formula": "0.014 + 0.15 x 0.02 = 0.017",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-upper",
-          "label": "CALCULATION",
-          "metric_id": "exposure_upper",
-          "value": 0.171,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "PROPOSED"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [
-            "ev-energy-lower",
-            "ev-xiu-unattributed",
-            "ev-esgv-unattributed"
-          ],
-          "formula": "0.017 + 0.004 + 0.15 = 0.171",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-threshold",
-          "label": "FICTIONAL_SCENARIO",
-          "metric_id": "rule_threshold",
-          "value": 0.0,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-energy-gap",
-          "label": "CALCULATION",
-          "metric_id": "gap_to_limit",
-          "value": 0.017,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-excl-energy-1",
-            "via_fund_id": null,
-            "portfolio_state": "PROPOSED"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [
-            "ev-energy-lower",
-            "ev-energy-threshold"
-          ],
-          "formula": "0.017 - 0.00 = 0.017",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-controversy-threshold",
-          "label": "FICTIONAL_SCENARIO",
-          "metric_id": "rule_threshold",
-          "value": 0.0,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-controversy-1",
-            "via_fund_id": null,
-            "portfolio_state": "NOT_APPLICABLE"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-controversy-lower",
-          "label": "CALCULATION",
-          "metric_id": "exposure_lower",
-          "value": 0.0,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "RULE",
-            "id": "mateo-controversy-1",
-            "via_fund_id": null,
-            "portfolio_state": "PROPOSED"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [
-            "The registry holds no record for any held company. Absence from the registry means not assessed."
-          ],
-          "derived_from": [
-            "ev-controversy-threshold"
-          ],
-          "formula": "no held company has a matching registry record: 0",
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-w-msft",
-          "label": "FICTIONAL_SCENARIO",
-          "metric_id": "position_weight",
-          "value": 0.05,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "INSTRUMENT",
-            "id": "MSFT",
-            "via_fund_id": null,
-            "portfolio_state": "STARTING"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
-          "calculation_version": "fixture-calc-1.0.0",
-          "policy_version": 1
-        },
-        {
-          "evidence_id": "ev-w-cnr",
-          "label": "FICTIONAL_SCENARIO",
-          "metric_id": "position_weight",
-          "value": 0.05,
-          "unit": "fraction",
-          "currency": null,
-          "subject": {
-            "kind": "INSTRUMENT",
-            "id": "CNR.TO",
-            "via_fund_id": null,
-            "portfolio_state": "STARTING"
-          },
-          "period": {
-            "type": "AS_OF",
-            "date": "2026-11-12"
-          },
-          "source_ids": [],
-          "assumptions": [],
-          "derived_from": [],
-          "formula": null,
           "calculation_version": "fixture-calc-1.0.0",
           "policy_version": 1
         },
@@ -1477,6 +1214,615 @@
           "policy_version": 1
         },
         {
+          "evidence_id": "ev-xiu-enb-weight",
+          "label": "FACT",
+          "metric_id": "fund_constituent_weight",
+          "value": 0.04,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ENBRIDGE",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-cnq-weight",
+          "label": "FACT",
+          "metric_id": "fund_constituent_weight",
+          "value": 0.03,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "CANADIAN_NATURAL_RESOURCES",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-spy-xom-weight",
+          "label": "FACT",
+          "metric_id": "fund_constituent_weight",
+          "value": 0.02,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "EXXON_MOBIL",
+            "via_fund_id": "SPY",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-enb-sector",
+          "label": "FACT",
+          "metric_id": "sector_label",
+          "value": "Energy",
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ENBRIDGE",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-cnq-sector",
+          "label": "FACT",
+          "metric_id": "sector_label",
+          "value": "Energy",
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "CANADIAN_NATURAL_RESOURCES",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-spy-sector-labels",
+          "label": "FACT",
+          "metric_id": "sector_label",
+          "value": null,
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "FUND",
+            "id": "SPY",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "No constituent row of the SPY holdings file carries a sector label. For a sector rule a missing label counts as unknown: it adds to the upper bound only and is never read as 'not Energy'."
+          ],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-enb-via-xiu",
+          "label": "CALCULATION",
+          "metric_id": "issuer_exposure_via_fund",
+          "value": 0.008,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ENBRIDGE",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-xiu",
+            "ev-xiu-enb-weight"
+          ],
+          "formula": "0.20 x 0.04 = 0.008",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-cnq-via-xiu",
+          "label": "CALCULATION",
+          "metric_id": "issuer_exposure_via_fund",
+          "value": 0.006,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "CANADIAN_NATURAL_RESOURCES",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-xiu",
+            "ev-xiu-cnq-weight"
+          ],
+          "formula": "0.20 x 0.03 = 0.006",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xom-via-spy",
+          "label": "CALCULATION",
+          "metric_id": "issuer_exposure_via_fund",
+          "value": 0.003,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "EXXON_MOBIL",
+            "via_fund_id": "SPY",
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-spy-target",
+            "ev-spy-xom-weight"
+          ],
+          "formula": "0.15 x 0.02 = 0.003",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-threshold",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "rule_threshold",
+          "value": 0.0,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-lower-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.014,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-enb-via-xiu",
+            "ev-cnq-via-xiu",
+            "ev-xiu-enb-sector",
+            "ev-xiu-cnq-sector"
+          ],
+          "formula": "0.008 + 0.006 = 0.014",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-upper-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_upper",
+          "value": 0.168,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "The part of a fund not covered by its holdings file could be anything; it is never treated as zero."
+          ],
+          "derived_from": [
+            "ev-energy-lower-start",
+            "ev-xiu-unattributed",
+            "ev-esgv-unattributed"
+          ],
+          "formula": "0.014 + 0.004 + 0.15 = 0.168",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-lower",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.014,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "No SPY constituent is proven to be labelled Energy, because the SPY holdings file reports no sector label."
+          ],
+          "derived_from": [
+            "ev-energy-lower-start",
+            "ev-spy-sector-labels"
+          ],
+          "formula": "0.014 + 0 = 0.014",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-upper",
+          "label": "CALCULATION",
+          "metric_id": "exposure_upper",
+          "value": 0.318,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "The part of a fund not covered by its holdings file could be anything; it is never treated as zero.",
+            "No constituent row of the SPY holdings file carries a sector label. For a sector rule a missing label counts as unknown: it adds to the upper bound only and is never read as 'not Energy'."
+          ],
+          "derived_from": [
+            "ev-energy-lower",
+            "ev-xiu-unattributed",
+            "ev-esgv-unattributed",
+            "ev-w-spy-target",
+            "ev-spy-coverage",
+            "ev-spy-sector-labels"
+          ],
+          "formula": "0.014 + 0.004 + 0.15 + 0.15 x 1.00 = 0.318",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-energy-gap",
+          "label": "CALCULATION",
+          "metric_id": "gap_to_limit",
+          "value": 0.014,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-excl-energy-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-energy-lower",
+            "ev-energy-threshold"
+          ],
+          "formula": "0.014 - 0.00 = 0.014",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-controversy-threshold",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "rule_threshold",
+          "value": 0.0,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-controversy-1",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-record-enb",
+          "label": "FACT",
+          "metric_id": "controversy_record",
+          "value": "SYN-MIRROR-2",
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ENBRIDGE",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2016-07-20"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "The registry record is a synthetic fixture record; a record means a dated event is on file with its source."
+          ],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-record-cnq",
+          "label": "FACT",
+          "metric_id": "controversy_record",
+          "value": "SYN-MIRROR-3",
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "CANADIAN_NATURAL_RESOURCES",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2024-07-15"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "The registry record is a synthetic fixture record; a record means a dated event is on file with its source."
+          ],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-record-xom",
+          "label": "FACT",
+          "metric_id": "controversy_record",
+          "value": "SYN-MIRROR-1",
+          "unit": "text",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "EXXON_MOBIL",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2017-10-31"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "The registry record is a synthetic fixture record; a record means a dated event is on file with its source."
+          ],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-controversy-lower-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.014,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-controversy-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-enb-via-xiu",
+            "ev-cnq-via-xiu",
+            "ev-record-enb",
+            "ev-record-cnq"
+          ],
+          "formula": "0.008 + 0.006 = 0.014",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-controversy-upper-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_upper",
+          "value": 0.5,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-controversy-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "Every company exposure without a registry record counts as unknown, never as a pass."
+          ],
+          "derived_from": [
+            "ev-w-xiu",
+            "ev-w-esgv",
+            "ev-w-msft",
+            "ev-w-cnr",
+            "ev-w-fts"
+          ],
+          "formula": "0.20 + 0.15 + 0.05 + 0.05 + 0.05 = 0.50",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-controversy-lower",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.017,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-controversy-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-controversy-lower-start",
+            "ev-xom-via-spy",
+            "ev-record-xom"
+          ],
+          "formula": "0.014 + 0.003 = 0.017",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
           "evidence_id": "ev-controversy-upper",
           "label": "CALCULATION",
           "metric_id": "exposure_upper",
@@ -1498,11 +1844,38 @@
             "Every company exposure without a registry record counts as unknown, never as a pass."
           ],
           "derived_from": [
-            "ev-w-xiu",
-            "ev-w-esgv",
+            "ev-controversy-upper-start",
+            "ev-w-spy-start",
             "ev-w-spy-target"
           ],
-          "formula": "0.20 + 0.15 + 0.15 + 0.05 + 0.05 + 0.05 = 0.65",
+          "formula": "0.50 + (0.15 - 0.00) = 0.65",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-controversy-gap",
+          "label": "CALCULATION",
+          "metric_id": "gap_to_limit",
+          "value": 0.017,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "mateo-controversy-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-controversy-lower",
+            "ev-controversy-threshold"
+          ],
+          "formula": "0.017 - 0.00 = 0.017",
           "calculation_version": "fixture-calc-1.0.0",
           "policy_version": 1
         }
@@ -1511,12 +1884,12 @@
         "headline": "HAS_FAIL",
         "counts": {
           "pass": 0,
-          "fail": 1,
-          "unknown": 1
+          "fail": 2,
+          "unknown": 0
         },
         "rules_evaluated": 2,
         "rules_not_evaluated": 0,
-        "starting_portfolio_breaches": 1,
+        "starting_portfolio_breaches": 2,
         "feasibility_status": "FEASIBLE"
       },
       "disclosures": [
@@ -1530,40 +1903,60 @@
     "explanation": [
       {
         "statement_id": "st-1",
-        "text": "Before any purchase, holdings labelled Energy are already between 1.4% and 16.8% of the portfolio (through XIU.TO), above the confirmed tolerance of 0.0%. The purchase itself adds 0.3% (Exxon Mobil through SPY).",
+        "text": "Before any purchase, holdings labelled Energy are already between 1.4% and 16.8% of the portfolio (Enbridge and Canadian Natural Resources through XIU.TO), above the confirmed tolerance of 0.0%. What the SPY purchase adds to this rule is unresolved: 0.0% is proven and up to 15.0% is possible, because the SPY holdings file reports no sector label for any constituent.",
         "evidence_ids": [
           "ev-energy-lower-start",
           "ev-energy-upper-start",
-          "ev-energy-threshold"
+          "ev-energy-threshold",
+          "ev-energy-lower",
+          "ev-energy-upper",
+          "ev-spy-sector-labels"
         ],
         "rendered_by": "TEMPLATE"
       },
       {
         "statement_id": "st-2",
-        "text": "Holdings labelled Energy are between 1.7% and 17.1% of the portfolio after the purchase: 1.4% through XIU.TO (Enbridge, Canadian Natural Resources), 0.3% through SPY (Exxon Mobil), and up to 15.4% that cannot be ruled out because ESGV has no holdings file and XIU.TO is 98% covered. The confirmed tolerance is 0.0%: the rule fails.",
+        "text": "Before any purchase, exposure to companies with a matching registry record is already between 1.4% and 50.0% of the portfolio (Enbridge and Canadian Natural Resources through XIU.TO), above the confirmed tolerance of 0.0%. The SPY purchase adds a proven 0.3% (Exxon Mobil) and up to 15.0%.",
+        "evidence_ids": [
+          "ev-controversy-lower-start",
+          "ev-controversy-upper-start",
+          "ev-controversy-threshold",
+          "ev-xom-via-spy",
+          "ev-controversy-upper"
+        ],
+        "rendered_by": "TEMPLATE"
+      },
+      {
+        "statement_id": "st-3",
+        "text": "Holdings labelled Energy are between 1.4% and 31.8% of the portfolio after the purchase. Proven: 1.4% through XIU.TO (Enbridge, Canadian Natural Resources), held before the purchase. The confirmed tolerance is 0.0%: the rule fails by 1.4 percentage points. What the SPY purchase adds to this rule is unresolved: 0.0% is proven and up to 15.0% is possible, because the SPY holdings file reports no sector label for any constituent. A further 15.4% cannot be ruled out because ESGV has no holdings file and XIU.TO is 98% covered.",
         "evidence_ids": [
           "ev-energy-lower",
           "ev-energy-upper",
           "ev-energy-threshold",
           "ev-energy-gap",
+          "ev-spy-sector-labels",
           "ev-esgv-unattributed",
           "ev-xiu-unattributed"
         ],
         "rendered_by": "TEMPLATE"
       },
       {
-        "statement_id": "st-3",
-        "text": "No held company has a matching record in the controversy registry, and the registry covers none of the held companies. Absence from the registry means not assessed, so this rule is UNKNOWN, not passed.",
+        "statement_id": "st-4",
+        "text": "Exposure to companies with a matching registry record (regulatory finding, court ruling or settlement) is between 1.7% and 65.0% of the portfolio after the purchase. Proven: Enbridge 0.8% and Canadian Natural Resources 0.6% through XIU.TO, held before the purchase, and Exxon Mobil 0.3% through SPY, added by the purchase. The confirmed tolerance is 0.0%: the rule fails by 1.7 percentage points. Every other company is not assessed: absence from the registry is unknown, never a pass.",
         "evidence_ids": [
           "ev-controversy-lower",
           "ev-controversy-upper",
-          "ev-controversy-threshold"
+          "ev-controversy-threshold",
+          "ev-controversy-gap",
+          "ev-record-enb",
+          "ev-record-cnq",
+          "ev-record-xom"
         ],
         "rendered_by": "TEMPLATE"
       },
       {
-        "statement_id": "st-4",
-        "text": "No purchase of SPY can make every confirmed rule pass with cash funding: the Energy-label exclusion is already breached by the starting portfolio (1.4% through XIU.TO), and buying does not reduce it. Bringing it to 0 would require selling, which this funding path does not support.",
+        "statement_id": "st-5",
+        "text": "No purchase of SPY can make every confirmed rule pass with cash funding: the Energy-label exclusion is already breached by the starting portfolio (1.4% through XIU.TO), and buying does not reduce it. Bringing it to 0 would require selling, which this funding path does not support. The controversy exclusion is breached before the purchase as well.",
         "evidence_ids": [
           "ev-energy-lower-start",
           "ev-energy-threshold"
@@ -1571,13 +1964,13 @@
         "rendered_by": "TEMPLATE"
       },
       {
-        "statement_id": "st-5",
-        "text": "The Energy label is the sector reported in each fund's holdings file. It is not a list of oil producers and it says nothing about controversies.",
+        "statement_id": "st-6",
+        "text": "The Energy label is the sector reported in each fund's holdings file. It is not a list of oil producers and it says nothing about controversies. A registry record shows that a dated event is on file with its source; companies without a record were not assessed.",
         "evidence_ids": [],
         "rendered_by": "TEMPLATE"
       },
       {
-        "statement_id": "st-6",
+        "statement_id": "st-7",
         "text": "This is a simulation on a fictional portfolio. It is not advice, and no trade is made.",
         "evidence_ids": [],
         "rendered_by": "TEMPLATE"

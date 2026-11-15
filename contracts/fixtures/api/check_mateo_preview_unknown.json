@@ -1,0 +1,959 @@
+{
+  "fixture": true,
+  "fixture_id": "check_mateo_preview_unknown",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. Portfolio weights and thresholds are fictional-scenario values.",
+  "description": "A rule whose status is UNKNOWN. Preview of one draft rule on Mateo's portfolio (no single company above 0.20): the known exposure is below the limit, but ESGV has no holdings file, so the upper bound is above it. Neither PASS nor FAIL; headline NO_FAIL_BUT_UNKNOWN; the maximum compliant weight is WITHHELD. No policy context is sent, so goal_context is empty. HAND_CALCS.md M2.",
+  "route": "POST /check",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "mateo",
+    "policy_id": null,
+    "policy_version": null,
+    "purchase_request": {
+      "instrument_id": "SPY",
+      "target_direct_weight": 0.15,
+      "funding": "CASH",
+      "original_words": "Buy SPY so that it is 15% of my portfolio."
+    },
+    "draft_rules": [
+      {
+        "rule_id": "mateo-issuer-cap-draft",
+        "rule_type": "max_issuer_exposure",
+        "parameters": {
+          "issuer_scope": "any"
+        },
+        "threshold": 0.2,
+        "threshold_kind": "max_fraction",
+        "threshold_source": "USER_ENTERED",
+        "threshold_quote": null,
+        "unit": "fraction",
+        "status": "PROPOSED",
+        "origin": "USER_STATED",
+        "original_words": "No single company above 20% of my portfolio, funds included.",
+        "objective_id": null,
+        "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+        "confirmed_at": null,
+        "confirmed_by": null,
+        "supersedes_rule_id": null,
+        "superseded_by_rule_id": null
+      }
+    ]
+  },
+  "response_schema": "check_result.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "persona_id": "mateo",
+    "portfolio_id": "pf-mateo-fictional-1",
+    "policy_id": null,
+    "policy_version": null,
+    "preview": true,
+    "calculation_version": "fixture-calc-1.0.0",
+    "valuation_date": "2026-11-12",
+    "purchase_request": {
+      "instrument_id": "SPY",
+      "target_direct_weight": 0.15,
+      "funding": "CASH",
+      "original_words": "Buy SPY so that it is 15% of my portfolio."
+    },
+    "execution": {
+      "status": "OK",
+      "code": null,
+      "message": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.15,
+      "additional_purchase": 0.15,
+      "cash_before": 0.25,
+      "cash_after": 0.1,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "mateo-issuer-cap-draft",
+        "rule_type": "max_issuer_exposure",
+        "status": "UNKNOWN",
+        "measured": {
+          "lower": 0.059,
+          "upper": 0.213
+        },
+        "limit": 0.2,
+        "gap": null,
+        "breaching_subjects": [],
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.25,
+            "reason": "Bond fund: outside the scope of the company-exposure rules; not assessed."
+          }
+        ],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS"
+        ],
+        "starting": {
+          "status": "UNKNOWN",
+          "measured": {
+            "lower": 0.056,
+            "upper": 0.21
+          }
+        },
+        "evidence_ids": [
+          "ev-msft-lower",
+          "ev-msft-upper",
+          "ev-cap-threshold",
+          "ev-esgv-unattributed",
+          "ev-xiu-unattributed"
+        ],
+        "reason": "PREVIEW with a draft limit of 20.0%: the largest known exposure to a single company after the purchase is 5.9% (Microsoft: 5.0% direct, 0.9% through SPY), and it could be as high as 21.3%, because ESGV has no holdings file (15.0%) and XIU.TO is 98% covered (0.4%). The draft limit lies between the two bounds, so the rule is neither passed nor failed: UNKNOWN. The stored policy is unchanged."
+      }
+    ],
+    "rules_not_evaluated": [],
+    "starting_portfolio_findings": [],
+    "data_coverage": [
+      {
+        "fund_id": "XIU.TO",
+        "portfolio_weight": 0.2,
+        "coverage_fraction": 0.98,
+        "sector_labelled_fraction": 0.98,
+        "uncovered_portfolio_weight": 0.004,
+        "status": "PARTIAL",
+        "holdings_date": "2026-11-12",
+        "source_id": "SYNTHETIC_FIXTURE"
+      },
+      {
+        "fund_id": "ESGV",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 0.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.15,
+        "status": "MISSING",
+        "holdings_date": null,
+        "source_id": null
+      },
+      {
+        "fund_id": "SPY",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 1.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.0,
+        "status": "COVERED",
+        "holdings_date": "2026-11-12",
+        "source_id": "SYNTHETIC_FIXTURE"
+      }
+    ],
+    "scenario": null,
+    "goal_context": [],
+    "max_compliant": {
+      "status": "WITHHELD",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": null,
+      "verified_by_rerun": false,
+      "reason": "PREVIEW: no maximum is given. At every cash-funded weight of SPY the largest known single-company exposure stays below the draft limit of 20.0%, and the part that no holdings file lists (15.4%) could take it above the limit. No weight is proven to pass and none is proven to fail, so a number would be a guess.",
+      "evidence_ids": [
+        "ev-msft-lower",
+        "ev-msft-upper",
+        "ev-cap-threshold"
+      ]
+    },
+    "exposure": {
+      "possible_extra": {
+        "starting": 0.154,
+        "proposed": 0.154
+      },
+      "issuers": [
+        {
+          "issuer_id": "MICROSOFT",
+          "name": "Microsoft",
+          "starting": {
+            "direct": 0.05,
+            "indirect_by_fund": [],
+            "lower": 0.05,
+            "upper": 0.204
+          },
+          "proposed": {
+            "direct": 0.05,
+            "indirect_by_fund": [
+              {
+                "fund_id": "SPY",
+                "known": 0.009
+              }
+            ],
+            "lower": 0.059,
+            "upper": 0.213
+          }
+        },
+        {
+          "issuer_id": "CANADIAN_NATIONAL_RAILWAY",
+          "name": "Canadian National Railway",
+          "starting": {
+            "direct": 0.05,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.006
+              }
+            ],
+            "lower": 0.056,
+            "upper": 0.21
+          },
+          "proposed": {
+            "direct": 0.05,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.006
+              }
+            ],
+            "lower": 0.056,
+            "upper": 0.21
+          }
+        },
+        {
+          "issuer_id": "FORTIS",
+          "name": "Fortis",
+          "starting": {
+            "direct": 0.05,
+            "indirect_by_fund": [],
+            "lower": 0.05,
+            "upper": 0.204
+          },
+          "proposed": {
+            "direct": 0.05,
+            "indirect_by_fund": [],
+            "lower": 0.05,
+            "upper": 0.204
+          }
+        },
+        {
+          "issuer_id": "SYN_CA_ISSUER_1",
+          "name": "Synthetic Canadian filler company 1",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          }
+        },
+        {
+          "issuer_id": "SYN_CA_ISSUER_2",
+          "name": "Synthetic Canadian filler company 2",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          }
+        },
+        {
+          "issuer_id": "SYN_CA_ISSUER_3",
+          "name": "Synthetic Canadian filler company 3",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          }
+        },
+        {
+          "issuer_id": "SYN_CA_ISSUER_4",
+          "name": "Synthetic Canadian filler company 4",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "XIU.TO",
+                "known": 0.04
+              }
+            ],
+            "lower": 0.04,
+            "upper": 0.194
+          }
+        },
+        {
+          "issuer_id": "SYN_US_ISSUER_1",
+          "name": "Synthetic U.S. filler company 1",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [],
+            "lower": 0.0,
+            "upper": 0.154
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "SPY",
+                "known": 0.0345
+              }
+            ],
+            "lower": 0.0345,
+            "upper": 0.1885
+          }
+        },
+        {
+          "issuer_id": "SYN_US_ISSUER_2",
+          "name": "Synthetic U.S. filler company 2",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [],
+            "lower": 0.0,
+            "upper": 0.154
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "SPY",
+                "known": 0.0345
+              }
+            ],
+            "lower": 0.0345,
+            "upper": 0.1885
+          }
+        },
+        {
+          "issuer_id": "SYN_US_ISSUER_3",
+          "name": "Synthetic U.S. filler company 3",
+          "starting": {
+            "direct": 0.0,
+            "indirect_by_fund": [],
+            "lower": 0.0,
+            "upper": 0.154
+          },
+          "proposed": {
+            "direct": 0.0,
+            "indirect_by_fund": [
+              {
+                "fund_id": "SPY",
+                "known": 0.0345
+              }
+            ],
+            "lower": 0.0345,
+            "upper": 0.1885
+          }
+        }
+      ],
+      "selection_note": "Shown: the company being bought, companies named by a rule or causing a breach, then the largest company exposures after the purchase. At most 10 companies, largest first."
+    },
+    "evidence": [
+      {
+        "evidence_id": "ev-w-spy-start",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.0,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "SPY",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-spy-target",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.15,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "SPY",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "Hypothetical purchase requested by the user; not executed."
+        ],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-xiu",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.2,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "XIU.TO",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-esgv",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.15,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "ESGV",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-msft",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.05,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "MSFT",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-cnr",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.05,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "CNR.TO",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-w-fts",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "position_weight",
+        "value": 0.05,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "INSTRUMENT",
+          "id": "FTS.TO",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-cash-start",
+        "label": "FICTIONAL_SCENARIO",
+        "metric_id": "cash_weight",
+        "value": 0.25,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "PORTFOLIO",
+          "id": "pf-mateo-fictional-1",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-cash-after",
+        "label": "CALCULATION",
+        "metric_id": "cash_after_purchase",
+        "value": 0.1,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "PORTFOLIO",
+          "id": "pf-mateo-fictional-1",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "Funded from cash; fees and taxes excluded."
+        ],
+        "derived_from": [
+          "ev-cash-start",
+          "ev-w-spy-start",
+          "ev-w-spy-target"
+        ],
+        "formula": "0.25 - (0.15 - 0.00) = 0.10",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-xiu-coverage",
+        "label": "CALCULATION",
+        "metric_id": "fund_coverage_fraction",
+        "value": 0.98,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "FUND",
+          "id": "XIU.TO",
+          "via_fund_id": null,
+          "portfolio_state": "NOT_APPLICABLE"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": "sum of the reported constituent weights = 0.98",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-spy-coverage",
+        "label": "CALCULATION",
+        "metric_id": "fund_coverage_fraction",
+        "value": 1.0,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "FUND",
+          "id": "SPY",
+          "via_fund_id": null,
+          "portfolio_state": "NOT_APPLICABLE"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": "sum of the reported constituent weights = 1.00",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-xiu-unattributed",
+        "label": "CALCULATION",
+        "metric_id": "unattributed_fund_weight",
+        "value": 0.004,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "FUND",
+          "id": "XIU.TO",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "The part of a fund not covered by its holdings file could be anything; it is never treated as zero."
+        ],
+        "derived_from": [
+          "ev-w-xiu",
+          "ev-xiu-coverage"
+        ],
+        "formula": "0.20 x (1 - 0.98) = 0.004",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-esgv-unattributed",
+        "label": "CALCULATION",
+        "metric_id": "unattributed_fund_weight",
+        "value": 0.15,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "FUND",
+          "id": "ESGV",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "No holdings file is held for ESGV: its coverage is 0.",
+          "The part of a fund not covered by its holdings file could be anything; it is never treated as zero."
+        ],
+        "derived_from": [
+          "ev-w-esgv"
+        ],
+        "formula": "0.15 x (1 - 0) = 0.15",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-xiu-cnr-weight",
+        "label": "FACT",
+        "metric_id": "fund_constituent_weight",
+        "value": 0.03,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "CANADIAN_NATIONAL_RAILWAY",
+          "via_fund_id": "XIU.TO",
+          "portfolio_state": "NOT_APPLICABLE"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-spy-msft-weight",
+        "label": "FACT",
+        "metric_id": "fund_constituent_weight",
+        "value": 0.06,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "MICROSOFT",
+          "via_fund_id": "SPY",
+          "portfolio_state": "NOT_APPLICABLE"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "assumptions": [],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-cnr-lower-start",
+        "label": "CALCULATION",
+        "metric_id": "exposure_lower",
+        "value": 0.056,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "CANADIAN_NATIONAL_RAILWAY",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [
+          "ev-w-cnr",
+          "ev-w-xiu",
+          "ev-xiu-cnr-weight"
+        ],
+        "formula": "0.05 + 0.20 x 0.03 = 0.056",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-cnr-upper-start",
+        "label": "CALCULATION",
+        "metric_id": "exposure_upper",
+        "value": 0.21,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "CANADIAN_NATIONAL_RAILWAY",
+          "via_fund_id": null,
+          "portfolio_state": "STARTING"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "The part of a fund not covered by its holdings file could be anything; it is never treated as zero."
+        ],
+        "derived_from": [
+          "ev-cnr-lower-start",
+          "ev-xiu-unattributed",
+          "ev-esgv-unattributed"
+        ],
+        "formula": "0.056 + 0.004 + 0.15 = 0.210",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-msft-lower",
+        "label": "CALCULATION",
+        "metric_id": "exposure_lower",
+        "value": 0.059,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "MICROSOFT",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [],
+        "derived_from": [
+          "ev-w-msft",
+          "ev-w-spy-target",
+          "ev-spy-msft-weight"
+        ],
+        "formula": "0.05 + 0.15 x 0.06 = 0.059",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-msft-upper",
+        "label": "CALCULATION",
+        "metric_id": "exposure_upper",
+        "value": 0.213,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "ISSUER",
+          "id": "MICROSOFT",
+          "via_fund_id": null,
+          "portfolio_state": "PROPOSED"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "The part of a fund not covered by its holdings file could be anything; it is never treated as zero."
+        ],
+        "derived_from": [
+          "ev-msft-lower",
+          "ev-xiu-unattributed",
+          "ev-esgv-unattributed"
+        ],
+        "formula": "0.059 + 0.004 + 0.15 = 0.213",
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      },
+      {
+        "evidence_id": "ev-cap-threshold",
+        "label": "ASSUMPTION",
+        "metric_id": "rule_threshold",
+        "value": 0.2,
+        "unit": "fraction",
+        "currency": null,
+        "subject": {
+          "kind": "RULE",
+          "id": "mateo-issuer-cap-draft",
+          "via_fund_id": null,
+          "portfolio_state": "NOT_APPLICABLE"
+        },
+        "period": {
+          "type": "AS_OF",
+          "date": "2026-11-12"
+        },
+        "source_ids": [],
+        "assumptions": [
+          "Draft threshold in a preview; not confirmed."
+        ],
+        "derived_from": [],
+        "formula": null,
+        "calculation_version": "fixture-calc-1.0.0",
+        "policy_version": null
+      }
+    ],
+    "summary": {
+      "headline": "NO_FAIL_BUT_UNKNOWN",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 1
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    },
+    "disclosures": [
+      "Simulation only: fictional portfolio, no real transaction, not personalized financial advice.",
+      "The purchase is funded from existing cash; every other position is unchanged. Selling, shorting and leverage are not supported.",
+      "Fees and taxes are excluded.",
+      "Fund look-through uses a dated holdings snapshot; it is not the fund's historical composition.",
+      "Historical replays describe the past. They are not forecasts and do not guarantee future results."
+    ]
+  }
+}
