@@ -142,6 +142,33 @@ def test_in02_oil_is_asked_about_whatever_the_model_answers(extraction):
     assert_oil_question(draft, about)
 
 
+@pytest.mark.parametrize("ambiguous", [
+    [{"words": "oil", "topic": "EXCLUSION_DEFINITION", "sector": "Utilities", "objective": 2}],
+    [{"words": "oil", "topic": "DIVERSIFICATION", "objective": 2}],
+    [{"words": "avoid oil", "topic": "LOSS_LIMIT", "objective": 2}],
+    [{"words": "avoid oil and companies", "topic": "EXCLUSION_DEFINITION", "sector": "Financials", "objective": 2}],
+], ids=["wrong-sector", "diversification-topic", "loss-limit-topic", "wider-span-wrong-sector"])
+def test_in32_a_valid_but_wrong_code_on_oil_cannot_replace_the_energy_question(ambiguous):
+    """Finding I1: for catalog terms the server's catalog wins over a valid but wrong model answer."""
+    status, draft = interpret(service(answer(dict(MATEO_EXTRACTION, ambiguous=ambiguous))), MATEO_TEXT)
+    assert status == 200
+    assert_oil_question(draft)
+    oil_questions = [c for c in draft["clarifications"] if "oil" in c["about_words"].lower()]
+    assert [c["about_words"] for c in oil_questions] == ["oil"], "exactly one question about oil, the catalog's"
+    labels = json.dumps(draft["clarifications"])
+    assert "Utilities" not in labels and "Financials" not in labels
+    assert "single-company-cap" not in labels and "replay-loss-budget" not in labels
+    assert all(rule["threshold"] is None for rule in all_rules(draft))
+
+
+def test_in33_a_wrong_sector_rule_on_oil_is_dropped_and_the_question_is_asked():
+    rules = MATEO_EXTRACTION["rules"] + [{"words": "oil", "rule_type": "exclusion", "sector": "Utilities"}]
+    status, draft = interpret(service(answer(dict(MATEO_EXTRACTION, ambiguous=[], rules=rules))), MATEO_TEXT)
+    assert status == 200
+    assert_oil_question(draft)
+    assert "Utilities" not in json.dumps(draft)
+
+
 def test_in03_amira_gets_a_question_never_a_contradiction_and_no_number():
     status, draft = interpret(service(answer(AMIRA_EXTRACTION)), AMIRA_TEXT, persona_id="amira")
     assert status == 200
@@ -545,10 +572,15 @@ def test_in26_clarify_preference_returns_a_draft_like_the_fixture_and_changes_no
     [unsupported] = draft["unsupported"]
     assert (unsupported["words"], unsupported["code"]) == ("companies that produce oil", "UNSUPPORTED_DEFINITION")
     assert unsupported["reason"].endswith("Stored rules stay as they are until you confirm a change.")
-    options = options_of(draft, "companies that produce oil")
+    # the server's catalog asks about the word "oil" itself, whatever span the model marked
+    assert [c["about_words"] for c in draft["clarifications"]] == ["oil"]
+    assert_oil_question(draft)
+    options = options_of(draft, "oil")
     energy = options["energy-sector-label"]["proposed_rule"]
     fixture_energy = expected["interpretation"]["clarifications"][0]["options"][0]["proposed_rule"]
-    assert {k: v for k, v in energy.items() if k != "rule_id"} == {k: v for k, v in fixture_energy.items() if k != "rule_id"}
+    differs = ("rule_id", "original_words")  # the fixture quotes the model's longer span
+    assert {k: v for k, v in energy.items() if k not in differs} == {k: v for k, v in fixture_energy.items() if k not in differs}
+    assert energy["original_words"] == "oil"
     assert options["named-companies"]["supported"] and not options["oil-producers"]["supported"]
     assert svc.get(job["id"]) == job, "the investigation and its report are unchanged"
     assert svc.s3.json(next(k for k in svc.s3.keys("policies/") if k.endswith(".json") and policy["policy_id"] in k))["rules"] == policy["rules"]
