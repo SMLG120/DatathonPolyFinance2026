@@ -120,6 +120,18 @@ describe("ExposureExplorer: values", () => {
     expect(screen.getByTestId("explorer-limit").querySelector("[data-status]")).toHaveAttribute("data-status", cap.status);
   });
 
+  it("never words a part that could not be attributed as zero, however small it is (finding F-06)", () => {
+    const result = fixtureResult("investigation_robert_succeeded.json");
+    if (!result.exposure) throw new Error("fixture has no exposure");
+    // The bound the acceptance run met in Mateo's request; the frozen fixtures hold no value this small.
+    result.exposure.possible_extra.proposed = 0.00048735;
+    render(<ExposureExplorer model={ready(result)} fallback={FALLBACK} />);
+
+    expect(cell("unresolved", "proposed")).toBe("up to 0.05%");
+    expect(cell("unresolved", "starting")).toBe(`up to ${formatFraction(result.exposure.possible_extra.starting)}`);
+    expect(screen.getByTestId("explorer-table").textContent).not.toMatch(/up to 0\.0+%/);
+  });
+
   it("words a range as a range and never as one total", () => {
     const result = fixtureResult("investigation_robert_succeeded.json");
     const issuer = result.exposure?.issuers[0];

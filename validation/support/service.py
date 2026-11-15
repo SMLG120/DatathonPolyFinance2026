@@ -122,6 +122,8 @@ class Stack:
             "ACCESS_CODE_PARAMETER_NAME": PARAMETER_NAME, "ACCESS_CODE_CACHE_SECONDS": "60", "LOG_LEVEL": "INFO",
             "AWS_DEFAULT_REGION": "us-east-1", "AWS_EC2_METADATA_DISABLED": "true",
             "DATA_SNAPSHOT_ID": snapshot_id_of(snapshot) if snapshot else "snap-2026-11-12-000000000000",
+            # As infra/template.yaml sets them on the API function (candidate deec650).
+            "INTERPRETER_ENABLED": "true", "INTERPRETER_OUTPUT_LIMIT": "2048",
         }
         settings.update(env or {})
         for name, value in settings.items():

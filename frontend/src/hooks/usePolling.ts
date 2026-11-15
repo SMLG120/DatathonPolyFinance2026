@@ -11,7 +11,7 @@ export type PollingPhase =
   | "settled"
   /** The deadline passed before a terminal value arrived. */
   | "timed_out"
-  /** Polling gave up after repeated or unrecoverable errors. */
+  /** Polling stopped on an error that another attempt cannot fix. */
   | "failed";
 
 export interface PollingOptions<T> {
@@ -23,12 +23,15 @@ export interface PollingOptions<T> {
   onValue: (value: T) => void;
   intervalMs: number;
   deadlineMs: number;
-  /** Consecutive failed polls tolerated before giving up. Default 3. */
-  maxConsecutiveErrors?: number;
 }
 
 export interface PollingState {
   phase: PollingPhase;
+  /**
+   * "failed": the error that ended the poll. "polling" and "timed_out": the
+   * error of the latest poll if it failed (it is being retried, or was when
+   * the deadline passed), null if it answered.
+   */
   error: unknown;
   /** Completed polls so far. */
   attempts: number;
@@ -38,9 +41,17 @@ interface KeyedState extends PollingState {
   pollKey: string | null;
 }
 
-/** Errors that another attempt cannot fix. */
-function isUnrecoverable(error: unknown): boolean {
-  return isApiError(error) && (error.kind === "unauthorized" || error.kind === "not_found" || error.kind === "validation");
+/**
+ * Errors that another attempt cannot fix. contracts/api.md section 7, polling
+ * rule 4: a network error, a 429 or a 5xx is retried at the same interval
+ * until the client deadline (a request that got no answer in time counts as a
+ * network error). Everything else ends the poll: 401 and 403 (the access code
+ * is asked for again), 404 and 410, a request the service rejects, and an
+ * answer this page cannot read.
+ */
+export function isUnrecoverable(error: unknown): boolean {
+  if (!isApiError(error)) return true;
+  return !(error.kind === "network" || error.kind === "timeout" || error.kind === "rate_limited" || error.kind === "server");
 }
 
 /**
@@ -51,13 +62,14 @@ function isUnrecoverable(error: unknown): boolean {
  *   one has answered.
  * - The deadline is absolute from the start of the poll. When it passes, the
  *   request in flight is aborted and the phase becomes "timed_out".
- * - Transient errors are retried; `maxConsecutiveErrors` in a row, or an error
- *   a retry cannot fix, end the poll in "failed".
+ * - A transient error (network, 429, 5xx) is retried at the same interval for
+ *   as long as the deadline allows, however many there are in a row: the job
+ *   runs on the server whether or not its status can be fetched. Only an
+ *   error a retry cannot fix ends the poll in "failed".
  * - Changing `pollKey` or unmounting cancels everything; late answers are ignored.
  */
 export function usePolling<T>(options: PollingOptions<T>): PollingState {
   const { pollKey, intervalMs, deadlineMs } = options;
-  const maxConsecutiveErrors = options.maxConsecutiveErrors ?? 3;
   const [state, setState] = useState<KeyedState>({ pollKey: null, phase: "idle", error: null, attempts: 0 });
 
   const callbacks = useRef({ fetcher: options.fetcher, isTerminal: options.isTerminal, onValue: options.onValue });
@@ -70,7 +82,8 @@ export function usePolling<T>(options: PollingOptions<T>): PollingState {
 
     let finished = false;
     let attempts = 0;
-    let consecutiveErrors = 0;
+    /** The error of the latest poll, while it is being retried. */
+    let lastError: unknown = null;
     let nextPoll: ReturnType<typeof setTimeout> | null = null;
     const controller = new AbortController();
 
@@ -83,7 +96,7 @@ export function usePolling<T>(options: PollingOptions<T>): PollingState {
       setState({ pollKey, phase, error, attempts });
     };
 
-    const deadline = setTimeout(() => finish("timed_out"), deadlineMs);
+    const deadline = setTimeout(() => finish("timed_out", lastError), deadlineMs);
 
     const poll = async () => {
       if (finished) return;
@@ -91,7 +104,7 @@ export function usePolling<T>(options: PollingOptions<T>): PollingState {
         const value = await callbacks.current.fetcher(controller.signal);
         if (finished) return;
         attempts += 1;
-        consecutiveErrors = 0;
+        lastError = null;
         callbacks.current.onValue(value);
         if (callbacks.current.isTerminal(value)) {
           finish("settled");
@@ -100,13 +113,13 @@ export function usePolling<T>(options: PollingOptions<T>): PollingState {
       } catch (error) {
         if (finished || isAbortError(error)) return;
         attempts += 1;
-        consecutiveErrors += 1;
-        if (isUnrecoverable(error) || consecutiveErrors >= maxConsecutiveErrors) {
+        if (isUnrecoverable(error)) {
           finish("failed", error);
           return;
         }
+        lastError = error;
       }
-      setState({ pollKey, phase: "polling", error: null, attempts });
+      setState({ pollKey, phase: "polling", error: lastError, attempts });
       nextPoll = setTimeout(poll, intervalMs);
     };
 
@@ -119,7 +132,7 @@ export function usePolling<T>(options: PollingOptions<T>): PollingState {
       clearTimeout(deadline);
       controller.abort();
     };
-  }, [pollKey, intervalMs, deadlineMs, maxConsecutiveErrors]);
+  }, [pollKey, intervalMs, deadlineMs]);
 
   // The state of a previous key is never reported for the current one.
   if (pollKey === null) return { phase: "idle", error: null, attempts: 0 };

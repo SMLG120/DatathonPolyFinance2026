@@ -30,8 +30,9 @@ function HowItIsRun({ job }: { job: InvestigationJob }) {
   return (
     <>
       {agent.mode === "MODEL"
-        ? "A model chooses which tool to call next; the final checks are always run by the service. Every number comes from the deterministic engine."
-        : "The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools. Every statement is a template."}
+        ? "A model chooses which tool to call next; the final checks are always run by the service."
+        : "The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools."}{" "}
+      Either way, every number comes from the deterministic engine and every sentence of the report is written by the service.
       <span className="mt-0.5 block text-sm text-ink-muted" data-testid="agent-mode" data-agent-mode={agent.mode}>
         {agent.mode === "MODEL" ? `Model: ${agent.model_id ?? "not reported"}` : "Deterministic fallback"} · tool rounds:{" "}
         <span className="tabular">{agent.tool_rounds}</span>
@@ -143,7 +144,10 @@ export function InvestigationStage() {
         <ErrorBlock
           title="The investigation failed"
           message={investigation.failure?.message ?? "The job ended without a result and gave no reason."}
-          onRetry={investigation.failure?.retryable !== false && retryRequest ? () => void actions.startInvestigation(retryRequest) : undefined}
+          onRetry={
+            // A new investigation needs a policy in force (there is none after a policy version conflict).
+            investigation.failure?.retryable !== false && retryRequest && derived.currentPolicy ? () => void actions.startInvestigation(retryRequest) : undefined
+          }
           retryLabel="Run the same request again"
         >
           {investigation.failure?.code ? (
@@ -155,13 +159,31 @@ export function InvestigationStage() {
         </ErrorBlock>
       ) : null}
 
+      {waiting && error ? (
+        // A failed status request is retried until the time limit (contracts/api.md section 7), and said while it lasts.
+        <Notice tone="caution" role="status" title="The latest request for the status failed">
+          <div data-testid="polling-retrying">
+            <p>{error}</p>
+            <p>
+              It is asked again every <span className="tabular">{timing.pollIntervalMs / 1000}</span> seconds until the time limit of{" "}
+              <span className="tabular">{deadlineSeconds}</span> seconds. The investigation itself may be unaffected.
+            </p>
+          </div>
+        </Notice>
+      ) : null}
+
       {!terminal && isActive && phase === "timed_out" ? (
         <ErrorBlock
           title={`No final answer within ${deadlineSeconds} seconds`}
-          message="The investigation did not finish within the time limit, so checking was stopped. It may still be running."
+          message={
+            error
+              ? "No final status was received within the time limit, so checking was stopped. The investigation may still be running."
+              : "The investigation did not finish within the time limit, so checking was stopped. It may still be running."
+          }
           onRetry={actions.retryPolling}
           retryLabel="Keep waiting"
         >
+          {error ? <p data-testid="polling-last-error">The last request for its status failed: {error}</p> : null}
           <p>No verdict is shown, because none was received.</p>
         </ErrorBlock>
       ) : null}
@@ -169,7 +191,7 @@ export function InvestigationStage() {
       {!terminal && isActive && phase === "failed" ? (
         <ErrorBlock
           title="The status of the investigation could not be fetched"
-          message={error ?? "Several requests in a row failed."}
+          message={error ?? "The request for its status failed."}
           onRetry={actions.retryPolling}
           retryLabel="Check again"
         >

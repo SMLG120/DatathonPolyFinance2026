@@ -231,7 +231,7 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(firstRecord.getByTestId("evidence-formula")).toHaveText("0.25 + 0.012 = 0.262");
     await expect(firstRecord.getByRole("heading", { name: "Values it was computed from" })).toBeVisible();
     await expect(firstRecord.getByTestId("evidence-input")).toHaveCount(2);
-    await expect(drawer.getByTestId("source-details-note")).toContainText("load with the live API");
+    await expect(drawer.getByTestId("source-details-note")).toContainText("Only the ids of a figure’s sources are available here");
     await expect(firstRecord.getByTestId("test-data-tag")).toBeVisible();
     const focusIsInDrawer = () => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')));
     expect(await focusIsInDrawer()).toBe(true);

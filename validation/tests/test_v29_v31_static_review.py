@@ -75,7 +75,8 @@ ROLES = {"ApiFunctionRole", "WorkerFunctionRole", "AuthorizerFunctionRole"}
 # Every action each role may hold. A new action or role is a review item, not an automatic failure of the product:
 # the test fails so that a human re-reads the statement (see REPORT.md, "checks to re-run on the release candidate").
 REVIEWED_ACTIONS = {
-    "ApiFunctionRole": {"logs:CreateLogStream", "logs:PutLogEvents", "s3:GetObject", "s3:PutObject", "s3:ListBucket", "lambda:InvokeFunction"},
+    # bedrock:InvokeModel added on deec650 for the rule interpreter (audited in the fourth pass, REPORT.md section 6).
+    "ApiFunctionRole": {"logs:CreateLogStream", "logs:PutLogEvents", "s3:GetObject", "s3:PutObject", "s3:ListBucket", "lambda:InvokeFunction", "bedrock:InvokeModel"},
     "WorkerFunctionRole": {"logs:CreateLogStream", "logs:PutLogEvents", "s3:GetObject", "s3:PutObject", "bedrock:InvokeModel"},
     "AuthorizerFunctionRole": {"logs:CreateLogStream", "logs:PutLogEvents", "ssm:GetParameter"},
 }
@@ -128,7 +129,14 @@ def test_v29_every_s3_write_is_conditional_and_nothing_can_delete(role):
 @pytest.mark.vcase("V29")
 def test_v29_separation_of_duties_between_the_three_functions():
     by_role = {role: {a for s in statements(resources()[role]) for a in s["actions"]} for role in ROLES}
-    assert "bedrock:InvokeModel" not in by_role["ApiFunctionRole"], "the API function never calls the model"
+    # Fourth pass (deec650): the API function may call the model, for the rule interpreter only. What still separates
+    # the two functions: only the worker can write a result or a trace, only the worker's output is a report, the API
+    # function cannot read a trace, and neither can touch the snapshot or the access code.
+    api_grants, worker_grants = _grants("ApiFunctionRole"), _grants("WorkerFunctionRole")
+    assert {g for g in api_grants if g[0].startswith("bedrock:")} == {g for g in worker_grants if g[0].startswith("bedrock:")}, "same model, same profile, nothing more than the worker"
+    assert not [g for g in api_grants if g[0] in ("s3:GetObject", "s3:PutObject") and g[1].startswith("traces/")], "the API function cannot read or write a trace"
+    assert not [g for g in api_grants if g[0] == "s3:PutObject" and g[1].startswith(("results/", "snapshots/"))]
+    assert [g for g in worker_grants if g[0] == "s3:PutObject" and g[1] == "results/*"] == [("s3:PutObject", "results/*", "if-none-match")]
     assert "lambda:InvokeFunction" not in by_role["WorkerFunctionRole"], "the worker cannot start other functions"
     assert "ssm:GetParameter" not in by_role["ApiFunctionRole"] | by_role["WorkerFunctionRole"], "only the authorizer can read the access code"
     assert not any(a.startswith(("s3:", "lambda:", "bedrock:")) for a in by_role["AuthorizerFunctionRole"])
@@ -140,16 +148,78 @@ def test_v29_separation_of_duties_between_the_three_functions():
     assert len(ssm) == 1 and ssm[0]["resources"].endswith("parameter${AccessCodeParameterName}")
 
 
+PROFILE_ARN = "!Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}"
+
+
 @pytest.mark.vcase("V29")
-def test_v29_bedrock_access_is_one_model_through_one_inference_profile():
-    found = [s for s in statements(resources()["WorkerFunctionRole"]) if "bedrock:InvokeModel" in s["actions"]]
-    assert len(found) == 2
+@pytest.mark.parametrize("role", ["ApiFunctionRole", "WorkerFunctionRole"])
+def test_v29_bedrock_access_is_one_model_through_one_inference_profile(role):
+    """Audited statement by statement on deec650 for both roles. bedrock:InvokeModel is the action Converse needs (the
+    streaming action is absent, so ConverseStream and InvokeModelWithResponseStream are denied). Resources: the one
+    inference profile of this account and Region, and the foundation model in the three Regions the profile routes to,
+    the latter only when the call comes through that profile (StringEquals on bedrock:InferenceProfileArn)."""
+    found = [s for s in statements(resources()[role]) if any(a.startswith("bedrock:") for a in s["actions"])]
+    assert len(found) == 2 and all(s["actions"] == ["bedrock:InvokeModel"] for s in found)
+    profile, models = sorted(found, key=lambda s: "foundation-model/" in s["resources"])
+    assert profile["resources"] == PROFILE_ARN and profile["condition"] == ""
+    lines = [line.strip().lstrip("- ").strip() for line in models["resources"].splitlines() if line.strip()]
+    assert lines == [f"!Sub arn:${{AWS::Partition}}:bedrock:{region}::foundation-model/${{BedrockFoundationModelId}}" for region in ("us-east-1", "us-east-2", "us-west-2")]
+    condition = [line.strip() for line in models["condition"].splitlines() if line.strip()]
+    assert condition == ["StringEquals:", "bedrock:InferenceProfileArn: " + PROFILE_ARN], "exactly one condition: the call comes through the named profile"
     for statement in found:
         assert "*" not in statement["resources"], "no model wildcard"
-        if "foundation-model/" in statement["resources"]:
-            assert "bedrock:InferenceProfileArn" in statement["condition"], "foundation models are reachable only via the named profile"
-    roles_text = "\n".join(resources()[role] for role in ROLES)
-    assert "bedrock:InvokeModelWithResponseStream" not in roles_text and "bedrock:*" not in roles_text
+    roles_text = "\n".join(resources()[name] for name in ROLES)
+    for broader in ("bedrock:InvokeModelWithResponseStream", "bedrock:Converse", "bedrock:*", "bedrock:InvokeAgent", "bedrock:Retrieve", "bedrock:ApplyGuardrail",
+                    "bedrock:Get", "bedrock:List", "bedrock:Create", "application-inference-profile", "provisioned-model", "custom-model"):
+        assert broader not in roles_text, broader
+    assert not any(a.startswith("bedrock:") for s in statements(resources()["AuthorizerFunctionRole"]) for a in s["actions"])
+
+
+@pytest.mark.vcase("V29")
+def test_v29_interpreter_timeouts_fit_under_the_gateway_limit_and_the_contract_deadline():
+    """deec650: API function timeout 25 s; integration timeout 29 s on the two routes that can run the interpreter,
+    20 s elsewhere. The handler's own deadline is 20 s (contracts/api.md, INTERPRET_TIMEOUT_SECONDS): it must fire
+    before the function is killed, and the function before API Gateway's 30 s cut, so the client gets the contract's
+    504 body and not a gateway error."""
+    from byb_contracts.constants import INTERPRET_TIMEOUT_SECONDS
+    api_function = resources()["ApiFunction"]
+    function_timeout = int(re.search(r"^      Timeout: (\d+)", api_function, re.M).group(1))
+    integration = dict(re.findall(r"Path: (\S+)\n\s+PayloadFormatVersion: \"2\.0\"\n(?:\s+#.*\n)*\s+TimeoutInMillis: (\d+)", api_function))
+    assert set(integration) == {path for _, path in CANONICAL_ROUTES}
+    slow = {"/rules/interpret", "/investigations/{id}/challenge"}
+    assert {path for path, value in integration.items() if int(value) != 20000} == slow
+    assert INTERPRET_TIMEOUT_SECONDS == 20 and INTERPRET_TIMEOUT_SECONDS + 3 <= function_timeout
+    assert all(function_timeout * 1000 + 2000 <= int(integration[path]) <= 30000 - 1000 for path in slow)
+    handler = (REPO_ROOT / "backend" / "api" / "handler.py").read_text()
+    connect = int(re.search(r"INTERPRETER_CONNECT_TIMEOUT_SECONDS = (\d+)", handler).group(1))
+    read = int(re.search(r"INTERPRETER_READ_TIMEOUT_SECONDS = (\d+)", handler).group(1))
+    assert connect + read <= INTERPRET_TIMEOUT_SECONDS - 5 and 2 * (connect + read) > INTERPRET_TIMEOUT_SECONDS, "one long call fits; two long calls cannot both start"
+    assert '"total_max_attempts": 1' in handler, "the SDK's own retries are off for the interpreter"
+
+
+@pytest.mark.vcase("V29")
+def test_v29_interpreter_switches_are_plain_settings_of_the_api_function_only():
+    api_function, worker, authorizer = (resources()[name] for name in ("ApiFunction", "WorkerFunction", "AuthorizerFunction"))
+    assert 'INTERPRETER_ENABLED: "true"' in api_function
+    limit = int(re.search(r'INTERPRETER_OUTPUT_LIMIT: "(\d+)"', api_function).group(1))
+    assert 256 <= limit <= 4096, "the output limit bounds the cost of one call"
+    assert "INTERPRETER_" not in worker and "INTERPRETER_" not in authorizer
+    config = (REPO_ROOT / "backend" / "common" / "config.py").read_text()
+    assert 'interpreter_enabled=env.get("INTERPRETER_ENABLED", "").strip().lower() == "true"' in config, "anything but the word true means off (fail closed)"
+    assert "interpreter_enabled: bool = False" in config
+
+
+@pytest.mark.vcase("V29")
+@pytest.mark.xfail(strict=True, reason="F-22 (MEDIUM): POST /rules/interpret costs up to four Bedrock calls per request (two outputs x two attempts) but "
+                                       "keeps the default route throttle (20 rps, burst 40), four times the limit of the two routes that start an "
+                                       "investigation (5 rps), and the API function has no reserved concurrency. The worker's reserved concurrency "
+                                       "was 'the only hard bound on concurrent Bedrock use' (template, WorkerFunction must); the interpreter "
+                                       "path is outside it. Template HttpApi must: 'throttling stays modest - each POST can cost several Bedrock calls'")
+def test_v29_the_route_that_calls_the_model_from_the_api_function_is_throttled_like_the_other_model_routes():
+    api_function = resources()["ApiFunction"]
+    block = api_function.split("Path: /rules/interpret\n", 1)[1].split("Type: HttpApi")[0]
+    own = re.search(r"ThrottlingBurstLimit: (\d+)\s*\n\s+ThrottlingRateLimit: (\d+)", block)
+    assert (own and int(own.group(2)) <= 5) or "ReservedConcurrentExecutions" in api_function
 
 
 @pytest.mark.vcase("V29")
@@ -225,6 +295,8 @@ REVIEWED_STATEMENTS = {
         ("s3:PutObject", "policies/*", "if-none-match"), ("s3:PutObject", "jobs/*", "if-none-match"), ("s3:PutObject", "jobs/*", "if-match"),
         ("s3:ListBucket", "!GetAtt DataBucket.Arn", "prefix:jobs/*,policies/*"),
         ("lambda:InvokeFunction", "!GetAtt WorkerFunction.Arn", ""),
+        # deec650, rule interpreter: Converse through the one inference profile; foundation models only via that profile.
+        ("bedrock:InvokeModel", "inference-profile", ""), ("bedrock:InvokeModel", "foundation-model", "profile"),
     },
     "WorkerFunctionRole": {
         ("logs:CreateLogStream", "!GetAtt WorkerLogGroup.Arn", ""), ("logs:PutLogEvents", "!GetAtt WorkerLogGroup.Arn", ""),

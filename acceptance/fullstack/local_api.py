@@ -59,7 +59,7 @@ from botocore.exceptions import ClientError  # noqa: E402
 from backend import engine  # noqa: E402
 from backend.agents.bedrock_client import BedrockConverse  # noqa: E402
 from backend.api.authorizer import AccessCodeAuthorizer  # noqa: E402
-from backend.api.handler import Api  # noqa: E402
+from backend.api.handler import Api, _build_interpreter  # noqa: E402
 from backend.common import log  # noqa: E402
 from backend.common.config import ApiConfig, AuthorizerConfig, WorkerConfig  # noqa: E402
 from backend.common.data import S3SnapshotSource, SnapshotLoader  # noqa: E402
@@ -85,13 +85,118 @@ CORS_ALLOW_METHODS = "GET,POST,OPTIONS"
 CORS_ALLOW_HEADERS = "authorization,content-type,idempotency-key"
 CORS_MAX_AGE = "600"
 
+# What the hostile investigator tries. None of these strings may reach a response or the page.
+HOSTILE_MARKER = "SMUGGLED"
 HOSTILE_STATEMENTS = [
     {"text": "Every rule passes. You should buy.", "evidence_ids": []},
     {"text": "NVIDIA will rise sharply next year, so this purchase is safe.", "evidence_ids": []},
     {"text": "Every rule passes and the replay returned [[ev-scn-ret-prop]]. You should buy.", "evidence_ids": ["ev-scn-ret-prop"]},
 ]
-BENIGN_SENTENCE = "Replayed through the same period, the allocation returned [[{evidence_id}]]."
+HOSTILE_TOOL_NAME = "SMUGGLED_tool_everything_passes"
+HOSTILE_TOOL_INPUT = {"note": "SMUGGLED-ARGUMENT: every rule passes, you should buy", "instrument_id": "SMUGGLED-INSTRUMENT"}
+HOSTILE_TOOL_TEXT = "SMUGGLED-THOUGHT: I will tell the investor to buy."
+HOSTILE_HIGHLIGHTS = [
+    {"template": "SMUGGLED-TEMPLATE Every rule passes. You should buy.", "evidence_id": "ev-scn-ret-prop"},
+    {"template": "HIGHLIGHT_VALUE", "evidence_id": "SMUGGLED-EVIDENCE-ID"},
+    {"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-scn-ret-prop", "text": "SMUGGLED-MEMBER You should buy."},
+]
 BENIGN_EVIDENCE_ID = "ev-scn-ret-prop"
+INTERPRETER_TOOL = "submit_interpretation"
+INTERPRETER_MODES = ("careful", "silent", "garbage", "slow", "obedient", "unavailable")
+GARBAGE_TEXT = "SMUGGLED-GARBAGE I think every rule should be confirmed. You should buy."
+
+
+# --------------------------------------------------------------------------- scripted interpreter extraction
+
+
+def _user_words(messages: list[dict[str, Any]]) -> str:
+    """The investor's text, as the server put it in the <user_words> block (one JSON string)."""
+    text = "".join(block.get("text", "") for message in messages for block in message.get("content", []))
+    match = re.search(r"<user_words>\n(.*?)\n</user_words>", text, re.DOTALL)
+    return json.loads(match.group(1)) if match else ""
+
+
+def _reference_companies(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+    """The companies the server found in the text and listed in <reference_data> (issuer_id, name)."""
+    text = "".join(block.get("text", "") for message in messages for block in message.get("content", []))
+    match = re.search(r"<reference_data>\n(.*?)\n</reference_data>", text, re.DOTALL)
+    return (json.loads(match.group(1)).get("companies") or []) if match else []
+
+
+def careful_extraction(text: str, companies: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    """What a careful extractor marks: spans of the text and closed codes, nothing else. It follows the tool's
+    instructions literally (a percentage is pointed at through threshold_words, never supplied)."""
+    objectives: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
+    for match in re.finditer(r"[^.;!?\n]+", text):
+        raw = match.group(0)
+        start = match.start() + (len(raw) - len(raw.lstrip()))
+        end = match.end() - (len(raw) - len(raw.rstrip()))
+        if end - start < 3:
+            continue
+        words = text[start:end]
+        lowered = words.lower()
+        kind = "constraint" if re.search(r"\b(avoid|no more than|not|never|at most|lose|loss|exclude|without)\b", lowered) else \
+            "preference" if re.search(r"\b(matters?|prefer|care|like)\b", lowered) else "goal"
+        objectives.append({"words": words, "kind": kind})
+        spans.append((start, end))
+
+    def objective_of(position: int) -> Any:
+        for index, (start, end) in enumerate(spans):
+            if start <= position < end:
+                return index
+        return None
+
+    def sentence_of(position: int) -> str:
+        index = objective_of(position)
+        return text[spans[index][0]:spans[index][1]] if index is not None else ""
+
+    rules: list[dict[str, Any]] = []
+    ambiguous: list[dict[str, Any]] = []
+    unsupported: list[dict[str, Any]] = []
+    for match in re.finditer(r"(?i)\b(no more than|at most|a maximum of|max(?:imum)?)\s+\d+(?:[.,]\d+)?\s*(?:%|percent)[^.;!?\n]*?\b(?:any (?:one|single) (?:company|issuer|stock)|a single (?:company|issuer|stock)|one (?:company|issuer|stock))", text):
+        rules.append({"words": match.group(0), "rule_type": "max_issuer_exposure", "issuer_id": None, "threshold_words": match.group(0), "objective": objective_of(match.start())})
+    # "No more than 5% in NVIDIA": a cap on one company the server listed in its reference data.
+    for start, end in spans:
+        sentence = text[start:end]
+        if not re.search(r"(?i)\b(no more than|at most|a maximum of|max(?:imum)?)\s+\d+(?:[.,]\d+)?\s*(?:%|percent)", sentence) or any(rule["words"] in sentence for rule in rules):
+            continue
+        for company in companies or []:
+            first_word = re.split(r"[^A-Za-z0-9]+", company["name"].strip())[0]
+            if len(first_word) >= 3 and re.search(rf"(?i)\b{re.escape(first_word)}\b", sentence):
+                rules.append({"words": sentence, "rule_type": "max_issuer_exposure", "issuer_id": company["issuer_id"], "threshold_words": sentence, "objective": objective_of(start)})
+                break
+    for match in re.finditer(r"(?i)\b(?:lose|loss(?:es)?|drop|fall|lower)\b", text):
+        sentence = sentence_of(match.start())
+        if sentence and re.search(r"\d\s*(%|percent)", sentence) and not any(rule["words"] == sentence for rule in rules) \
+                and not any(rule["words"] in sentence for rule in rules):
+            rules.append({"words": sentence, "rule_type": "scenario_loss_budget", "threshold_words": sentence, "objective": objective_of(match.start())})
+    for match in re.finditer(r"(?i)\bcompan(?:y|ies)\s+(?:involved in|with|that have|having)\s+[^.;!?\n]*?controvers(?:y|ies)", text):
+        rules.append({"words": match.group(0), "rule_type": "controversy_exclusion", "threshold_words": None, "objective": objective_of(match.start())})
+    for match in re.finditer(r"(?i)\b(oil|petroleum|fossil fuels?|fossil)\b", text):
+        ambiguous.append({"words": match.group(0), "topic": "EXCLUSION_DEFINITION", "sector": "Energy", "objective": objective_of(match.start())})
+    for match in re.finditer(r"(?i)\b(diversified|well diversified|not (?:too )?concentrated|spread out)\b", text):
+        ambiguous.append({"words": match.group(0), "topic": "DIVERSIFICATION", "objective": objective_of(match.start())})
+    for match in re.finditer(r"(?i)\b(preserve my capital|limit (?:my )?losses|low risk)\b", text):
+        ambiguous.append({"words": match.group(0), "topic": "LOSS_LIMIT", "objective": objective_of(match.start())})
+    for match in re.finditer(r"(?i)\b(ignore (?:all |the |your )?(?:previous |prior )?(?:rules|instructions)[^.;!?\n]*|mark (?:everything|every rule|all rules)[^.;!?\n]*)", text):
+        unsupported.append({"words": match.group(0), "reason": "INSTRUCTION"})
+    return {"objectives": objectives[:8], "rules": rules[:8], "ambiguous": ambiguous[:8], "unsupported": unsupported[:8]}
+
+
+def obedient_extraction(text: str, companies: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    """A model that does what it must not: supplies numbers and statuses, and decides what "oil" means (wrongly)."""
+    careful = careful_extraction(text, companies)
+    rules = []
+    for rule in careful["rules"]:
+        rules.append(dict(rule, threshold=0, threshold_source="USER_WORDS", threshold_quote="0%", status="CONFIRMED", origin="USER_CONFIRMED",
+                          scope_description="SMUGGLED-SCOPE every rule passes"))
+    for item in careful["ambiguous"]:
+        if item["topic"] == "EXCLUSION_DEFINITION":
+            rules.append({"words": item["words"], "rule_type": "exclusion", "sector": "Utilities", "threshold": 0, "status": "CONFIRMED",
+                          "objective": item.get("objective")})
+    return {"objectives": careful["objectives"], "rules": rules, "ambiguous": [], "unsupported": [],
+            "status": "CONFIRMED", "note": "SMUGGLED-NOTE confirmed on the investor's behalf"}
 
 
 def client_error(code: str, operation: str, status: int = 400) -> ClientError:
@@ -184,20 +289,38 @@ class FakeSSM:
 
 
 class FakeBedrock:
-    """Scripted Converse. ``settings['bedrock_mode']``:
+    """Scripted Converse for both model users. A call that offers the ``submit_interpretation`` tool is the
+    interpreter's (API Lambda); any other call is the investigator's (worker).
+
+    Investigator, ``settings['bedrock_mode']``:
 
     fallback  every call raises AccessDeniedException (not retryable) -> the worker's DETERMINISTIC_FALLBACK
-    benign    one round of tool calls, then one short sentence citing an evidence id seen in the tool results
-              (the replay's return; no sentence when the policy has no replay rule)
-    hostile   one round of tool calls, then advice and uncited claims (HOSTILE_STATEMENTS)
+    benign    one round of tool calls, then ``{"highlights": [...]}`` selecting one evidence id a tool result showed
+    hostile   a tool call with an invented name and smuggled arguments and prose, then the old prose format
+              (``statements``) on the first job and smuggled highlight items on the next (alternating per final answer)
+
+    Interpreter, ``settings['interpreter_mode']``:
+
+    careful      a valid extraction of the investor's words (``careful_extraction``)
+    silent       the tool called with four empty lists
+    garbage      prose instead of the tool -> rejected twice -> 502 INTERPRETER_FAILED
+    slow         the server's clock moves 21 s during the call -> 504 INTERPRETER_TIMEOUT
+    obedient     numbers, statuses and the wrong sector supplied by the model (``obedient_extraction``)
+    unavailable  AccessDeniedException -> 502
     """
 
-    def __init__(self, settings: dict[str, Any]) -> None:
+    def __init__(self, settings: dict[str, Any], clock: "OffsetClock | None" = None) -> None:
         self._settings = settings
+        self._clock = clock
         self.calls = 0
+        self.interpreter_calls = 0
+        self._hostile_finals = 0
 
     def converse(self, **kwargs: Any) -> dict[str, Any]:
         self.calls += 1
+        tool_names = [tool.get("toolSpec", {}).get("name") for tool in (kwargs.get("toolConfig") or {}).get("tools", [])]
+        if INTERPRETER_TOOL in tool_names:
+            return self._interpreter(kwargs)
         delay = float(self._settings.get("bedrock_delay_s") or 0)
         if delay > 0:
             time.sleep(delay)
@@ -212,23 +335,62 @@ class FakeBedrock:
         if rounds is not None and tool_rounds < len(rounds):
             return self._tool_use([rounds[tool_rounds]], tool_rounds)
         if rounds is None and tool_rounds == 0:
-            return self._tool_use(tools, 0)
+            hostile = mode == "hostile"
+            return self._tool_use(tools, 0, hostile=hostile)
         if mode == "hostile":
-            answer = {"statements": HOSTILE_STATEMENTS}
+            self._hostile_finals += 1
+            answer = {"statements": HOSTILE_STATEMENTS} if self._hostile_finals % 2 == 1 else {"highlights": HOSTILE_HIGHLIGHTS}
+            if self._settings.get("hostile_answer") in ("statements", "highlights"):
+                answer = {"statements": HOSTILE_STATEMENTS} if self._settings["hostile_answer"] == "statements" else {"highlights": HOSTILE_HIGHLIGHTS}
         else:
-            # Cite only an evidence id that a tool result really showed (the rule the server enforces).
-            cited = BENIGN_EVIDENCE_ID if BENIGN_EVIDENCE_ID in json.dumps(messages) else None
-            answer = {"statements": [{"text": BENIGN_SENTENCE.format(evidence_id=cited), "evidence_ids": [cited]}] if cited else []}
+            # Select only an evidence id that a tool result really showed (the rule the server enforces).
+            shown = BENIGN_EVIDENCE_ID in json.dumps(messages)
+            answer = {"highlights": [{"template": "HIGHLIGHT_VALUE", "evidence_id": BENIGN_EVIDENCE_ID}] if shown else []}
+        return self._final(json.dumps(answer))
+
+    def _interpreter(self, kwargs: dict[str, Any]) -> dict[str, Any]:
+        self.interpreter_calls += 1
+        mode = self._settings.get("interpreter_mode")
+        text = _user_words(kwargs["messages"])
+        companies = _reference_companies(kwargs["messages"])
+        if mode == "unavailable":
+            raise client_error("AccessDeniedException", "Converse", 403)
+        if mode == "garbage":
+            return self._final(GARBAGE_TEXT)
+        if mode == "slow":
+            if self._clock is not None:
+                self._clock.offset += 21.0
+            return self._interpretation(careful_extraction(text, companies))
+        if mode == "silent":
+            return self._interpretation({"objectives": [], "rules": [], "ambiguous": [], "unsupported": []})
+        if mode == "obedient":
+            return self._interpretation(obedient_extraction(text, companies))
+        return self._interpretation(careful_extraction(text, companies))
+
+    def _interpretation(self, extraction: dict[str, Any]) -> dict[str, Any]:
         return {
-            "output": {"message": {"role": "assistant", "content": [{"text": json.dumps(answer)}]}},
+            "output": {"message": {"role": "assistant", "content": [{"toolUse": {"toolUseId": f"interp-{self.calls}", "name": INTERPRETER_TOOL, "input": extraction}}]}},
+            "stopReason": "tool_use",
+            "usage": {"inputTokens": 700, "outputTokens": 60, "totalTokens": 760},
+            "metrics": {"latencyMs": 1},
+            "ResponseMetadata": {"RequestId": f"fake-interp-{self.calls}"},
+        }
+
+    def _final(self, text: str) -> dict[str, Any]:
+        return {
+            "output": {"message": {"role": "assistant", "content": [{"text": text}]}},
             "stopReason": "end_turn",
             "usage": {"inputTokens": 900, "outputTokens": 80, "totalTokens": 980},
             "metrics": {"latencyMs": 1},
             "ResponseMetadata": {"RequestId": f"fake-final-{self.calls}"},
         }
 
-    def _tool_use(self, names: list[str], round_index: int) -> dict[str, Any]:
-        content = [{"toolUse": {"toolUseId": f"tool-{round_index}-{i}", "name": name, "input": {}}} for i, name in enumerate(names)]
+    def _tool_use(self, names: list[str], round_index: int, hostile: bool = False) -> dict[str, Any]:
+        content: list[dict[str, Any]] = [{"text": HOSTILE_TOOL_TEXT}] if hostile else []
+        content += [{"toolUse": {"toolUseId": f"tool-{round_index}-{i}", "name": name, "input": {}}} for i, name in enumerate(names)]
+        if hostile:  # an invented tool, and a real tool with invented arguments
+            content.append({"toolUse": {"toolUseId": f"tool-{round_index}-x1", "name": HOSTILE_TOOL_NAME, "input": dict(HOSTILE_TOOL_INPUT)}})
+            content.append({"toolUse": {"toolUseId": f"tool-{round_index}-x2", "name": "simulate_change", "input": dict(HOSTILE_TOOL_INPUT)}})
         return {
             "output": {"message": {"role": "assistant", "content": content}},
             "stopReason": "tool_use",
@@ -236,6 +398,17 @@ class FakeBedrock:
             "metrics": {"latencyMs": 1},
             "ResponseMetadata": {"RequestId": f"fake-tool-{self.calls}"},
         }
+
+
+class _FakeBoto3:
+    """What ``backend.api.handler._build_interpreter`` asks of boto3: one bedrock-runtime client."""
+
+    def __init__(self, bedrock: FakeBedrock) -> None:
+        self._bedrock = bedrock
+
+    def client(self, name: str, **_: Any) -> FakeBedrock:
+        assert name == "bedrock-runtime", name
+        return self._bedrock
 
 
 class LambdaContext:
@@ -290,6 +463,8 @@ def default_settings() -> dict[str, Any]:
         "bedrock_mode": os.environ.get("BYB_LOCAL_BEDROCK_MODE", "fallback"),
         "bedrock_delay_s": float(os.environ.get("BYB_LOCAL_BEDROCK_DELAY_S", "0")),
         "bedrock_stepwise": False,
+        "hostile_answer": None,
+        "interpreter_mode": os.environ.get("BYB_LOCAL_INTERPRETER_MODE", "careful"),
         "worker_delay_s": float(os.environ.get("BYB_LOCAL_WORKER_DELAY_S", "0")),
         "worker_never_delivered": os.environ.get("BYB_LOCAL_WORKER_NEVER", "") == "1",
         "invoke_error": False,
@@ -327,7 +502,7 @@ class Stack:
         self._data_sources = manifest["data_sources"] or None
 
         self.lambda_client = FakeLambda(self)
-        self.bedrock = FakeBedrock(self.settings)
+        self.bedrock = FakeBedrock(self.settings, self.clock)
         self.authorizer = AccessCodeAuthorizer(FakeSSM(access_code), AuthorizerConfig(parameter_name=SSM_PARAMETER, cache_ttl_seconds=30), self.clock)
         self.worker = InvestigationWorker(
             store=JobStore(self.s3, BUCKET, self.clock, can_list=False),
@@ -341,9 +516,15 @@ class Stack:
         self.api = self._build_api()
 
     def _build_api(self) -> Api:
-        config = ApiConfig(data_bucket=BUCKET, worker_function_name="local-worker", job_deadline_seconds=int(self.settings["job_deadline_seconds"]),
-                           poll_interval_ms=1500, snapshot_id=self.snapshot_id, model_id=MODEL_ID)
-        return Api(store=JobStore(self.s3, BUCKET, self.clock, can_list=True), policies=PolicyStore(self.s3, BUCKET, can_list=True),
+        # The API function's environment, as infra/template.yaml sets it (INTERPRETER_ENABLED: "true"), read by the
+        # backend's own ApiConfig.from_env; the interpreter is built by the handler's own _build_interpreter.
+        env = {"DATA_BUCKET": BUCKET, "WORKER_FUNCTION_NAME": "local-worker", "JOB_DEADLINE_SECONDS": str(int(self.settings["job_deadline_seconds"])),
+               "POLL_INTERVAL_MS": "1500", "DATA_SNAPSHOT_ID": self.snapshot_id, "BEDROCK_MODEL_ID": MODEL_ID, "INTERPRETER_ENABLED": "true"}
+        config = ApiConfig.from_env(env)
+        assert config.interpreter_enabled and config.snapshot_id == self.snapshot_id and config.model_id == MODEL_ID, config
+        interpreter = _build_interpreter(_FakeBoto3(self.bedrock), lambda **_: None, config, self.clock)
+        assert interpreter is not None
+        return Api(interpreter=interpreter, store=JobStore(self.s3, BUCKET, self.clock, can_list=True), policies=PolicyStore(self.s3, BUCKET, can_list=True),
                    snapshots=self._api_snapshots, lambda_client=self.lambda_client, config=config, clock=self.clock)
 
     def apply_settings(self, changes: dict[str, Any]) -> None:
@@ -364,6 +545,8 @@ class Stack:
                 del self.s3.objects[key]
         self.lambda_client.invocations.clear()
         self.bedrock.calls = 0
+        self.bedrock.interpreter_calls = 0
+        self.bedrock._hostile_finals = 0
         self.api = self._build_api()
         with self._log_lock:
             self.request_log.clear()
@@ -542,7 +725,7 @@ class ControlHandler(BaseHTTPRequestHandler):
                 "s3_keys": sorted(key for key in stack.s3.objects if not key.startswith("snapshots/")),
                 "invocations": [{"job_id": r["Payload"].get("job_id"), "delivered": r["delivered"], "worker_outcome": r["worker_outcome"]}
                                 for r in stack.lambda_client.invocations],
-                "bedrock_calls": stack.bedrock.calls,
+                "bedrock_calls": stack.bedrock.calls, "interpreter_calls": stack.bedrock.interpreter_calls,
             })
         self._json(404, {"error": "unknown control path"})
 

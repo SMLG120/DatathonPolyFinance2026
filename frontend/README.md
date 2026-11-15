@@ -42,13 +42,35 @@ npm start          # serves out/ on http://127.0.0.1:4173
   bundle, a URL, `localStorage`, a cookie or the console. It is sent as
   `Authorization: Bearer <code>`; the API must allow the headers
   `authorization`, `content-type` and `idempotency-key` and the site origin in
-  CORS. A 401 or 403 removes the code and shows the form again.
+  CORS. A 401 or 403 removes the code and shows the form again; its body is
+  never read. Once a code is accepted again, the request that was refused is
+  shown as failed, with what happened and a way to make it again. It is not
+  repeated automatically.
+- **Errors:** a body in the contract's error shape is shown with its message
+  and, for a refused request, its `details[].issue`. A body in any other
+  shape comes from API Gateway: nothing is read from it and the page words
+  the failure itself, from the status. A request the service refused as sent
+  (400, 404, 409, 422) is not offered a retry that could only fail again.
 - **Idempotency:** `POST /investigations`, and the `CHANGE_RULE` challenge
   that starts a new investigation, carry an `Idempotency-Key` from
   `crypto.randomUUID()`: one key per user action, reused when that action is
-  retried.
+  retried (after a 429 or a network error, for example). After
+  `503 WORKER_INVOCATION_FAILED` the retry carries a new key.
+- **Policy conflict:** on `409 POLICY_VERSION_CONFLICT` the page sets the
+  policy it held aside and starts the rule stage again: every rule is a
+  proposal and the next confirmation creates a new policy. Reports already
+  made keep the version they were checked against.
 - **Timing:** the poll interval and deadline are the contract's
-  `POLL_INTERVAL_MS` and `POLL_DEADLINE_MS`, in both modes.
+  `POLL_INTERVAL_MS` and `POLL_DEADLINE_MS`, in both modes. A failed poll
+  (network, timeout, 429, 5xx) is retried at the same interval until the
+  deadline; 401, 403, 404 and 410 stop it.
+- **Ids from the interpreter:** it numbers questions, drafts and objectives
+  from 1 in every answer. A question is keyed by its answer
+  (`interpretation_id`) and its id; an objective is recognised by its words; a
+  draft whose id another rule already has is listed under an id of its own
+  (`draft-excl-1-2`), because a policy cannot hold two rules under one id.
+- **Small figures:** a value that is not zero is never printed as zero:
+  `< 0.1%` (or `> −0.1%`) at the decimals shown.
 - No AWS SDK and no credentials in the browser.
 
 ## Fixtures mode: what it replays
@@ -140,14 +162,17 @@ and is listed in the header of the fixtures client:
 - **Unknown is not a pass.** An unknown rule shows its cause from
   `unknown_causes`. A fund below full coverage reads "Partial" with the
   percentage cut, never rounded up to 100.
-- **No markup from a model.** Explanation sentences are rendered as plain
-  text.
+- **No markup from a sentence, and no model-written sentence promised.**
+  Explanation sentences are rendered as plain text. The service writes them
+  all (`rendered_by: TEMPLATE`), so the page says of none that a model wrote
+  it; any other marker gets a neutral label.
 - **No arithmetic in the explorer.** Its figures are copied from the result
   (`direct`, `known`, `lower`, `upper`, `possible_extra`, the rule's `limit`).
   The only numbers it works out are the three labels of the drawing's scale.
-- **No source registry yet.** No route delivers it, so the evidence drawer
-  shows the source ids, dates and assumptions of the evidence records and says
-  that source details load with the live API.
+- **No source registry.** No route delivers it, so the evidence drawer shows
+  the source ids, dates and assumptions of the evidence records and says
+  plainly, on test data and on the live service alike, that only the ids are
+  available. It promises nothing more.
 
 ## Accessibility
 
@@ -268,8 +293,8 @@ and is listed in the header of the fixtures client:
   new policy version; it cannot be edited in place.
 - On test data only the recorded requests have an answer: other weights,
   other instruments and free text get the "no recorded answer" message.
-- Source titles, publishers and terms are not shown until a route delivers
-  the source registry.
+- Source titles, publishers, retrieval dates and terms of use are not shown:
+  no route delivers the source registry. Only source ids are.
 - The explorer shows the first company the engine lists (the largest proven
   exposure after the purchase); it has no selector for the others, which stay
   in the chart beside it. It draws a limit only when exactly one single-company

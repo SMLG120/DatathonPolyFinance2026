@@ -2,7 +2,7 @@ import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { createFixturesClient } from "@/lib/api/fixtures-client";
-import type { InvestigationJob, Policy } from "@/lib/contracts";
+import type { ExplanationStatement, InvestigationJob, Policy } from "@/lib/contracts";
 import type { InstrumentRegistry } from "@/lib/portfolio";
 import { unknownCauseText } from "@/lib/verdict";
 import { overviewChart } from "@/test/exposure";
@@ -324,7 +324,7 @@ describe("Fund coverage wording", () => {
 });
 
 describe("The result in sentences", () => {
-  it("shows every recorded sentence word for word and says which were written by the model", () => {
+  it("shows every recorded sentence word for word, and says of none that a model wrote it", () => {
     const job = recorded.robertJob();
     renderWithApp(<ExplanationList result={recorded.robertResult()} statements={job.explanation} />);
     const statements = screen.getAllByTestId("explanation-statement");
@@ -333,17 +333,40 @@ describe("The result in sentences", () => {
       const item = statements[index] as HTMLElement;
       expect(within(item).getByTestId("explanation-text").textContent).toBe(statement.text);
       expect(item).toHaveAttribute("data-rendered-by", statement.rendered_by);
-      expect(item).toHaveTextContent(statement.rendered_by === "MODEL_VALIDATED" ? "Written by the model" : "Template sentence");
+      expect(item).toHaveTextContent(statement.rendered_by === "TEMPLATE" ? "Template sentence" : "Sentence from the service");
     });
-    expect(statements.filter((item) => item.getAttribute("data-rendered-by") === "MODEL_VALIDATED")).toHaveLength(1);
   });
 
-  it("renders model-written text as plain text only: markup in a sentence is shown as characters, never interpreted", () => {
+  it("words what the service sends, template sentences only, as built by the service", () => {
+    // The service marks every sentence TEMPLATE; the recording is rewritten to match it.
+    const statements = recorded.robertJob().explanation.map((statement) => ({ ...statement, rendered_by: "TEMPLATE" as const }));
+    renderWithApp(<ExplanationList result={recorded.robertResult()} statements={statements} />);
+    for (const item of screen.getAllByTestId("explanation-statement")) {
+      expect(item).toHaveTextContent("Template sentence");
+      expect(item).toHaveTextContent("Built by the service from the figures of the result.");
+    }
+    expect(screen.getByTestId("explanation").textContent).not.toMatch(/model/i);
+  });
+
+  it.each(["MODEL_VALIDATED", "A_MARKER_NOT_IN_THE_CONTRACT"])("promises no model-written sentence for the marker %s: the wording is neutral", (marker) => {
+    const [first] = recorded.robertJob().explanation;
+    if (!first) throw new Error("The recording has no sentence.");
+    const statement = { ...first, rendered_by: marker } as unknown as ExplanationStatement;
+    renderWithApp(<ExplanationList result={recorded.robertResult()} statements={[statement]} />);
+    const item = screen.getByTestId("explanation-statement");
+    expect(within(item).getByTestId("explanation-text").textContent).toBe(first.text);
+    expect(item).toHaveTextContent("Sentence from the service");
+    expect(item).toHaveTextContent("Shown as plain text, exactly as the service sent it.");
+    // Only the sentence itself may hold the word: the label and its meaning claim nothing about who worded it.
+    expect((item.textContent ?? "").replace(first.text, "")).not.toMatch(/model|written by|worded by/i);
+  });
+
+  it("renders any sentence as plain text only: markup in a sentence is shown as characters, never interpreted", () => {
     const hostile = '<img src=x onerror="window.__pwned = true"> <a href="javascript:alert(1)">click</a> <script>window.__pwned = true</script> **bold** [link](https://example.test)';
     const job = probe.withStatementText("st-4", hostile);
     renderWithApp(<ExplanationList result={recorded.robertResult()} statements={job.explanation} />);
     const list = screen.getByTestId("explanation");
-    const item = screen.getAllByTestId("explanation-statement").find((statement) => statement.getAttribute("data-rendered-by") === "MODEL_VALIDATED") as HTMLElement;
+    const item = screen.getAllByTestId("explanation-statement").find((statement) => within(statement).getByTestId("explanation-text").textContent === hostile) as HTMLElement;
     const text = within(item).getByTestId("explanation-text");
 
     expect(text.textContent).toBe(hostile);

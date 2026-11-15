@@ -140,30 +140,69 @@ describe("usePolling", () => {
     expect(result.current.phase).toBe("settled");
   });
 
-  it("fails visibly after three consecutive errors", async () => {
-    const failure = new ApiError("network", "offline");
-    const fetcher = vi.fn<(signal: AbortSignal) => Promise<Job>>().mockRejectedValue(failure);
-    const { result } = setup(fetcher);
+  // Finding F-02. contracts/api.md section 7, polling rule 4.
+  it.each([
+    ["a network error", new ApiError("network", "offline")],
+    ["a request that got no answer in time", new ApiError("timeout", "slow")],
+    ["a 429", new ApiError("rate_limited", "throttled", { status: 429 })],
+    ["a 5xx", new ApiError("server", "unavailable", { status: 503 })],
+  ])("retries %s at the same interval, however many in a row, and shows the job when it finishes", async (_name, failure) => {
+    const fetcher = vi.fn<(signal: AbortSignal) => Promise<Job>>().mockResolvedValueOnce({ status: "RUNNING", steps: 1 });
+    for (let poll = 0; poll < 6; poll += 1) fetcher.mockRejectedValueOnce(failure);
+    fetcher.mockResolvedValue({ status: "SUCCEEDED", steps: 3 });
+    const { result, onValue } = setup(fetcher);
 
     await flush();
-    await advance(INTERVAL);
-    expect(result.current.phase).toBe("polling");
-    await advance(INTERVAL);
-    expect(result.current.phase).toBe("failed");
-    expect(result.current.error).toBe(failure);
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    for (let poll = 0; poll < 6; poll += 1) {
+      await advance(INTERVAL);
+      expect(result.current.phase).toBe("polling");
+      // The failure is not hidden while it is retried.
+      expect(result.current.error).toBe(failure);
+    }
+    expect(fetcher).toHaveBeenCalledTimes(7);
 
-    await advance(INTERVAL * 5);
-    expect(fetcher).toHaveBeenCalledTimes(3);
+    await advance(INTERVAL);
+    expect(result.current.phase).toBe("settled");
+    expect(result.current.error).toBeNull();
+    expect(onValue.mock.calls.map(([job]) => job.status)).toEqual(["RUNNING", "SUCCEEDED"]);
   });
 
-  it("does not retry an error that another attempt cannot fix", async () => {
-    const failure = new ApiError("unauthorized", "access code rejected", { status: 401 });
+  it("retries a failing status request until the deadline, then stops with the last failure", async () => {
+    const failure = new ApiError("rate_limited", "throttled", { status: 429 });
+    const fetcher = vi.fn<(signal: AbortSignal) => Promise<Job>>().mockRejectedValue(failure);
+    const { result } = setup(fetcher);
+
+    await advance(DEADLINE - 1);
+    expect(result.current.phase).toBe("polling");
+    // One poll at the start, then one per interval.
+    expect(fetcher).toHaveBeenCalledTimes(Math.floor((DEADLINE - 1) / INTERVAL) + 1);
+
+    await advance(1);
+    expect(result.current.phase).toBe("timed_out");
+    expect(result.current.error).toBe(failure);
+    const callsAtDeadline = fetcher.mock.calls.length;
+    await advance(INTERVAL * 5);
+    expect(fetcher).toHaveBeenCalledTimes(callsAtDeadline);
+  });
+
+  it.each([
+    ["401", new ApiError("unauthorized", "access code rejected", { status: 401 })],
+    ["403", new ApiError("unauthorized", "access code rejected", { status: 403 })],
+    ["404", new ApiError("not_found", "no such investigation", { status: 404 })],
+    ["410", new ApiError("not_found", "expired", { status: 410 })],
+    ["a request the service rejects", new ApiError("validation", "bad request", { status: 400 })],
+    ["an answer this page cannot read", new ApiError("invalid_response", "unreadable", { status: 200 })],
+    ["an error of the page itself", new TypeError("boom")],
+  ])("stops at once on %s: another attempt cannot fix it", async (_name, failure) => {
     const fetcher = vi.fn<(signal: AbortSignal) => Promise<Job>>().mockRejectedValue(failure);
     const { result } = setup(fetcher);
 
     await flush();
     expect(result.current.phase).toBe("failed");
+    expect(result.current.error).toBe(failure);
+    expect(fetcher).toHaveBeenCalledTimes(1);
+
+    await advance(INTERVAL * 5);
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 

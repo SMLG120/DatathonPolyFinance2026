@@ -51,6 +51,9 @@ function recordedService() {
 }
 
 const KEY = "0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61";
+/** What a stage shows for a request the service refused for its access code. Seen only once a code was accepted again. */
+const UNAUTHORIZED_SENTENCE =
+  "The service refused the access code that was in use when this was requested. A code has been accepted since, so it can be requested again.";
 const calls = (fetchImpl: ReturnType<typeof recordedService>) => fetchImpl.mock.calls as unknown as [string, RequestInit][];
 const headersOf = (init: RequestInit | undefined) => (init?.headers ?? {}) as Record<string, string>;
 
@@ -131,6 +134,38 @@ describe("live HTTP client", () => {
     }
   });
 
+  it("reads an interpretation as the service numbers and dates it: ids from 1, milliseconds, a reading that leads to no rule", async () => {
+    // The recorded answer with only what differs in what the service sends (see the interpreter's own description).
+    const recordedAnswer = structuredClone(FIXTURES.interpret.mateo.response);
+    const sent = {
+      ...recordedAnswer,
+      interpretation_id: "int-0a1b2c3d4e5f",
+      created_at: "2026-11-14T15:10:00.123Z",
+      clarifications: recordedAnswer.clarifications.map((clarification) => ({
+        ...clarification,
+        clarification_id: "clar-1",
+        about_words: "oil",
+        options: clarification.options.map((option) => (option.proposed_rule ? { ...option, proposed_rule: { ...option.proposed_rule, rule_id: "draft-excl-1", original_words: "oil" } } : option)),
+      })),
+      proposed_rules: recordedAnswer.proposed_rules.map((rule) => ({ ...rule, rule_id: "draft-controversy-2" })),
+    };
+    expect(sent.clarifications[0]?.options).toHaveLength(4);
+    expect(sent.clarifications[0]?.options.some((option) => option.supported && option.proposed_rule === null)).toBe(true);
+    const fetchImpl = (async () => jsonResponse(sent)) as unknown as typeof fetch;
+    expect(await client(fetchImpl).interpretRules(FIXTURES.interpret.mateo.request)).toEqual(sent);
+  });
+
+  it("refuses an interpretation that does not say which answer or which question it is: the page names a question by both", async () => {
+    const unnamed: Partial<typeof FIXTURES.interpret.mateo.response> = structuredClone(FIXTURES.interpret.mateo.response);
+    delete unnamed.interpretation_id;
+    const unnumbered = structuredClone(FIXTURES.interpret.mateo.response);
+    for (const clarification of unnumbered.clarifications as Partial<(typeof unnumbered.clarifications)[number]>[]) delete clarification.clarification_id;
+    for (const body of [unnamed, unnumbered]) {
+      const fetchImpl = (async () => jsonResponse(body)) as unknown as typeof fetch;
+      expect((await failure(client(fetchImpl).interpretRules(FIXTURES.interpret.mateo.request))).kind).toBe("invalid_response");
+    }
+  });
+
   it.each([401, 403])("reports %i as unauthorized and asks for the access code again", async (status) => {
     const onUnauthorized = vi.fn();
     const fetchImpl = vi.fn(async () => jsonResponse({ message: "Unauthorized" }, status));
@@ -156,13 +191,55 @@ describe("live HTTP client", () => {
     expect(error.details).toEqual(recordedError.response.error.details);
   });
 
-  it("reads the recorded 401 body like any other refusal of the access code", async () => {
+  // contracts/api.md, Authentication: "Clients treat 401 and 403 alike: forget the stored code, show the
+  // access-code prompt, do not read the body" — also when the service itself answered, in the error shape.
+  it.each([401, 403])("does not read the body of a %i, even the service's own error body, and words the refusal itself (finding F-05)", async (status) => {
     const recordedError = FIXTURES.errors.unauthorized;
     const onUnauthorized = vi.fn();
-    const fetchImpl = vi.fn(async () => jsonResponse(recordedError.response, recordedError.status));
+    const fetchImpl = vi.fn(async () => jsonResponse(recordedError.response, status));
     const error = await failure(client(fetchImpl as unknown as typeof fetch, { onUnauthorized }).getPortfolio("robert"));
-    expect(error).toMatchObject({ kind: "unauthorized", status: 401, code: "UNAUTHORIZED", message: recordedError.response.error.message });
+    expect(error).toMatchObject({ kind: "unauthorized", status, code: null, requestId: null, message: UNAUTHORIZED_SENTENCE });
+    expect(error.details).toEqual([]);
+    expect(error.message).not.toContain(recordedError.response.error.message);
     expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding F-01. contracts/api.md, "Errors": a body that is not the error shape comes from the gateway; act on the status alone.
+  it.each([
+    [401, { message: "Unauthorized" }, "unauthorized", UNAUTHORIZED_SENTENCE],
+    [403, { message: "Forbidden" }, "unauthorized", UNAUTHORIZED_SENTENCE],
+    [404, { message: "Not Found" }, "not_found", "The service has no record of this item."],
+    [429, { message: "Too Many Requests" }, "rate_limited", "The service is receiving too many requests. Wait a moment and try again."],
+    [503, { message: "Service Unavailable" }, "server", "The service reported an internal error. Nothing was changed."],
+  ] as const)("words a gateway %i itself and reads nothing from its body", async (status, body, kind, sentence) => {
+    const fetchImpl = vi.fn(async () => jsonResponse(body, status));
+    const error = await failure(client(fetchImpl as unknown as typeof fetch).getPortfolio("robert"));
+    expect(error).toMatchObject({ kind, status, code: null, requestId: null, message: sentence });
+    expect(error.details).toEqual([]);
+    expect(error.message).not.toContain(body.message);
+  });
+
+  it("reads nothing from a body whose `error` member is not an object", async () => {
+    for (const body of [{ error: "Forbidden", message: "Forbidden" }, { error: null, message: "x", code: "Y", request_id: "z", details: [{ path: "", issue: "i" }] }, ["Forbidden"], "Forbidden"]) {
+      const error = await failure(client((async () => jsonResponse(body, 429)) as unknown as typeof fetch).getPortfolio("robert"));
+      expect(error).toMatchObject({ kind: "rate_limited", code: null, requestId: null, message: "The service is receiving too many requests. Wait a moment and try again." });
+      expect(error.details).toEqual([]);
+    }
+  });
+
+  it("treats 410 like 404: the record is gone and asking again cannot help", async () => {
+    const gone = await failure(client((async () => jsonResponse({ error: { code: "INVESTIGATION_EXPIRED", message: "This investigation has expired.", details: [], request_id: "req-1" } }, 410)) as unknown as typeof fetch).getInvestigation("old"));
+    expect(gone).toMatchObject({ kind: "not_found", status: 410, code: "INVESTIGATION_EXPIRED", message: "This investigation has expired." });
+  });
+
+  it("reports an answer that breaks off while it is read as a connection failure, not as an unreadable answer", async () => {
+    const broken = () => {
+      const response = new Response("{}", { status: 200 });
+      vi.spyOn(response, "text").mockRejectedValue(new TypeError("network error"));
+      return response;
+    };
+    const error = await failure(client((async () => broken()) as unknown as typeof fetch).getInvestigation("inv-robert-0001"));
+    expect(error.kind).toBe("network");
   });
 
   it("maps server and not-found statuses", async () => {
