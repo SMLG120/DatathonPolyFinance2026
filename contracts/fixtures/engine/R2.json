@@ -1,0 +1,350 @@
+{
+  "fixture": true,
+  "fixture_id": "R2",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Robert-shaped: cap raised to 30%; the loss budget still fails with a gap",
+  "tests": [
+    "policy revision",
+    "reproducible old reports",
+    "scenario budget gap"
+  ],
+  "universe": "robert_synthetic_universe.json",
+  "hand_calc": "R2",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-r2",
+      "persona_id": "robert",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.3,
+      "positions": [
+        {
+          "instrument_id": "XBB.TO",
+          "weight": 0.3
+        },
+        {
+          "instrument_id": "SPY",
+          "weight": 0.2
+        },
+        {
+          "instrument_id": "XIU.TO",
+          "weight": 0.1
+        },
+        {
+          "instrument_id": "RY.TO",
+          "weight": 0.05
+        },
+        {
+          "instrument_id": "JNJ",
+          "weight": 0.05
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-robert-demo",
+      "persona_id": "robert",
+      "version": 2,
+      "parent_version": 1,
+      "created_at": "2026-11-14T15:06:00Z",
+      "objectives": [
+        {
+          "objective_id": "obj-robert-1",
+          "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.7"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "SUPERSEDED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no more than 10% of the portfolio in any single company, funds included.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": "robert-issuer-cap-2"
+        },
+        {
+          "rule_id": "robert-issuer-cap-2",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.3,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "USER_ENTERED",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "USER_STATED",
+          "original_words": "Raise my single-company limit to 30%.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:06:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": "robert-issuer-cap-1",
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: replayed through 2022, the portfolio should not end the year more than 10% lower.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Issuer cap raised from 0.10 to 0.30 by the user (CHANGE_RULE challenge). Objective and loss budget unchanged.",
+      "content_hash": "sha256:64c4e6cbf03872141cdd88ef8fb703f425388dc9f8e4f258bcf379b7f9f21721"
+    },
+    "purchase_request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25,
+      "funding": "CASH",
+      "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.25,
+      "additional_purchase": 0.25,
+      "cash_before": 0.3,
+      "cash_after": 0.05,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "robert-issuer-cap-2",
+        "status": "PASS",
+        "measured": {
+          "lower": 0.262,
+          "upper": 0.264
+        },
+        "limit": 0.3,
+        "gap": -0.036,
+        "breaching_subjects": [],
+        "unknown_causes": [
+          "PARTIAL_HOLDINGS"
+        ],
+        "starting": {
+          "status": "PASS",
+          "measured": {
+            "lower": 0.058,
+            "upper": 0.06
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.3
+          }
+        ]
+      },
+      {
+        "rule_id": "robert-loss-budget-1",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.1525,
+          "upper": 0.1525
+        },
+        "limit": 0.1,
+        "gap": 0.0525,
+        "breaching_subjects": [],
+        "unknown_causes": [],
+        "starting": {
+          "status": "PASS",
+          "measured": {
+            "lower": 0.065,
+            "upper": 0.065
+          }
+        },
+        "out_of_scope": []
+      }
+    ],
+    "rules_not_evaluated": [
+      {
+        "rule_id": "robert-issuer-cap-1",
+        "status": "SUPERSEDED"
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "data_coverage": [
+      {
+        "fund_id": "SPY",
+        "portfolio_weight": 0.2,
+        "coverage_fraction": 1.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.0,
+        "status": "COVERED"
+      },
+      {
+        "fund_id": "XIU.TO",
+        "portfolio_weight": 0.1,
+        "coverage_fraction": 0.98,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.002,
+        "status": "PARTIAL"
+      }
+    ],
+    "scenario": {
+      "scenario_id": "replay_2022",
+      "base_date": "2021-12-31",
+      "end_date": "2022-12-30",
+      "status": "COMPUTED",
+      "starting": {
+        "scenario_terminal_return": -0.065,
+        "scenario_max_drawdown": -0.0985,
+        "max_drawdown_date": "2022-06-30"
+      },
+      "proposed": {
+        "scenario_terminal_return": -0.1525,
+        "scenario_max_drawdown": -0.2235,
+        "max_drawdown_date": "2022-06-30"
+      },
+      "target_instrument_return": -0.35,
+      "missing_instruments": [],
+      "instrument_returns": [
+        {
+          "instrument_id": "XBB.TO",
+          "currency": "CAD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": null,
+          "end_fx_date": null,
+          "base_fx_age_days": null,
+          "end_fx_age_days": null,
+          "return_cad": -0.1
+        },
+        {
+          "instrument_id": "SPY",
+          "currency": "USD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": "2021-12-31",
+          "end_fx_date": "2022-12-30",
+          "base_fx_age_days": 0,
+          "end_fx_age_days": 0,
+          "return_cad": -0.155
+        },
+        {
+          "instrument_id": "XIU.TO",
+          "currency": "CAD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": null,
+          "end_fx_date": null,
+          "base_fx_age_days": null,
+          "end_fx_age_days": null,
+          "return_cad": -0.05
+        },
+        {
+          "instrument_id": "RY.TO",
+          "currency": "CAD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": null,
+          "end_fx_date": null,
+          "base_fx_age_days": null,
+          "end_fx_age_days": null,
+          "return_cad": -0.02
+        },
+        {
+          "instrument_id": "JNJ",
+          "currency": "USD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": "2021-12-31",
+          "end_fx_date": "2022-12-30",
+          "base_fx_age_days": 0,
+          "end_fx_age_days": 0,
+          "return_cad": 0.04
+        },
+        {
+          "instrument_id": "NVDA",
+          "currency": "USD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": "2021-12-31",
+          "end_fx_date": "2022-12-30",
+          "base_fx_age_days": 0,
+          "end_fx_age_days": 0,
+          "return_cad": -0.35
+        }
+      ]
+    },
+    "max_compliant": {
+      "status": "SUPPORTED",
+      "final_direct_weight": 0.1,
+      "additional_purchase": 0.1,
+      "binding_constraint": {
+        "type": "RULE",
+        "rule_id": "robert-loss-budget-1"
+      },
+      "verified_by_rerun": true
+    },
+    "summary": {
+      "headline": "HAS_FAIL",
+      "counts": {
+        "pass": 1,
+        "fail": 1,
+        "unknown": 0
+      },
+      "rules_evaluated": 2,
+      "rules_not_evaluated": 1,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

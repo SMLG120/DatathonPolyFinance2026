@@ -1,0 +1,172 @@
+{
+  "fixture": true,
+  "fixture_id": "E19",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "The purchased instrument has no price history: the loss budget is UNKNOWN",
+  "tests": [
+    "historical metric definitions",
+    "insufficient history"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E19",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e19",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.4,
+      "positions": [
+        {
+          "instrument_id": "SYN_A",
+          "weight": 0.4
+        },
+        {
+          "instrument_id": "SYN_C",
+          "weight": 0.2
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e19",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e19-budget",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.05,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:43a220063e7d2a738d96ac93614a47f9803eb8fe083d3ec3f26d8e80e708ee47"
+    },
+    "purchase_request": {
+      "instrument_id": "SYN_D",
+      "target_direct_weight": 0.1,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.1,
+      "additional_purchase": 0.1,
+      "cash_before": 0.4,
+      "cash_after": 0.3,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "e19-budget",
+        "status": "UNKNOWN",
+        "measured": null,
+        "limit": 0.05,
+        "gap": null,
+        "breaching_subjects": [],
+        "unknown_causes": [
+          "INSUFFICIENT_HISTORY"
+        ],
+        "starting": {
+          "status": "UNKNOWN",
+          "measured": null
+        },
+        "out_of_scope": []
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "data_coverage": [],
+    "scenario": {
+      "scenario_id": "replay_2022",
+      "base_date": "2021-12-31",
+      "end_date": "2022-12-30",
+      "status": "INSUFFICIENT_HISTORY",
+      "starting": null,
+      "proposed": null,
+      "target_instrument_return": null,
+      "instrument_returns": [
+        {
+          "instrument_id": "SYN_A",
+          "currency": "CAD",
+          "base_price_date": "2021-12-30",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 1,
+          "end_price_age_days": 0,
+          "base_fx_date": null,
+          "end_fx_date": null,
+          "base_fx_age_days": null,
+          "end_fx_age_days": null,
+          "return_cad": -0.05
+        },
+        {
+          "instrument_id": "SYN_C",
+          "currency": "USD",
+          "base_price_date": "2021-12-31",
+          "end_price_date": "2022-12-30",
+          "base_price_age_days": 0,
+          "end_price_age_days": 0,
+          "base_fx_date": "2021-12-30",
+          "end_fx_date": "2022-12-30",
+          "base_fx_age_days": 1,
+          "end_fx_age_days": 0,
+          "return_cad": -0.12
+        }
+      ],
+      "missing_instruments": [
+        "SYN_D"
+      ]
+    },
+    "max_compliant": {
+      "status": "WITHHELD",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": null,
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "NO_FAIL_BUT_UNKNOWN",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 1
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

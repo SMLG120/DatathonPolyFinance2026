@@ -1,0 +1,34 @@
+# --- secrets: never commit ---
+.env
+.env.*
+!.env.example
+*credentials*
+*.pem
+*.key
+.aws/
+# --- dependencies / build output ---
+node_modules/
+.next/
+out/
+dist/
+build/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.aws-sam/
+*.zip
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+# --- third-party material we may not redistribute ---
+# Official case PDF / decks / draft text extracts (organizer + team working material)
+reference/
+# Yahoo-derived starter prices & corporate actions (Yahoo terms restrict redistribution)
+data/starter/prices_daily.csv
+data/starter/corporate_actions.csv
+# Raw issuer files (ETF holdings etc.): fetched by data/acquire scripts, hashes kept in manifests
+data/raw/
+frontend/.scratch/
+work/

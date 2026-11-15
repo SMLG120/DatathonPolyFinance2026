@@ -1,0 +1,382 @@
+{
+  "fixture": true,
+  "universe_id": "synthetic_universe",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. FUND_A and FUND_D list 100% of their weight, FUND_B lists 60%, FUND_C has no holdings file. Only SYN_A, SYN_C and SYN_E have prices (used by the scenario replay cases); the SYN_E series deliberately stops on 2022-06-30.",
+  "instruments": {
+    "schema_version": "1.0.0",
+    "instruments": {
+      "SYN_A": {
+        "instrument_id": "SYN_A",
+        "issuer_id": "ISS_A",
+        "name": "Synthetic Company A",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Technology",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_B1": {
+        "instrument_id": "SYN_B1",
+        "issuer_id": "ISS_B",
+        "name": "Synthetic Company B (Class 1)",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Financials",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_B2": {
+        "instrument_id": "SYN_B2",
+        "issuer_id": "ISS_B",
+        "name": "Synthetic Company B (Class 2)",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Financials",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_C": {
+        "instrument_id": "SYN_C",
+        "issuer_id": "ISS_C",
+        "name": "Synthetic Company C",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Energy",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_D": {
+        "instrument_id": "SYN_D",
+        "issuer_id": "ISS_D",
+        "name": "Synthetic Company D",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Financials",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_E": {
+        "instrument_id": "SYN_E",
+        "issuer_id": "ISS_E",
+        "name": "Synthetic Company E",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "FUND_A": {
+        "instrument_id": "FUND_A",
+        "issuer_id": "FUND_A",
+        "name": "Synthetic Equity Fund A (full holdings)",
+        "asset_class": "etf_equity",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (synthetic)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "FUND_B": {
+        "instrument_id": "FUND_B",
+        "issuer_id": "FUND_B",
+        "name": "Synthetic Equity Fund B (partial holdings)",
+        "asset_class": "etf_equity",
+        "currency": "USD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (synthetic)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "FUND_C": {
+        "instrument_id": "FUND_C",
+        "issuer_id": "FUND_C",
+        "name": "Synthetic Equity Fund C (no holdings file)",
+        "asset_class": "etf_equity",
+        "currency": "USD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (synthetic)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "FUND_D": {
+        "instrument_id": "FUND_D",
+        "issuer_id": "FUND_D",
+        "name": "Synthetic Equity Fund D (full holdings)",
+        "asset_class": "etf_equity",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (synthetic)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "BOND_X": {
+        "instrument_id": "BOND_X",
+        "issuer_id": "BOND_X",
+        "name": "Synthetic Bond Fund X",
+        "asset_class": "etf_bond",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": false,
+        "sector": "Bonds (synthetic)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      }
+    }
+  },
+  "holdings": {
+    "schema_version": "1.0.0",
+    "funds": {
+      "FUND_A": {
+        "fund_id": "FUND_A",
+        "holdings_date": "2026-11-12",
+        "publication_date": null,
+        "retrieval_date": "2026-11-14",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "coverage_fraction": 1.0,
+        "non_constituent_weight": 0.0,
+        "n_holdings": 5,
+        "holdings": [
+          {
+            "fund_id": "FUND_A",
+            "issuer_id": "ISS_A",
+            "instrument_id": "SYN_A",
+            "name": "Synthetic Company A",
+            "weight_fraction": 0.2,
+            "sector": "Technology",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_A",
+            "issuer_id": "ISS_B",
+            "instrument_id": "SYN_B1",
+            "name": "Synthetic Company B (Class 1)",
+            "weight_fraction": 0.1,
+            "sector": "Financials",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_A",
+            "issuer_id": "ISS_B",
+            "instrument_id": "SYN_B2",
+            "name": "Synthetic Company B (Class 2)",
+            "weight_fraction": 0.05,
+            "sector": "Financials",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_A",
+            "issuer_id": "ISS_C",
+            "instrument_id": "SYN_C",
+            "name": "Synthetic Company C",
+            "weight_fraction": 0.25,
+            "sector": "Energy",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_A",
+            "issuer_id": "ISS_D",
+            "instrument_id": "SYN_D",
+            "name": "Synthetic Company D",
+            "weight_fraction": 0.4,
+            "sector": "Financials",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          }
+        ]
+      },
+      "FUND_B": {
+        "fund_id": "FUND_B",
+        "holdings_date": "2026-11-12",
+        "publication_date": null,
+        "retrieval_date": "2026-11-14",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "coverage_fraction": 0.6,
+        "non_constituent_weight": 0.0,
+        "n_holdings": 3,
+        "holdings": [
+          {
+            "fund_id": "FUND_B",
+            "issuer_id": "ISS_A",
+            "instrument_id": "SYN_A",
+            "name": "Synthetic Company A",
+            "weight_fraction": 0.3,
+            "sector": "Technology",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_B",
+            "issuer_id": "ISS_C",
+            "instrument_id": "SYN_C",
+            "name": "Synthetic Company C",
+            "weight_fraction": 0.1,
+            "sector": "Energy",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_B",
+            "issuer_id": "ISS_E",
+            "instrument_id": "SYN_E",
+            "name": "Synthetic Company E",
+            "weight_fraction": 0.2,
+            "sector": null,
+            "sector_source": null
+          }
+        ]
+      },
+      "FUND_D": {
+        "fund_id": "FUND_D",
+        "holdings_date": "2026-11-12",
+        "publication_date": null,
+        "retrieval_date": "2026-11-14",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "coverage_fraction": 1.0,
+        "non_constituent_weight": 0.0,
+        "n_holdings": 2,
+        "holdings": [
+          {
+            "fund_id": "FUND_D",
+            "issuer_id": "ISS_A",
+            "instrument_id": "SYN_A",
+            "name": "Synthetic Company A",
+            "weight_fraction": 0.5,
+            "sector": "Technology",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          },
+          {
+            "fund_id": "FUND_D",
+            "issuer_id": "ISS_D",
+            "instrument_id": "SYN_D",
+            "name": "Synthetic Company D",
+            "weight_fraction": 0.5,
+            "sector": "Financials",
+            "sector_source": "SYNTHETIC_FIXTURE"
+          }
+        ]
+      }
+    }
+  },
+  "market_data": {
+    "schema_version": "1.0.0",
+    "valuation_date": "2026-11-12",
+    "prices": {
+      "SYN_A": {
+        "currency": "CAD",
+        "series": [
+          [
+            "2021-12-30",
+            100.0
+          ],
+          [
+            "2022-06-30",
+            90.0
+          ],
+          [
+            "2022-09-30",
+            85.0
+          ],
+          [
+            "2022-12-30",
+            95.0
+          ]
+        ]
+      },
+      "SYN_C": {
+        "currency": "USD",
+        "series": [
+          [
+            "2021-12-31",
+            50.0
+          ],
+          [
+            "2022-06-30",
+            30.0
+          ],
+          [
+            "2022-12-30",
+            40.0
+          ]
+        ]
+      },
+      "SYN_E": {
+        "currency": "USD",
+        "series": [
+          [
+            "2021-12-31",
+            20.0
+          ],
+          [
+            "2022-06-30",
+            22.0
+          ]
+        ]
+      }
+    },
+    "fx_usdcad": [
+      [
+        "2021-12-30",
+        1.25
+      ],
+      [
+        "2022-06-30",
+        1.3
+      ],
+      [
+        "2022-09-30",
+        1.36
+      ],
+      [
+        "2022-12-30",
+        1.375
+      ]
+    ]
+  },
+  "controversies": {
+    "schema_version": "1.0.0",
+    "registry_scope": {
+      "purpose": "SYNTHETIC registry for engine tests. Not real research.",
+      "issuers_researched": [
+        "ISS_C"
+      ],
+      "research_date": "2026-11-14",
+      "absence_meaning": "Absence from this registry means NOT ASSESSED, never 'no controversy'.",
+      "source_policy": "Synthetic test data only.",
+      "not_evidence": "A sector label is never evidence of a controversy.",
+      "limits": "Synthetic."
+    },
+    "records": [
+      {
+        "record_id": "SYN-REC-1",
+        "issuer_id": "ISS_C",
+        "event_date": "2024-05-01",
+        "nature": "REGULATORY_FINDING",
+        "summary": "SYNTHETIC record used only to test the controversy rule. It does not describe a real event.",
+        "source_ids": [
+          "SYNTHETIC_FIXTURE"
+        ],
+        "coverage_note": "Synthetic: only this one invented record exists for ISS_C."
+      }
+    ]
+  },
+  "sources": {
+    "schema_version": "1.0.0",
+    "sources": {
+      "SYNTHETIC_FIXTURE": {
+        "source_id": "SYNTHETIC_FIXTURE",
+        "publisher": "Before You Buy team (synthetic test data)",
+        "title": "Invented fixture numbers for hand calculation",
+        "url": null,
+        "relevant_date": "2026-11-12",
+        "retrieval_date": "2026-11-14",
+        "sha256": "9a149e591e076cbfb21ecb44c5d37d62d96f335ad8ecf01835fd0e484423b5d5",
+        "processing": "None. Typed in by hand. The sha256 is the hash of the sentence: 'Before You Buy synthetic fixture data (invented numbers, not a real source)'.",
+        "terms": "Team-authored test data; no third-party terms apply.",
+        "limitations": "Not real data. Never display it as an issuer disclosure or as market data."
+      }
+    }
+  }
+}

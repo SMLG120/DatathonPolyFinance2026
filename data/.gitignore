@@ -1,0 +1,16 @@
+# Yahoo-derived (Yahoo terms restrict redistribution). Regenerated from data/starter/ by
+#   python3 -I data/scripts/build_processed.py
+processed/market_data.json
+
+# PENDING LEAD DECISION - see docs/data-sources.md, "Terms of use and redistribution".
+# The four files below are derived from State Street's and BlackRock's holdings files and from State
+# Street's product page. On a plain reading of both issuers' terms, publishing them in a public
+# repository is not permitted without permission. They are ignored so that `git add data/` cannot
+# publish them by accident; they stay on disk and every script and the engine can read them.
+#   - To publish them (the lead's decision): delete the four lines below.
+#   - To rebuild them on a fresh clone: acquire the raw files, then run build_processed.py
+#     (commands in docs/data-sources.md, "Reproduce").
+processed/holdings.json
+processed/instruments.json
+processed/fund_sector_breakdowns.json
+processed/build_report.json

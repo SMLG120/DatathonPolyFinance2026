@@ -1,0 +1,146 @@
+{
+  "fixture": true,
+  "fixture_id": "interpret_mateo_clarification",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "Mateo's sentence. 'oil' is ambiguous, so the interpreter asks a question whose options carry the drafts they lead to. The drafts are SYSTEM_PROPOSED structures with a null threshold: no number is invented.",
+  "route": "POST /rules/interpret",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "mateo",
+    "text": "Balanced growth over 8 to 12 years; ESG matters to me; I want to avoid oil and companies involved in significant controversies.",
+    "policy_id": null,
+    "policy_version": null
+  },
+  "response_schema": "interpretation.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "interpretation_id": "int-mateo-0001",
+    "persona_id": "mateo",
+    "created_at": "2026-11-14T15:10:00Z",
+    "model_id": "us.anthropic.claude-sonnet-5-5",
+    "original_words": "Balanced growth over 8 to 12 years; ESG matters to me; I want to avoid oil and companies involved in significant controversies.",
+    "objectives": [
+      {
+        "objective_id": "obj-1",
+        "original_words": "Balanced growth over 8 to 12 years",
+        "kind": "goal",
+        "source": "USER_STATED",
+        "case_reference": null
+      },
+      {
+        "objective_id": "obj-2",
+        "original_words": "ESG matters to me",
+        "kind": "preference",
+        "source": "USER_STATED",
+        "case_reference": null
+      },
+      {
+        "objective_id": "obj-3",
+        "original_words": "I want to avoid oil and companies involved in significant controversies",
+        "kind": "constraint",
+        "source": "USER_STATED",
+        "case_reference": null
+      }
+    ],
+    "proposed_rules": [
+      {
+        "rule_id": "draft-controversy-1",
+        "rule_type": "controversy_exclusion",
+        "parameters": {
+          "criteria": {
+            "natures": [
+              "REGULATORY_FINDING",
+              "COURT_RULING",
+              "SETTLEMENT"
+            ],
+            "event_date_from": null
+          }
+        },
+        "threshold": null,
+        "threshold_kind": "max_fraction",
+        "threshold_source": null,
+        "threshold_quote": null,
+        "unit": "fraction",
+        "status": "PROPOSED",
+        "origin": "SYSTEM_PROPOSED",
+        "original_words": "companies involved in significant controversies",
+        "objective_id": "obj-3",
+        "scope_description": "Maximum total equity exposure to companies with a controversy-registry record of nature REGULATORY_FINDING, COURT_RULING, SETTLEMENT. Companies without a record are not assessed: absence from the registry is unknown, never a pass. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+        "confirmed_at": null,
+        "confirmed_by": null,
+        "supersedes_rule_id": null,
+        "superseded_by_rule_id": null
+      }
+    ],
+    "unsupported": [],
+    "clarifications": [
+      {
+        "clarification_id": "clar-oil-1",
+        "about_words": "oil",
+        "question": "What should 'avoid oil' cover? Only definitions we hold sourced data for can be checked.",
+        "options": [
+          {
+            "option_id": "energy-sector-label",
+            "label": "Holdings labelled Energy in what the funds report",
+            "description": "Uses the sector label in each fund issuer's holdings file (and the registry label for direct holdings). Broader than oil: it also covers pipelines and gas.",
+            "supported": true,
+            "purchase_request": null,
+            "proposed_rule": {
+              "rule_id": "draft-excl-energy-1",
+              "rule_type": "exclusion",
+              "parameters": {
+                "definition": {
+                  "kind": "fund_reported_sector",
+                  "sector": "Energy"
+                }
+              },
+              "threshold": null,
+              "threshold_kind": "max_fraction",
+              "threshold_source": null,
+              "threshold_quote": null,
+              "unit": "fraction",
+              "status": "PROPOSED",
+              "origin": "SYSTEM_PROPOSED",
+              "original_words": "avoid oil",
+              "objective_id": "obj-3",
+              "scope_description": "Maximum total equity exposure to holdings labelled 'Energy': the sector label reported in the fund issuer's holdings file for fund constituents, the instrument registry label for direct holdings. Constituents without a label count as unknown, not as zero. A sector label is not a list of oil producers and is not a controversy finding. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+              "confirmed_at": null,
+              "confirmed_by": null,
+              "supersedes_rule_id": null,
+              "superseded_by_rule_id": null
+            }
+          },
+          {
+            "option_id": "named-companies",
+            "label": "Specific companies that I name",
+            "description": "Supported once you name them: type the companies in a new sentence and a named-company exclusion will be drafted.",
+            "supported": true,
+            "proposed_rule": null,
+            "purchase_request": null
+          },
+          {
+            "option_id": "oil-producers",
+            "label": "Companies that produce oil",
+            "description": "Not supported yet: we hold no sourced classification of oil producers, so this cannot be checked honestly.",
+            "supported": false,
+            "proposed_rule": null,
+            "purchase_request": null
+          },
+          {
+            "option_id": "fossil-fuels",
+            "label": "All fossil fuels",
+            "description": "Not supported yet: we hold no sourced fossil-fuel classification.",
+            "supported": false,
+            "proposed_rule": null,
+            "purchase_request": null
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "sources": {
+    "starter_assets_universe": {
+      "source_id": "starter_assets_universe",
+      "publisher": "PolyFinances AlphaForge AI datathon organizers (starter dataset)",
+      "title": "assets_universe.csv - 31-asset starter universe with organizer-assigned sector labels",
+      "url": null,
+      "relevant_date": "2026-11-13",
+      "retrieval_date": "2026-11-13",
+      "sha256": "f78de8ecb36d914a3448db63498cc9a04a34d805bccb79c481dda1650755467d",
+      "processing": "File: data/starter/assets_universe.csv (hash is of this file as supplied by the organizers; retrieval_date is the organizers' retrieval date). Organizers' processing: Hand-curated selection. Our use: names, asset class, currency and sector of the 31 starter instruments in instruments.json. The sector labels are organizer-assigned and simplified, not an official classification.",
+      "terms": "Free to use within the datathon",
+      "limitations": "Sector labels are organizer-assigned and simplified; ETF 'sector' describes exposure; not an official classification"
+    },
+    "starter_prices_daily": {
+      "source_id": "starter_prices_daily",
+      "publisher": "Yahoo Finance via the yfinance library, compiled by the datathon organizers",
+      "title": "prices_daily.csv - daily OHLC, close, adjusted close and volume, 2021-11-12 to 2026-11-12",
+      "url": "https://finance.yahoo.com",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-13",
+      "sha256": "ff2a3f2d0a7d72ea835e8d616d041e0510f018340cef3d3e55b918830e8a569d",
+      "processing": "File: data/starter/prices_daily.csv (hash is of this file as supplied by the organizers; retrieval_date is the organizers' retrieval date). Organizers' processing: No forward-fill; no calendar alignment; rows only on days Yahoo reports a price; prices in the asset's listing currency. Our use: adj_close only, copied unchanged into market_data.json (no forward-fill, no calendar alignment, no re-adjustment). market_data.json is git-ignored and regenerated from data/starter/.",
+      "terms": "Yahoo terms: https://legal.yahoo.com/us/en/yahoo/terms/otos/index.html (retrieved 2026-11-13)",
+      "limitations": "adj_close is back-adjusted for splits and dividends so values shift when data is re-downloaded; crypto rows are UTC calendar days; Yahoo data is not exchange-certified | Audit: CNQ.TO adj_close across 2022-08-22 appears to count one special distribution twice (see docs/data-sources.md); CNQ.TO is not in the core demo portfolios."
+    },
+    "starter_fx_usdcad": {
+      "source_id": "starter_fx_usdcad",
+      "publisher": "Bank of Canada (Valet API, series FXUSDCAD), compiled by the datathon organizers",
+      "title": "fx_usdcad_daily.csv - USD/CAD daily exchange rate, 2021-11-12 to 2026-11-12",
+      "url": "https://www.bankofcanada.ca/valet/observations/FXUSDCAD/json",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-13",
+      "sha256": "f04e218ac5b0145fd552b3d0dcfbf73e5e17bb9a6fb4562460dbec95cb8972b3",
+      "processing": "File: data/starter/fx_usdcad_daily.csv (hash is of this file as supplied by the organizers; retrieval_date is the organizers' retrieval date). Organizers' processing: cadusd = 1/usdcad rounded to 6 decimals. Our use: usdcad copied unchanged into market_data.json; the engine matches each price date to the latest rate on or before it (maximum observed rate age: 4 calendar days).",
+      "terms": "Bank of Canada terms: https://www.bankofcanada.ca/terms/",
+      "limitations": "Single daily rate published around 16:30 ET; no rate on Canadian holidays"
+    },
+    "starter_corporate_actions": {
+      "source_id": "starter_corporate_actions",
+      "publisher": "Yahoo Finance via the yfinance library, compiled by the datathon organizers",
+      "title": "corporate_actions.csv - dividends and splits by ex-date, 2021-11-12 to 2026-11-12",
+      "url": "https://finance.yahoo.com",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-13",
+      "sha256": "37d99f1472f9f1c7360432835353488bdf72bb055295ec66155211a30d8312b1",
+      "processing": "File: data/starter/corporate_actions.csv (hash is of this file as supplied by the organizers; retrieval_date is the organizers' retrieval date). Organizers' processing: Extracted from the same download as prices. Our use: audit only (audit_starter.py). Never applied to prices: adj_close already includes splits and dividends.",
+      "terms": "Same as prices_daily.csv",
+      "limitations": "Dividend amounts are per share in listing currency; may be incomplete for ETFs"
+    },
+    "starter_macro_rates": {
+      "source_id": "starter_macro_rates",
+      "publisher": "Bank of Canada (Valet API) and FRED, Federal Reserve Bank of St. Louis, compiled by the datathon organizers",
+      "title": "macro_rates.csv - policy rates, 2y/10y yields, CPI, unemployment (Canada and U.S.)",
+      "url": "https://www.bankofcanada.ca/valet/docs ; https://fred.stlouisfed.org",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-13",
+      "sha256": "2c04b0ca5590396fee1f0de13c0b2a95731125a61c79166d553d106f0375c73e",
+      "processing": "File: data/starter/macro_rates.csv (hash is of this file as supplied by the organizers; retrieval_date is the organizers' retrieval date). Organizers' processing: Long format; one row per (date; series_id) | Long format; missing values dropped. Our use: audit only (row counts, duplicates). Not used by any processed output or calculation.",
+      "terms": "Bank of Canada terms: https://www.bankofcanada.ca/terms/ | Original sources are U.S. government agencies (Federal Reserve Board; BLS); see FRED terms https://fred.stlouisfed.org/legal/",
+      "limitations": "Monthly CPI is dated to the reference month and is published several weeks later; do not use before its release date | Monthly series are dated to the reference month and released weeks later; values are latest vintage (revised) not as first published"
+    },
+    "ssga_spy_product_page_2026-11-14": {
+      "source_id": "ssga_spy_product_page_2026-11-14",
+      "publisher": "State Street Investment Management (State Street Global Advisors), ssga.com",
+      "title": "State Street SPDR S&P 500 ETF Trust (SPY) - product page (Fund Sector Breakdown)",
+      "url": "https://www.ssga.com/us/en/intermediary/etfs/state-street-spdr-sp-500-etf-trust-spy",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-14",
+      "sha256": "d89aa13878ce43d6b4fb46fe4c8f79b3a330d92c68e5e926fb3e6086396bf603",
+      "processing": "File: data/raw/etf_product_pages/SPY_PAGE_2026-11-14.html (git-ignored). Retrieved 2026-11-14T22:42:16Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The 'Fund Sector Breakdown' block embedded in the page is parsed into fund_sector_breakdowns.json (percent to fraction; not rescaled).",
+      "terms": "State Street 'Terms and Conditions', https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions (canonical URL https://www.ssga.com/us/en/footer/terms-and-conditions): \"You may not copy, reproduce, duplicate, modify, adopt or lend, sell, disseminate or otherwise transfer, in whole or in part, any of the information contained in this Site, except for the purpose of accessing the Site and producing print-outs for your own personal use, or making a reasonable number of copies of such pages for internal use within your organization in accordance with this Agreement.\" A further clause forbids causing information from State Street's databases \"to be published, redistributed or retransmitted for other than use for or on behalf of yourself\". No clause about automated access was found on the page. Our reading: the raw file must not be redistributed; publishing the normalized snapshot in a public repository is not permitted on a plain reading (whether bare facts such as weights are protected is a legal question we cannot settle; decision left to the project lead). [Terms page retrieved 2026-11-14T23:15:35Z; source_id ssga_terms_and_conditions_2026-11-14; sha256 c7f27b231536d3c29f8be45a6ec54b6d1f279603604c230263063d88750017e3.]",
+      "limitations": "Fund-level totals only: no constituent-level sector. The eleven sectors sum to 1.0, so the issuer appears to show the breakdown without the cash position. Two decimals in percent. The page is dynamic HTML; a layout change stops the parser."
+    },
+    "ssga_spy_holdings_2026-11-14": {
+      "source_id": "ssga_spy_holdings_2026-11-14",
+      "publisher": "State Street Investment Management (State Street Global Advisors), ssga.com",
+      "title": "State Street SPDR S&P 500 ETF Trust (SPY) - daily holdings spreadsheet",
+      "url": "https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-14",
+      "sha256": "ed54e8453c6fd9f6efdda93394e2e569adfb5303b03884a45006a5b7f4175c10",
+      "processing": "File: data/raw/etf_holdings/SPY_2026-11-14.xlsx (git-ignored). Retrieved 2026-11-14T22:42:15Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). Parsed with a standard-library xlsx reader. Percent weights divided by 100; never rescaled. 503 equity constituents kept; 2 non-constituent line(s) (cash 'US DOLLAR'; an unlisted contingent value right) summed separately. Share classes of one company share an issuer_id (name-based grouping, cross-checked against the CUSIP issuer prefix).",
+      "terms": "State Street 'Terms and Conditions', https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions (canonical URL https://www.ssga.com/us/en/footer/terms-and-conditions): \"You may not copy, reproduce, duplicate, modify, adopt or lend, sell, disseminate or otherwise transfer, in whole or in part, any of the information contained in this Site, except for the purpose of accessing the Site and producing print-outs for your own personal use, or making a reasonable number of copies of such pages for internal use within your organization in accordance with this Agreement.\" A further clause forbids causing information from State Street's databases \"to be published, redistributed or retransmitted for other than use for or on behalf of yourself\". No clause about automated access was found on the page. Our reading: the raw file must not be redistributed; publishing the normalized snapshot in a public repository is not permitted on a plain reading (whether bare facts such as weights are protected is a legal question we cannot settle; decision left to the project lead). [Terms page retrieved 2026-11-14T23:15:35Z; source_id ssga_terms_and_conditions_2026-11-14; sha256 c7f27b231536d3c29f8be45a6ec54b6d1f279603604c230263063d88750017e3.]",
+      "limitations": "The Sector column prints '-' on every line: no constituent-level sector is available from this file. Holdings as of one date only: a current snapshot, not a historical composition. All printed lines sum to 0.99967472, not 1 (the remainder is not itemised). No publication date is printed in the file; the HTTP Last-Modified header was 'Fri, 13 Nov 2026 11:23:37 GMT'. Company names are truncated by the issuer."
+    },
+    "ishares_xiu_holdings_2026-11-14": {
+      "source_id": "ishares_xiu_holdings_2026-11-14",
+      "publisher": "BlackRock Asset Management Canada Limited (iShares), blackrock.com/ca",
+      "title": "iShares S&P/TSX 60 Index ETF (XIU) - detailed holdings CSV",
+      "url": "https://www.blackrock.com/ca/investors/en/products/239832/ishares-sptsx-60-index-etf/1464253357814.ajax?fileType=csv&fileName=XIU_holdings&dataType=fund",
+      "relevant_date": "2026-11-12",
+      "retrieval_date": "2026-11-14",
+      "sha256": "9caae3aa6b3aa4ad4faf2b37c9f96fd604f2a10c8cb60831f388ad0a28947527",
+      "processing": "File: data/raw/etf_holdings/XIU_2026-11-14.csv (git-ignored). Retrieved 2026-11-14T22:30:01Z: HTTP GET with curl by the data-evidence agent on 2026-11-14T22:30:01Z (server Date header), before the BlackRock terms of use had been read; registered with --from-file. Not re-downloaded automatically afterwards.. Parsed with the csv module. Percent weights divided by 100; never rescaled. 60 equity constituents kept; 5 non-constituent line(s) (cash, cash collateral, an index future, an unlisted zero-value rights line) summed separately. Toronto-listed constituents get '<ticker as printed>.TO' as instrument_id.",
+      "terms": "BlackRock Canada 'Terms and Conditions', https://www.blackrock.com/ca/investors/en/terms-and-conditions (the page prints \"February 2020\"): \"Such content is solely for your personal, non-commercial use.\" \"You may download material displayed on this Website for your personal use provided you also retain all copyright and other proprietary notices contained on the materials.\" \"You may not distribute, modify, transmit, reuse, repost, or use the content of this Website for public or commercial purposes\" [...] \"without BlackRock's written permission\". Under 'Prohibited Uses' you may not \"Use any robot, spider, intelligent agent, other automatic device, or manual process to search, monitor or copy this Website or the reports, data, information, content, software, products services, or other materials on, generated by or obtained from this Website\" [...] \"provided that generally available third-party web browsers may be used without such permission\". Our reading: downloading with a web browser for personal use is allowed; automated retrieval and public redistribution (raw or normalized) are not permitted without BlackRock's written permission (decision left to the project lead). [Terms page retrieved 2026-11-14T22:34:58Z; source_id blackrock_ca_terms_and_conditions_2026-11-14; sha256 aa34ee4db4ed8f1402dc0b0225cc6c1ee6316c2ea591d87ef1d4c8f24f381caa.]",
+      "limitations": "Weights are printed with two decimals in percent, so each weight carries up to 0.005 percentage points of rounding and all printed lines sum to 1.0002. Sector labels are BlackRock's sector names (e.g. 'Communication'), sector level only: they cannot separate oil producers from pipelines or other Energy companies. The index future's notional exposure is not looked through. A current snapshot, not a historical composition. No publication date is printed in the file."
+    },
+    "epa_exxonmobil_caa_settlement_2026-11-14": {
+      "source_id": "epa_exxonmobil_caa_settlement_2026-11-14",
+      "publisher": "United States Environmental Protection Agency (EPA), epa.gov",
+      "title": "Exxon Mobil Corporation/Exxonmobil Oil Corporation Clean Air Act Settlement (EPA enforcement case page)",
+      "url": "https://www.epa.gov/enforcement/exxon-mobil-corporationexxonmobil-oil-corporation-clean-air-act-settlement",
+      "relevant_date": "2017-10-31",
+      "retrieval_date": "2026-11-14",
+      "sha256": "07e28d21d8cf264a859624b89ab85965708ce705b36539c354e2d6e801ac6a3e",
+      "processing": "File: data/raw/controversy_evidence/EPA_EXXONMOBIL_CAA_2026-11-14.html (git-ignored). Retrieved 2026-11-14T23:15:30Z: HTTP GET by acquire_evidence.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The page was accepted only because the 8 sentences the registry relies on are literally present in it (raw manifest, field verified_phrases). Date printed on the page: October 31, 2017; page last updated: 2026-01-05. The registry summary is our own neutral wording, not a quotation.",
+      "terms": "EPA Disclaimers, 'Copyright Status', https://www.epa.gov/web-policies-and-procedures/epa-disclaimers: \"These documents may be freely distributed and used for non-commercial, scientific and educational purposes.\" \"Commercial use of the documents available from the EPA websites may be protected under the U.S. and Foreign Copyright Laws.\" The same page says its disclaimers are a catalogue that applies only where EPA states so. Our reading: citing and briefly summarising the page with attribution in a non-commercial educational project is permitted; the raw page is kept out of git anyway. [Terms page retrieved 2026-11-14T23:15:36Z; source_id epa_disclaimers_2026-11-14; sha256 6f0484f971d70b4eb8473ac282ea8f10b53cbe363da6062ff35ed7baede5a4da.]",
+      "limitations": "A regulator's summary of a negotiated settlement of allegations, written on the day the proposed consent decree was lodged (subject to public comment and final court approval). The page does not say whether the court entered the decree and records no admission or finding of liability. The consent decree itself and the court docket were not retrieved. The page names Exxon Mobil Corporation; whether today's listed company behind ticker XOM (printed 'EXXONMOBIL HOLDINGS CORP' in the SPY file) is the same legal entity was not researched."
+    },
+    "epa_enbridge_cwa_settlement_2026-11-14": {
+      "source_id": "epa_enbridge_cwa_settlement_2026-11-14",
+      "publisher": "United States Environmental Protection Agency (EPA), epa.gov",
+      "title": "Enbridge Clean Water Act Settlement (EPA enforcement case page)",
+      "url": "https://www.epa.gov/enforcement/enbridge-clean-water-act-settlement",
+      "relevant_date": "2016-07-20",
+      "retrieval_date": "2026-11-14",
+      "sha256": "de006b9f318c5428d3f70b43e906dc546e10fcb5fdc23b84353052646311d209",
+      "processing": "File: data/raw/controversy_evidence/EPA_ENBRIDGE_CWA_2026-11-14.html (git-ignored). Retrieved 2026-11-14T23:15:31Z: HTTP GET by acquire_evidence.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The page was accepted only because the 6 sentences the registry relies on are literally present in it (raw manifest, field verified_phrases). Date printed on the page: July 20, 2016; page last updated: 2026-08-04. The registry summary is our own neutral wording, not a quotation.",
+      "terms": "EPA Disclaimers, 'Copyright Status', https://www.epa.gov/web-policies-and-procedures/epa-disclaimers: \"These documents may be freely distributed and used for non-commercial, scientific and educational purposes.\" \"Commercial use of the documents available from the EPA websites may be protected under the U.S. and Foreign Copyright Laws.\" The same page says its disclaimers are a catalogue that applies only where EPA states so. Our reading: citing and briefly summarising the page with attribution in a non-commercial educational project is permitted; the raw page is kept out of git anyway. [Terms page retrieved 2026-11-14T23:15:36Z; source_id epa_disclaimers_2026-11-14; sha256 6f0484f971d70b4eb8473ac282ea8f10b53cbe363da6062ff35ed7baede5a4da.]",
+      "limitations": "A regulator's summary of a negotiated settlement. The settling parties are described as 'Enbridge Energy Limited Partnership and several related Enbridge companies'; the page does not list them and does not name Enbridge Inc., the listed company. It reports a motion to enter a revised consent decree (January 19, 2017) but not the court's decision on it. The consent decree and the court docket were not retrieved."
+    },
+    "epa_enbridge_dredging_order_2026-11-14": {
+      "source_id": "epa_enbridge_dredging_order_2026-11-14",
+      "publisher": "United States Environmental Protection Agency (EPA), epa.gov",
+      "title": "Case Summary: EPA Orders Enbridge Inc. to Perform Additional Dredging to Remove Oil from Kalamazoo River, Mich. (EPA enforcement case page)",
+      "url": "https://www.epa.gov/enforcement/case-summary-epa-orders-enbridge-inc-perform-additional-dredging-remove-oil-kalamazoo",
+      "relevant_date": "2013-03-14",
+      "retrieval_date": "2026-11-14",
+      "sha256": "e4ae23f90a95d85da5ee5a15349e8e4c0076b556bec8b83baeb5fb3aa070dad4",
+      "processing": "File: data/raw/controversy_evidence/EPA_ENBRIDGE_ORDER_2026-11-14.html (git-ignored). Retrieved 2026-11-14T23:15:32Z: HTTP GET by acquire_evidence.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The page was accepted only because the 5 sentences the registry relies on are literally present in it (raw manifest, field verified_phrases). Date printed on the page: March 14, 2013; page last updated: 2026-10-20. The registry summary is our own neutral wording, not a quotation.",
+      "terms": "EPA Disclaimers, 'Copyright Status', https://www.epa.gov/web-policies-and-procedures/epa-disclaimers: \"These documents may be freely distributed and used for non-commercial, scientific and educational purposes.\" \"Commercial use of the documents available from the EPA websites may be protected under the U.S. and Foreign Copyright Laws.\" The same page says its disclaimers are a catalogue that applies only where EPA states so. Our reading: citing and briefly summarising the page with attribution in a non-commercial educational project is permitted; the raw page is kept out of git anyway. [Terms page retrieved 2026-11-14T23:15:36Z; source_id epa_disclaimers_2026-11-14; sha256 6f0484f971d70b4eb8473ac282ea8f10b53cbe363da6062ff35ed7baede5a4da.]",
+      "limitations": "A regulator's case summary of a clean-up order; it is not a finding of a violation. Used here only because it names Enbridge Inc. as the company ordered to clean up the July 2010 spill near Marshall, Michigan that the 2016 settlement also concerns. The order (PDF) itself was not retrieved."
+    },
+    "aer_cnrl_penalty_news_release_2026-11-14": {
+      "source_id": "aer_cnrl_penalty_news_release_2026-11-14",
+      "publisher": "Alberta Energy Regulator (AER), aer.ca",
+      "title": "News Release 2024-07-15: Alberta Energy Regulator penalizes CNRL for contravening the Environmental Protection and Enhancement Act",
+      "url": "https://www.aer.ca/about-aer/media-centre/news-releases/news-release-2024-07-15",
+      "relevant_date": "2024-07-15",
+      "retrieval_date": "2026-11-14",
+      "sha256": "adaa36e100e573af43cf79268162646d126e7043c0b1dc142a27877541d03a92",
+      "processing": "File: data/raw/controversy_evidence/AER_CNRL_PENALTY_2026-11-14.html (git-ignored). Retrieved 2026-11-14T23:15:34Z: HTTP GET by acquire_evidence.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The page was accepted only because the 3 sentences the registry relies on are literally present in it (raw manifest, field verified_phrases). Date printed on the page: July 15, 2024; page last updated: None. The registry summary is our own neutral wording, not a quotation.",
+      "terms": "AER 'Copyright and Disclaimer', section 'Noncommercial or Educational Reproduction', https://www.aer.ca/copyright-and-disclaimer: \"Information on this site has been posted with the intent that it be readily available for personal and public non-commercial (educational) use.\" \"the information may be reproduced, in whole or in part and by any means, without charge or further permission from the AER.\" The AER asks that accuracy be checked, that it be identified as the source and that a reproduction not be presented as an official version. Our reading: citing and briefly summarising the release with attribution is permitted; the raw page is kept out of git anyway. [Terms page retrieved 2026-11-14T23:15:38Z; source_id aer_copyright_and_disclaimer_2026-11-14; sha256 8ccf7b3739b008d38ad818994ba84a0fa5983b65e0d0f5c44658d6ab837105b0.]",
+      "limitations": "A regulator's news release about its own administrative decision. It does not say whether the decision was appealed or paid, and does not name the site. The enforcement decision on the AER Compliance Dashboard was not retrieved."
+    }
+  }
+}

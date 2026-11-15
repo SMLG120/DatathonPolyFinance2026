@@ -1,0 +1,177 @@
+{
+  "fixture": true,
+  "fixture_id": "E11",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Minimum equal to maximum is not a conflict; a no-op purchase",
+  "tests": [
+    "exact threshold equality",
+    "no feasible purchase"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E11",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e11",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.5,
+      "positions": [
+        {
+          "instrument_id": "FUND_A",
+          "weight": 0.4
+        },
+        {
+          "instrument_id": "SYN_A",
+          "weight": 0.1
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e11",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e11-min-a",
+          "rule_type": "min_issuer_exposure",
+          "parameters": {
+            "issuer_id": "ISS_A"
+          },
+          "threshold": 0.18,
+          "threshold_kind": "min_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Minimum total equity exposure to the company ISS_A: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "e11-max-a",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "ISS_A"
+          },
+          "threshold": 0.18,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to the company ISS_A: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:74b96f03591bb8197c9f91be7092dee7807fcab9168473cb5e20956806fe7253"
+    },
+    "purchase_request": {
+      "instrument_id": "SYN_A",
+      "target_direct_weight": 0.1,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.1,
+      "target_direct_weight": 0.1,
+      "additional_purchase": 0.0,
+      "cash_before": 0.5,
+      "cash_after": 0.5,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "e11-min-a",
+        "status": "PASS",
+        "measured": {
+          "lower": 0.18,
+          "upper": 0.18
+        },
+        "limit": 0.18,
+        "gap": 0.0,
+        "breaching_subjects": [],
+        "unknown_causes": [],
+        "starting": {
+          "status": "PASS",
+          "measured": {
+            "lower": 0.18,
+            "upper": 0.18
+          }
+        }
+      },
+      {
+        "rule_id": "e11-max-a",
+        "status": "PASS",
+        "measured": {
+          "lower": 0.18,
+          "upper": 0.18
+        },
+        "limit": 0.18,
+        "gap": 0.0,
+        "breaching_subjects": [],
+        "unknown_causes": [],
+        "starting": {
+          "status": "PASS",
+          "measured": {
+            "lower": 0.18,
+            "upper": 0.18
+          }
+        }
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "max_compliant": {
+      "status": "NO_FEASIBLE_PURCHASE",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": {
+        "type": "RULE",
+        "rule_id": "e11-max-a"
+      },
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "ALL_PASS",
+      "counts": {
+        "pass": 2,
+        "fail": 0,
+        "unknown": 0
+      },
+      "rules_evaluated": 2,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

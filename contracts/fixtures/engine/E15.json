@@ -1,0 +1,215 @@
+{
+  "fixture": true,
+  "fixture_id": "E15",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Sector exclusion already breached before the purchase, with unknown parts",
+  "tests": [
+    "starting portfolio finding",
+    "missing and partial holdings",
+    "unclassified sector"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E15",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e15",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.2,
+      "positions": [
+        {
+          "instrument_id": "BOND_X",
+          "weight": 0.1
+        },
+        {
+          "instrument_id": "FUND_A",
+          "weight": 0.3
+        },
+        {
+          "instrument_id": "FUND_C",
+          "weight": 0.2
+        },
+        {
+          "instrument_id": "SYN_D",
+          "weight": 0.2
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e15",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e15-excl-energy",
+          "rule_type": "exclusion",
+          "parameters": {
+            "definition": {
+              "kind": "fund_reported_sector",
+              "sector": "Energy"
+            }
+          },
+          "threshold": 0.0,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to holdings labelled 'Energy': the sector label reported in the fund issuer's holdings file for fund constituents, the instrument registry label for direct holdings. Constituents without a label count as unknown, not as zero. A sector label is not a list of oil producers and is not a controversy finding. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:95299866c924291a0adfad1b9e751a4904e2a0fdfaf18bd8e84e272d6e43ecd2"
+    },
+    "purchase_request": {
+      "instrument_id": "FUND_B",
+      "target_direct_weight": 0.1,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.1,
+      "additional_purchase": 0.1,
+      "cash_before": 0.2,
+      "cash_after": 0.1,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "e15-excl-energy",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.085,
+          "upper": 0.345
+        },
+        "limit": 0.0,
+        "gap": 0.085,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ISS_C",
+            "lower": 0.085,
+            "upper": 0.325
+          }
+        ],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS",
+          "UNCLASSIFIED_SECTOR"
+        ],
+        "starting": {
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.075,
+            "upper": 0.275
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "BOND_X",
+            "weight": 0.1
+          }
+        ]
+      }
+    ],
+    "starting_portfolio_findings": [
+      {
+        "rule_id": "e15-excl-energy",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.075,
+          "upper": 0.275
+        },
+        "limit": 0.0,
+        "gap": 0.075,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ISS_C",
+            "lower": 0.075,
+            "upper": 0.275
+          }
+        ],
+        "purchase_effect": {
+          "lower_change": 0.01,
+          "upper_change": 0.07
+        }
+      }
+    ],
+    "data_coverage": [
+      {
+        "fund_id": "FUND_A",
+        "portfolio_weight": 0.3,
+        "coverage_fraction": 1.0,
+        "sector_labelled_fraction": 1.0,
+        "uncovered_portfolio_weight": 0.0,
+        "status": "COVERED"
+      },
+      {
+        "fund_id": "FUND_C",
+        "portfolio_weight": 0.2,
+        "coverage_fraction": 0.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.2,
+        "status": "MISSING"
+      },
+      {
+        "fund_id": "FUND_B",
+        "portfolio_weight": 0.1,
+        "coverage_fraction": 0.6,
+        "sector_labelled_fraction": 0.4,
+        "uncovered_portfolio_weight": 0.04,
+        "status": "PARTIAL"
+      }
+    ],
+    "max_compliant": {
+      "status": "NO_FEASIBLE_PURCHASE",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": {
+        "type": "RULE",
+        "rule_id": "e15-excl-energy"
+      },
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "HAS_FAIL",
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "unknown": 0
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 1,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/instrument.schema.json",
+  "title": "instrument",
+  "description": "Instrument registry entry. equity_scope tells whether the instrument counts for the exposure rules (max_issuer_exposure, min_issuer_exposure, exclusion, controversy_exclusion): true for equities and equity funds; false for bond funds, commodity funds and crypto assets, which contribute nothing to either exposure bound and are listed as out of scope on the rule result. is_fund with equity_scope true means the instrument is looked through using the holdings snapshot.",
+  "type": "object",
+  "required": ["instrument_id", "issuer_id", "name", "asset_class", "currency", "is_fund", "equity_scope", "sector", "sector_source"],
+  "additionalProperties": false,
+  "properties": {
+    "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+    "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id", "description": "Company id; share classes of one company share it. Funds and crypto assets carry their own instrument_id here." },
+    "name": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "asset_class": { "$ref": "common.schema.json#/$defs/asset_class" },
+    "currency": { "$ref": "common.schema.json#/$defs/currency" },
+    "is_fund": { "type": "boolean" },
+    "equity_scope": { "type": "boolean" },
+    "sector": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Sector label exactly as given by sector_source, or null when no sourced label is held. A fund's own label (e.g. 'Broad market (U.S.)') is never applied to its constituents." },
+    "sector_source": { "$ref": "common.schema.json#/$defs/nullable_source_id", "description": "source_id of the label; null iff sector is null." }
+  },
+  "$defs": {
+    "registry": {
+      "title": "instrument_registry",
+      "description": "File shape of data/processed/instruments.json. Each key equals the entry's instrument_id.",
+      "type": "object",
+      "required": ["schema_version", "instruments"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "instruments": { "type": "object", "propertyNames": { "$ref": "common.schema.json#/$defs/instrument_id" }, "additionalProperties": { "$ref": "#" } }
+      }
+    }
+  }
+}

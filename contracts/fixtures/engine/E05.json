@@ -1,0 +1,146 @@
+{
+  "fixture": true,
+  "fixture_id": "E05",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Partial holdings give an interval and an UNKNOWN verdict",
+  "tests": [
+    "partial holdings",
+    "interval bounds"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E05",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e05",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.5,
+      "positions": [
+        {
+          "instrument_id": "FUND_B",
+          "weight": 0.4
+        },
+        {
+          "instrument_id": "SYN_A",
+          "weight": 0.1
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e05",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e05-cap",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.3,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:89297df709fb71fd698b394ec8ae67b43223ebfebd00fd691a88d2f684d08d59"
+    },
+    "purchase_request": {
+      "instrument_id": "SYN_A",
+      "target_direct_weight": 0.12,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.1,
+      "target_direct_weight": 0.12,
+      "additional_purchase": 0.02,
+      "cash_before": 0.5,
+      "cash_after": 0.48,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "e05-cap",
+        "status": "UNKNOWN",
+        "measured": {
+          "lower": 0.24,
+          "upper": 0.4
+        },
+        "limit": 0.3,
+        "gap": null,
+        "breaching_subjects": [],
+        "unknown_causes": [
+          "PARTIAL_HOLDINGS"
+        ],
+        "starting": {
+          "status": "UNKNOWN",
+          "measured": {
+            "lower": 0.22,
+            "upper": 0.38
+          }
+        }
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "data_coverage": [
+      {
+        "fund_id": "FUND_B",
+        "portfolio_weight": 0.4,
+        "coverage_fraction": 0.6,
+        "sector_labelled_fraction": 0.4,
+        "uncovered_portfolio_weight": 0.16,
+        "status": "PARTIAL"
+      }
+    ],
+    "max_compliant": {
+      "status": "WITHHELD",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": null,
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "NO_FAIL_BUT_UNKNOWN",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 1
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

@@ -1,0 +1,145 @@
+{
+  "fixture": true,
+  "fixture_id": "E18",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Unconfirmed rules are never evaluated",
+  "tests": [
+    "unconfirmed thresholds"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E18",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e18",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.5,
+      "positions": [
+        {
+          "instrument_id": "FUND_A",
+          "weight": 0.4
+        },
+        {
+          "instrument_id": "SYN_A",
+          "weight": 0.1
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e18",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e18-cap-proposed",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": null,
+          "threshold_kind": "max_fraction",
+          "threshold_source": null,
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "SYSTEM_PROPOSED",
+          "original_words": "I do not want too much in one company.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "e18-budget-proposed",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic scenario budget, not confirmed.",
+          "objective_id": null,
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:b5ce2f1ecdc34b5d7b532cfc34a408bf6b35c9c5ff2a340bcd09ec8dd0387cf1"
+    },
+    "purchase_request": {
+      "instrument_id": "SYN_A",
+      "target_direct_weight": 0.15,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.1,
+      "target_direct_weight": 0.15,
+      "additional_purchase": 0.05,
+      "cash_before": 0.5,
+      "cash_after": 0.45,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [],
+    "rules_not_evaluated": [
+      {
+        "rule_id": "e18-cap-proposed",
+        "status": "PROPOSED"
+      },
+      {
+        "rule_id": "e18-budget-proposed",
+        "status": "PROPOSED"
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "scenario": null,
+    "max_compliant": {
+      "status": "WITHHELD",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": null,
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "NO_RULES_EVALUATED",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 0
+      },
+      "rules_evaluated": 0,
+      "rules_not_evaluated": 2,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

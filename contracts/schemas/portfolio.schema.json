@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/portfolio.schema.json",
+  "title": "portfolio",
+  "description": "A fictional portfolio. Weights are fractions of total portfolio value at valuation_date. Semantic rules (checked by byb_contracts.validate_portfolio, not expressible here): cash_weight + sum(positions.weight) == 1 within 1e-9; instrument_id values are unique. Cash is held in CAD and is not a position.",
+  "type": "object",
+  "required": ["schema_version", "portfolio_id", "persona_id", "fictional", "valuation_date", "base_currency", "cash_weight", "positions"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "portfolio_id": { "$ref": "common.schema.json#/$defs/id" },
+    "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+    "fictional": { "const": true, "description": "Always true. No real client account is ever loaded (Case p.14, p.17)." },
+    "valuation_date": { "$ref": "common.schema.json#/$defs/date" },
+    "base_currency": { "const": "CAD" },
+    "cash_weight": { "$ref": "common.schema.json#/$defs/fraction" },
+    "positions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["instrument_id", "weight"],
+        "additionalProperties": false,
+        "properties": {
+          "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+          "weight": { "type": "number", "exclusiveMinimum": 0, "maximum": 1, "description": "Direct weight of the position (fraction)." }
+        }
+      }
+    }
+  }
+}
