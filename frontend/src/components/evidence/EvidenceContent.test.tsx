@@ -114,12 +114,18 @@ describe("Evidence drawer, sources, dates and assumptions", () => {
     expect(within(card).getByTestId("evidence-sources")).toHaveTextContent("SYNTHETIC_FIXTURE");
   });
 
-  it("says that source details load with the live API, and shows none from the copied registry", () => {
-    renderEvidence(recorded.robertResult(), ["ev-spy-nvda-weight"]);
+  it.each([
+    ["on test data", {}],
+    ["on the live service", { config: LIVE_CONFIG }],
+  ] as const)("says plainly that only source ids are available and promises nothing more, %s (finding F-07)", (_mode, options) => {
+    renderEvidence(recorded.robertResult(), ["ev-spy-nvda-weight"], options);
     const note = screen.getByTestId("source-details-note");
     expect(note).toHaveTextContent(SOURCE_DETAILS_NOTE);
-    expect(SOURCE_DETAILS_NOTE).toContain("load with the live API");
-    expect(SOURCE_DETAILS_NOTE).toContain("ids of its sources");
+    expect(SOURCE_DETAILS_NOTE).toContain("Only the ids of a figure’s sources are available here");
+    expect(SOURCE_DETAILS_NOTE).toContain("are not shown");
+    // No route delivers the registry, so the note must not announce that its details will load.
+    expect(note.textContent).not.toMatch(/live API|once it delivers|until then|\bload/i);
+    expect(screen.getByTestId("evidence-sources")).toHaveTextContent("SYNTHETIC_FIXTURE");
 
     // No route delivers the source registry, so its title, publisher and terms are not on the page.
     const source = FIXTURES.registries.robert_synthetic_universe?.sources.SYNTHETIC_FIXTURE;

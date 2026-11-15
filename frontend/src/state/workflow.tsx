@@ -34,11 +34,24 @@ export interface Operation {
   error: string | null;
   /** What kind of failure it was, so "the test data has no recording" can be said calmly. */
   kind: ApiErrorKind | null;
+  /** `error.code` of the service's own error body (contract `ErrorCode`), when it sent one. */
+  code: string | null;
+  /** `error.details[].issue` of the service's own error body: what exactly it refused. */
+  issues: string[];
 }
 
-const IDLE: Operation = { status: "idle", error: null, kind: null };
-const LOADING: Operation = { status: "loading", error: null, kind: null };
-const failed = (error: unknown): Operation => ({ status: "error", error: describeError(error), kind: isApiError(error) ? error.kind : null });
+const IDLE: Operation = { status: "idle", error: null, kind: null, code: null, issues: [] };
+const LOADING: Operation = { status: "loading", error: null, kind: null, code: null, issues: [] };
+const failed = (error: unknown): Operation => ({
+  status: "error",
+  error: describeError(error),
+  kind: isApiError(error) ? error.kind : null,
+  code: isApiError(error) ? error.code : null,
+  issues: isApiError(error) ? error.details.map((detail) => detail.issue) : [],
+});
+
+/** The service's error code of a thrown value, when the service itself answered (contract `ErrorCode`). */
+const errorCode = (error: unknown): string | null => (isApiError(error) ? error.code : null);
 
 export interface WorkflowState {
   personaId: PersonaId | null;
@@ -55,12 +68,23 @@ export interface WorkflowState {
   proposedRules: Rule[];
   /** Text of each proposed rule's threshold field, as a percentage. "" means not set. */
   thresholdText: Record<string, string>;
-  /** The option chosen for each clarification question, by clarification id. */
+  /**
+   * The option chosen for each clarification question, by `clarificationKey`: the answer the question
+   * belongs to, then its id. A question's id alone is not enough: the interpreter numbers its questions
+   * from 1 in every answer, so the question of a later answer has the id of an earlier one.
+   */
   chosenOptions: Record<string, string>;
 
   confirm: Operation;
-  /** Every confirmed policy version of this session, oldest first. Versions are immutable. */
+  /** Every confirmed policy version this page builds on, oldest first. Versions are immutable. The last one is in force. */
   policies: Policy[];
+  /**
+   * Versions set aside after the service answered 409 POLICY_VERSION_CONFLICT:
+   * a newer version exists than the newest one held here, and no route reads
+   * it. They are kept only so that reports made under them keep the version
+   * they were checked against; nothing is confirmed or checked on top of them.
+   */
+  retiredPolicies: Policy[];
 
   purchase: { instrumentId: string; targetText: string };
   start: Operation;
@@ -95,6 +119,7 @@ const INITIAL: WorkflowState = {
   chosenOptions: {},
   confirm: IDLE,
   policies: [],
+  retiredPolicies: [],
   purchase: { instrumentId: "", targetText: "" },
   start: IDLE,
   investigations: {},
@@ -116,7 +141,7 @@ type Action =
   | { type: "interpret/started" }
   | { type: "interpret/succeeded"; personaId: PersonaId; interpretation: Interpretation }
   | { type: "interpret/failed"; error: unknown }
-  | { type: "option/chosen"; clarificationId: string; optionId: string; draft: Rule | null }
+  | { type: "option/chosen"; interpretationId: string; clarificationId: string; optionId: string; draft: Rule | null }
   | { type: "threshold/changed"; ruleId: string; text: string }
   | { type: "confirm/started" }
   | { type: "confirm/succeeded"; policy: Policy; ruleIds: string[] }
@@ -136,28 +161,97 @@ type Action =
   | { type: "challenge/ruleChanged"; policy: Policy; olderId: string; newerId: string };
 
 /**
+ * The key of a clarification question in `chosenOptions`, and its React key.
+ *
+ * The interpreter numbers what it writes from 1 in every answer ("clar-1", "draft-excl-1", "obj-1"), so
+ * none of these ids says which answer it came from. A question is therefore named by its answer as well.
+ */
+export function clarificationKey(interpretationId: string, clarificationId: string): string {
+  return `${interpretationId}/${clarificationId}`;
+}
+
+/** The chosen options without those of the given answers (an answer that is replaced takes its choices with it). */
+function withoutChoicesOf(chosen: WorkflowState["chosenOptions"], interpretationIds: (string | undefined)[]): WorkflowState["chosenOptions"] {
+  const prefixes = interpretationIds.flatMap((id) => (id === undefined ? [] : [clarificationKey(id, "")]));
+  return Object.fromEntries(Object.entries(chosen).filter(([key]) => !prefixes.some((prefix) => key.startsWith(prefix))));
+}
+
+/** `id`, or the first of `id-2`, `id-3`… that nothing else has. */
+function freeId(id: string, taken: ReadonlySet<string>): string {
+  if (!taken.has(id)) return id;
+  let suffix = 2;
+  while (taken.has(`${id}-${suffix}`)) suffix += 1;
+  return `${id}-${suffix}`;
+}
+
+/**
  * Adds drafts to the proposed list without listing the same check twice: a
  * draft that measures what a listed or confirmed rule already measures is
  * left out (the stage says so; nothing is dropped silently).
+ *
+ * What a rule is, is what it measures, not its id: two answers of the
+ * interpreter can give two different rules the same id. A policy cannot hold
+ * two rules under one id (contracts/api.md section 4, rule 7), so a draft
+ * whose id another rule of the list or of the policy has is listed under an
+ * id of its own.
  */
 function addDrafts(state: WorkflowState, drafts: Rule[]): Pick<WorkflowState, "proposedRules" | "thresholdText"> {
   const proposedRules = [...state.proposedRules];
   const thresholdText = { ...state.thresholdText };
-  const inForce = activeRules(state.policies.at(-1)).map(measureKey);
+  const policy = state.policies.at(-1);
+  const inForce = activeRules(policy).map(measureKey);
+  const taken = new Set([...proposedRules, ...(policy?.rules ?? [])].map((rule) => rule.rule_id));
   for (const draft of drafts) {
     if (draft.status !== "PROPOSED") continue;
     const key = measureKey(draft);
-    if (inForce.includes(key) || proposedRules.some((rule) => rule.rule_id === draft.rule_id || measureKey(rule) === key)) continue;
-    proposedRules.push(draft);
+    if (inForce.includes(key) || proposedRules.some((rule) => measureKey(rule) === key)) continue;
+    const ruleId = freeId(draft.rule_id, taken);
+    taken.add(ruleId);
+    proposedRules.push(ruleId === draft.rule_id ? draft : { ...draft, rule_id: ruleId });
     // A system-proposed rule arrives with no number, so its field starts empty.
-    thresholdText[draft.rule_id] = fractionToPercentInput(draft.threshold);
+    thresholdText[ruleId] = fractionToPercentInput(draft.threshold);
   }
   return { proposedRules, thresholdText };
 }
 
-function addObjectives(known: Objective[], more: Objective[]): Objective[] {
-  const ids = new Set(known.map((objective) => objective.objective_id));
-  return [...known, ...more.filter((objective) => !ids.has(objective.objective_id))];
+/**
+ * Brings the objectives of an interpreter's answer into the session's list, and returns the answer with
+ * the ids they have there.
+ *
+ * What an objective is, is its words. One that is already listed word for word is not listed twice. One
+ * whose id other words already have gets an id of its own, and the drafts of this answer that name it
+ * follow it, so a drafted rule is never shown with, or confirmed under, the objective of another answer.
+ */
+function adoptObjectives(known: Objective[], answer: Interpretation): { objectives: Objective[]; interpretation: Interpretation } {
+  const objectives = [...known];
+  const taken = new Set(known.map((objective) => objective.objective_id));
+  const listedAs = new Map<string, string>();
+  for (const objective of answer.objectives) {
+    const same = objectives.find((candidate) => candidate.original_words === objective.original_words);
+    const id = same ? same.objective_id : freeId(objective.objective_id, taken);
+    listedAs.set(objective.objective_id, id);
+    if (same) continue;
+    taken.add(id);
+    objectives.push(id === objective.objective_id ? objective : { ...objective, objective_id: id });
+  }
+  if ([...listedAs].every(([from, to]) => from === to)) return { objectives, interpretation: answer };
+
+  const follow = (rule: Rule): Rule => {
+    const id = rule.objective_id === null ? undefined : listedAs.get(rule.objective_id);
+    return id === undefined || id === rule.objective_id ? rule : { ...rule, objective_id: id };
+  };
+  return {
+    objectives,
+    interpretation: {
+      ...answer,
+      objectives: answer.objectives.map((objective) => ({ ...objective, objective_id: listedAs.get(objective.objective_id) ?? objective.objective_id })),
+      proposed_rules: answer.proposed_rules.map(follow),
+      clarifications: answer.clarifications.map((clarification) => ({
+        ...clarification,
+        options: clarification.options.map((option) => (option.proposed_rule ? { ...option, proposed_rule: follow(option.proposed_rule) } : option)),
+      })),
+    },
+  };
 }
 
 function reducer(state: WorkflowState, action: Action): WorkflowState {
@@ -189,16 +283,19 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
     case "interpret/started":
       return { ...state, interpret: LOADING };
 
-    case "interpret/succeeded":
+    case "interpret/succeeded": {
       if (state.personaId !== action.personaId) return state;
+      const { objectives, interpretation } = adoptObjectives(state.objectives, action.interpretation);
       return {
         ...state,
-        ...addDrafts(state, action.interpretation.proposed_rules),
-        objectives: addObjectives(state.objectives, action.interpretation.objectives),
+        ...addDrafts(state, interpretation.proposed_rules),
+        objectives,
         interpret: IDLE,
-        interpretation: action.interpretation,
-        chosenOptions: {},
+        interpretation,
+        // The answer this one replaces takes the choices made in it along. Those of a clarified preference stay.
+        chosenOptions: withoutChoicesOf(state.chosenOptions, [state.interpretation?.interpretation_id, interpretation.interpretation_id]),
       };
+    }
 
     case "interpret/failed":
       return { ...state, interpret: failed(action.error) };
@@ -207,7 +304,7 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
       return {
         ...state,
         ...(action.draft ? addDrafts(state, [action.draft]) : {}),
-        chosenOptions: { ...state.chosenOptions, [action.clarificationId]: action.optionId },
+        chosenOptions: { ...state.chosenOptions, [clarificationKey(action.interpretationId, action.clarificationId)]: action.optionId },
       };
 
     case "threshold/changed":
@@ -226,8 +323,32 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
       };
     }
 
-    case "confirm/failed":
-      return { ...state, confirm: failed(action.error) };
+    case "confirm/failed": {
+      if (errorCode(action.error) !== "POLICY_VERSION_CONFLICT") return { ...state, confirm: failed(action.error) };
+      // contracts/api.md section 4, rule 8: "On 409 the client drops its policy state and starts the rule stage
+      // again: there is no route that reads a stored policy." The versions held here are set aside, and every rule
+      // the scenario or the user's own words offer is a proposal again. What is listed now keeps the number typed
+      // in it. The next confirmation carries no policy id and no base version, so it creates a new policy.
+      const withoutPolicy = { ...state, policies: [] };
+      const chosenDrafts = [state.interpretation, state.preferenceResponse].flatMap((answer) =>
+        (answer?.clarifications ?? []).flatMap((clarification) => {
+          const chosen = state.chosenOptions[clarificationKey(answer?.interpretation_id ?? "", clarification.clarification_id)];
+          const draft = clarification.options.find((option) => option.option_id === chosen)?.proposed_rule;
+          return draft ? [draft] : [];
+        }),
+      );
+      return {
+        ...withoutPolicy,
+        confirm: failed(action.error),
+        retiredPolicies: [...state.retiredPolicies, ...state.policies],
+        ...addDrafts(withoutPolicy, [
+          ...(state.portfolio.data?.scenario.scenario_rules ?? []),
+          ...(state.interpretation?.proposed_rules ?? []),
+          ...(state.preferenceResponse?.proposed_rules ?? []),
+          ...chosenDrafts,
+        ]),
+      };
+    }
 
     case "purchase/changed":
       return { ...state, purchase: { ...state.purchase, ...action.patch }, start: IDLE };
@@ -282,14 +403,17 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
           : [...state.corrections, action.correction],
       };
 
-    case "challenge/preferenceRecorded":
+    case "challenge/preferenceRecorded": {
+      const { objectives, interpretation } = adoptObjectives(state.objectives, action.interpretation);
       return {
         ...state,
-        ...addDrafts(state, action.interpretation.proposed_rules),
-        objectives: addObjectives(state.objectives, action.interpretation.objectives),
+        ...addDrafts(state, interpretation.proposed_rules),
+        objectives,
         challenge: IDLE,
-        preferenceResponse: action.interpretation,
+        preferenceResponse: interpretation,
+        chosenOptions: withoutChoicesOf(state.chosenOptions, [state.preferenceResponse?.interpretation_id, interpretation.interpretation_id]),
       };
+    }
 
     case "challenge/ruleChanged":
       return {
@@ -315,8 +439,11 @@ export interface WorkflowActions {
   setGoalText: (text: string) => void;
   /** POST /rules/interpret with the user's sentence. The answer is a draft: nothing in it is active. */
   interpretGoal: () => Promise<void>;
-  /** Records the definition chosen for a clarification question and lists the draft rule that option leads to. */
-  chooseOption: (clarificationId: string, optionId: string) => void;
+  /**
+   * Records the definition chosen for a clarification question and lists the draft rule that option leads to.
+   * The question is named by the answer it belongs to (`interpretation_id`) and its id: see `clarificationKey`.
+   */
+  chooseOption: (interpretationId: string, clarificationId: string, optionId: string) => void;
   setThresholdText: (ruleId: string, text: string) => void;
   /** POST /rules/confirm for the given proposed rules, in one new policy version. Rules without a valid threshold are skipped. */
   confirmRules: (ruleIds: string[]) => Promise<Policy | null>;
@@ -334,7 +461,7 @@ export interface WorkflowActions {
 export interface WorkflowDerived {
   /** The policy version in force: the newest. */
   currentPolicy: Policy | null;
-  /** The stored policy version a job or result was checked against, when this session holds it. */
+  /** The stored policy version a job or result was checked against, when this session holds it (in force or set aside). */
   policyFor: (reference: { policy_id: string | null; policy_version: number | null }) => Policy | null;
   /** The newest job, whatever its status. */
   latestInvestigation: InvestigationJob | null;
@@ -449,14 +576,15 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   }, [api, announce]);
 
   const chooseOption = useCallback(
-    (clarificationId: string, optionId: string) => {
-      // The question may come from stage 2 ("interpret my words") or from a "clarify a preference" challenge.
-      const questions = [...(latest.current.interpretation?.clarifications ?? []), ...(latest.current.preferenceResponse?.clarifications ?? [])];
-      const option = questions
+    (interpretationId: string, clarificationId: string, optionId: string) => {
+      // The question may come from stage 2 ("interpret my words") or from a "clarify a preference" challenge. Both
+      // answers can hold a question with the same id, so the question is looked up in the answer it was shown from.
+      const answer = [latest.current.interpretation, latest.current.preferenceResponse].find((candidate) => candidate?.interpretation_id === interpretationId);
+      const option = answer?.clarifications
         .find((clarification) => clarification.clarification_id === clarificationId)
         ?.options.find((candidate) => candidate.option_id === optionId);
       if (!option || !option.supported) return;
-      dispatch({ type: "option/chosen", clarificationId, optionId, draft: option.proposed_rule });
+      dispatch({ type: "option/chosen", interpretationId, clarificationId, optionId, draft: option.proposed_rule });
       announce(option.proposed_rule ? "Definition chosen. Its rule is listed as proposed, without a number until you enter one." : "Definition chosen.");
     },
     [announce],
@@ -525,6 +653,10 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         announce("Investigation accepted. Waiting for its first step.");
         return accepted.id;
       } catch (error) {
+        // contracts/api.md section 6, rule 5: after 503 WORKER_INVOCATION_FAILED the job stored under this key is
+        // FAILED, so the same key would replay the 503 for ever: "The client retries with a new key." After every
+        // other failure (429, a network error, no answer in time) the key is kept, so a retry cannot start a second job.
+        if (errorCode(error) === "WORKER_INVOCATION_FAILED") startKey.done();
         dispatch({ type: "start/failed", error });
         return null;
       }
@@ -559,6 +691,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         }
         return response;
       } catch (error) {
+        // contracts/api.md section 8, CHANGE_RULE: "The client retries the challenge with a new key" after 503
+        // WORKER_INVOCATION_FAILED, and only then.
+        if (errorCode(error) === "WORKER_INVOCATION_FAILED") challengeKey.done();
         dispatch({ type: "challenge/failed", error });
         return null;
       }
@@ -618,7 +753,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     const reports = state.investigationIds.map((id) => state.investigations[id]).filter((job): job is InvestigationJob => Boolean(job?.result));
     return {
       currentPolicy: state.policies.at(-1) ?? null,
-      policyFor: (reference) => state.policies.find((policy) => policy.policy_id === reference.policy_id && policy.version === reference.policy_version) ?? null,
+      policyFor: (reference) =>
+        [...state.policies, ...state.retiredPolicies].find((policy) => policy.policy_id === reference.policy_id && policy.version === reference.policy_version) ?? null,
       latestInvestigationId,
       latestInvestigation: latestInvestigationId ? (state.investigations[latestInvestigationId] ?? null) : null,
       viewedInvestigationId,
@@ -631,7 +767,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       },
       polling: { phase: polling.phase, error: polling.error ? describeError(polling.error) : null },
     };
-  }, [state.investigationIds, state.investigations, state.viewedInvestigationId, state.policies, state.corrections, polling.phase, polling.error]);
+  }, [state.investigationIds, state.investigations, state.viewedInvestigationId, state.policies, state.retiredPolicies, state.corrections, polling.phase, polling.error]);
 
   const value = useMemo(() => ({ state, actions, derived }), [state, actions, derived]);
   return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;

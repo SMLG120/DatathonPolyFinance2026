@@ -92,6 +92,11 @@ export function PurchaseStage() {
   const assessment = preview.status === "ready" ? assessResult(preview.result) : null;
   const previewed = assessment?.kind === "ok" ? assessment.result : null;
   const notRecorded = preview.status === "error" && isApiError(preview.error) && preview.error.kind === "no_fixture";
+  // The preview is the engine's answer to this same request. When it says the request cannot be evaluated,
+  // the service refuses to start an investigation of it for the same reason (contract section 6, rule 3).
+  const previewRefusal = assessment?.kind === "not_executed" && assessment.result.execution.status === "INVALID_REQUEST" ? assessment.result.execution : null;
+  // 400, 404, 409 and 422 are answers to the request as it was sent: sent again unchanged, it is refused again.
+  const startRefused = state.start.kind === "validation" || state.start.kind === "not_found";
 
   async function start() {
     setAttempted(true);
@@ -345,8 +350,22 @@ export function PurchaseStage() {
               <p>No investigation was created.</p>
             </Notice>
           ) : (
-            <ErrorBlock title="The investigation could not be started" message={state.start.error ?? "The request failed."} onRetry={() => void start()}>
+            <ErrorBlock
+              title="The investigation could not be started"
+              message={state.start.error ?? "The request failed."}
+              onRetry={startRefused ? undefined : () => void start()}
+            >
+              {state.start.issues.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-5" data-testid="start-issues">
+                  {state.start.issues.map((issue, index) => (
+                    <li key={`${index}-${issue}`}>{issue}</li>
+                  ))}
+                </ul>
+              ) : null}
               <p>No investigation was created.</p>
+              {startRefused ? (
+                <p data-testid="start-refused">The service refused the request as it was sent, so sending it again unchanged would be refused again. Change it above, then start again.</p>
+              ) : null}
             </ErrorBlock>
           )
         ) : null}
@@ -369,7 +388,12 @@ export function PurchaseStage() {
             Start the investigation
           </Button>
           <p className="text-sm text-ink-muted" role="status">
-            {canStart
+            {canStart && previewRefusal ? (
+              <span data-testid="start-preview-refusal">
+                The preview above says this request cannot be evaluated{previewRefusal.code ? ` (${previewRefusal.code})` : ""}. Started as it is, it is refused for the
+                same reason and no investigation is created. Change the request first.
+              </span>
+            ) : canStart
               ? "Runs the check against the confirmed policy and shows each step as it completes."
               : !policy
                 ? "Needs at least one confirmed rule."

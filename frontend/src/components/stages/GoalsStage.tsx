@@ -17,7 +17,7 @@ import { formatDateTime, percentInputToFraction } from "@/lib/format";
 import { draftRule, previewRuleSet, ruleSummary, validateThreshold } from "@/lib/rules";
 import { activeRules } from "@/lib/verdict";
 import { usePurchaseForm } from "@/state/purchase";
-import { useWorkflow } from "@/state/workflow";
+import { clarificationKey, useWorkflow } from "@/state/workflow";
 
 const OBJECTIVE_SOURCE: Record<Objective["source"], string> = {
   USER_STATED: "Stated by you",
@@ -281,13 +281,16 @@ export function GoalsStage() {
               {state.interpretation.clarifications.length > 0 ? (
                 <ul className="space-y-4">
                   {state.interpretation.clarifications.map((clarification) => {
-                    const chosen = state.chosenOptions[clarification.clarification_id] ?? null;
+                    // Named by the answer as well as by its id: a later answer numbers its questions from 1 again.
+                    const interpretationId = state.interpretation?.interpretation_id ?? "";
+                    const key = clarificationKey(interpretationId, clarification.clarification_id);
+                    const chosen = state.chosenOptions[key] ?? null;
                     return (
                       <ClarificationCard
-                        key={clarification.clarification_id}
+                        key={key}
                         clarification={clarification}
                         chosenOptionId={chosen}
-                        onChoose={(optionId) => actions.chooseOption(clarification.clarification_id, optionId)}
+                        onChoose={(optionId) => actions.chooseOption(interpretationId, clarification.clarification_id, optionId)}
                         outcome={<OptionOutcome option={clarification.options.find((option) => option.option_id === chosen)} />}
                       />
                     );
@@ -406,9 +409,26 @@ export function GoalsStage() {
           </EmptyBlock>
         )}
         {state.confirm.status === "error" ? (
-          <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The request failed."} onRetry={() => void confirmAll()}>
-            <p>They are still proposed and inactive. The confirmed policy is unchanged.</p>
-          </ErrorBlock>
+          state.confirm.code === "POLICY_VERSION_CONFLICT" ? (
+            // No "Try again": the same request would be refused again. The stage has started again instead.
+            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The policy has a newer version than the one this page held."}>
+              <div className="space-y-1" data-testid="policy-conflict">
+                <p>
+                  The policy was changed after this page last received it: from another tab or session, or by a request whose answer never arrived.
+                  The service cannot send this page the newer version.
+                </p>
+                <p>
+                  So this page has set its copy of the policy aside, and this stage starts again: every rule above is a proposal, with the number
+                  shown in it. Confirming them creates a new policy, starting at version 1. Nothing is checked until then. Reports already made keep
+                  the version they were checked against.
+                </p>
+              </div>
+            </ErrorBlock>
+          ) : (
+            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The request failed."} onRetry={() => void confirmAll()}>
+              <p>They are still proposed and inactive. The confirmed policy is unchanged.</p>
+            </ErrorBlock>
+          )
         ) : null}
       </Panel>
 

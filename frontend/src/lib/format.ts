@@ -56,18 +56,30 @@ export interface FormatFractionOptions {
   rounding?: "nearest" | "down";
 }
 
+/** The fraction as a whole number of units of the last decimal shown: 0.265 at one decimal is 265. */
+function scaleFraction(value: number, decimals: number, rounding: FormatFractionOptions["rounding"] = "nearest"): number {
+  const shifted = shiftDecimal(value, 2 + decimals);
+  return rounding === "down" ? Math.sign(shifted) * Math.floor(Math.abs(shifted) + 1e-7) : roundHalfAwayFromZero(shifted);
+}
+
 /**
  * Formats a portfolio fraction as a percentage: 0.265 -> "26.5%".
  * Anything that is not a finite number is worded "Unknown", never "0.0%".
+ *
+ * A value that is not zero is never printed as zero. One too small for the
+ * decimals shown is printed as a bound at the last decimal instead:
+ * 0.00048735 -> "< 0.1%", -0.0004 -> "> −0.1%". "Not zero" means further from
+ * zero than the contract's tolerance, so the noise of a sum of floats still
+ * reads "0.0%". This is wording only: the value itself is never changed.
  */
 export function formatFraction(value: number | null | undefined, options: FormatFractionOptions = {}): string {
   if (!isFiniteNumber(value)) return UNKNOWN_TEXT;
   const decimals = options.decimals ?? 1;
-  const shifted = shiftDecimal(value, 2 + decimals);
-  const scaled =
-    options.rounding === "down"
-      ? Math.sign(shifted) * Math.floor(Math.abs(shifted) + 1e-7)
-      : roundHalfAwayFromZero(shifted);
+  const scaled = scaleFraction(value, decimals, options.rounding);
+  if (scaled === 0 && Math.abs(value) > EPS) {
+    const smallestShown = `${scaledToText(1, decimals)}%`;
+    return value < 0 ? `> ${MINUS}${smallestShown}` : `< ${options.signed ? "+" : ""}${smallestShown}`;
+  }
   const sign = scaled < 0 ? MINUS : options.signed && scaled > 0 ? "+" : "";
   return `${sign}${scaledToText(scaled, decimals)}%`;
 }
@@ -85,7 +97,10 @@ export function formatFractionRange(
   if (!isFiniteNumber(lower) || !isFiniteNumber(upper)) return UNKNOWN_TEXT;
   if (Math.abs(upper - lower) <= EPS) return formatFraction(lower, options);
   const decimals = decimalsToDistinguish(lower, upper, options.decimals ?? 1);
-  return `${formatFraction(lower, { ...options, decimals })} to ${formatFraction(upper, { ...options, decimals })}`;
+  const from = formatFraction(lower, { ...options, decimals });
+  const to = formatFraction(upper, { ...options, decimals });
+  // Two bounds that read the same even at the most decimals shown are worded once, not as "X to X".
+  return from === to ? from : `${from} to ${to}`;
 }
 
 /** True when a measured interval is a real range rather than one number. */
@@ -97,13 +112,15 @@ const MAX_DECIMALS = 4;
 
 /**
  * Smallest number of decimals (from `start`, at most 4) at which two different
- * values are displayed differently. Without this a measured 10.04% against a
- * 10.0% limit would read "10.0% vs 10.0% — FAIL".
+ * values round to different figures. Without this a measured 10.04% against a
+ * 10.0% limit would read "10.0% vs 10.0% — FAIL". The rounded figures are
+ * compared, not the texts, so 0 and 0.0003 read "0.00%" and "0.03%" rather
+ * than "0.0%" and "< 0.1%".
  */
 export function decimalsToDistinguish(a: number, b: number, start = 1): number {
   if (Math.abs(a - b) <= EPS) return start;
   for (let decimals = start; decimals < MAX_DECIMALS; decimals += 1) {
-    if (formatFraction(a, { decimals }) !== formatFraction(b, { decimals })) return decimals;
+    if (scaleFraction(a, decimals) !== scaleFraction(b, decimals)) return decimals;
   }
   return MAX_DECIMALS;
 }

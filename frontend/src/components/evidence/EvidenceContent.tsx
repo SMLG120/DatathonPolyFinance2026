@@ -24,9 +24,12 @@ import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 import type { EvidenceRequest } from "./EvidenceProvider";
 
-/** What the drawer says about sources until a route delivers the source registry. */
+/**
+ * What the drawer says about sources, on test data and on the live service alike. No route of the
+ * contract delivers the source registry, so nothing is promised: only the ids are there to show.
+ */
 export const SOURCE_DETAILS_NOTE =
-  "Source details — title, publisher, retrieval date and terms of use — load with the live API, once it delivers the source registry. Until then each figure shows the ids of its sources as they were recorded with it.";
+  "Only the ids of a figure’s sources are available here, as they were recorded with the figure. The source registry is not delivered to this page, so the title, publisher, retrieval date and terms of use of a source are not shown.";
 
 function CorrectionNote({ correction }: { correction: ProposedCorrection }) {
   return (
