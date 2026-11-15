@@ -1,0 +1,308 @@
+{
+  "fixture": true,
+  "fixture_id": "M1",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Mateo-shaped: SPY to 15% with an Energy-label exclusion and a controversy exclusion",
+  "tests": [
+    "starting portfolio finding",
+    "missing holdings",
+    "proven failure plus unknown checks",
+    "registry absence is unknown"
+  ],
+  "universe": "mateo_synthetic_universe.json",
+  "hand_calc": "M1",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-m1",
+      "persona_id": "mateo",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.25,
+      "positions": [
+        {
+          "instrument_id": "XBB.TO",
+          "weight": 0.25
+        },
+        {
+          "instrument_id": "XIU.TO",
+          "weight": 0.2
+        },
+        {
+          "instrument_id": "ESGV",
+          "weight": 0.15
+        },
+        {
+          "instrument_id": "MSFT",
+          "weight": 0.05
+        },
+        {
+          "instrument_id": "CNR.TO",
+          "weight": 0.05
+        },
+        {
+          "instrument_id": "FTS.TO",
+          "weight": 0.05
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-mateo-demo",
+      "persona_id": "mateo",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [
+        {
+          "objective_id": "obj-mateo-1",
+          "original_words": "Balanced growth over 8 to 12 years; ESG matters to me; I want to avoid oil and companies involved in significant controversies.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.6"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "mateo-excl-energy-1",
+          "rule_type": "exclusion",
+          "parameters": {
+            "definition": {
+              "kind": "fund_reported_sector",
+              "sector": "Energy"
+            }
+          },
+          "threshold": 0.0,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: by 'oil' I mean no holdings labelled Energy in what my funds report.",
+          "objective_id": "obj-mateo-1",
+          "scope_description": "Maximum total equity exposure to holdings labelled 'Energy': the sector label reported in the fund issuer's holdings file for fund constituents, the instrument registry label for direct holdings. Constituents without a label count as unknown, not as zero. A sector label is not a list of oil producers and is not a controversy finding. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "mateo-controversy-1",
+          "rule_type": "controversy_exclusion",
+          "parameters": {
+            "criteria": {
+              "natures": [
+                "REGULATORY_FINDING",
+                "COURT_RULING",
+                "SETTLEMENT"
+              ],
+              "event_date_from": null
+            }
+          },
+          "threshold": 0.0,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no companies with a regulatory finding, court ruling or settlement in the registry.",
+          "objective_id": "obj-mateo-1",
+          "scope_description": "Maximum total equity exposure to companies with a controversy-registry record of nature REGULATORY_FINDING, COURT_RULING, SETTLEMENT. Companies without a record are not assessed: absence from the registry is unknown, never a pass. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Fictional-scenario rules confirmed by the user after the 'oil' clarification.",
+      "content_hash": "sha256:a2dc56b24889c9b4446200d5ff801f450bb06061e9c53cda13fb62a318cec623"
+    },
+    "purchase_request": {
+      "instrument_id": "SPY",
+      "target_direct_weight": 0.15,
+      "funding": "CASH",
+      "original_words": "Buy SPY so that it is 15% of my portfolio."
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.15,
+      "additional_purchase": 0.15,
+      "cash_before": 0.25,
+      "cash_after": 0.1,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "mateo-excl-energy-1",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.017,
+          "upper": 0.171
+        },
+        "limit": 0.0,
+        "gap": 0.017,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ENBRIDGE",
+            "lower": 0.008,
+            "upper": 0.162
+          },
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "CANADIAN_NATURAL_RESOURCES",
+            "lower": 0.006,
+            "upper": 0.16
+          },
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "EXXON_MOBIL",
+            "lower": 0.003,
+            "upper": 0.157
+          }
+        ],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS"
+        ],
+        "starting": {
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.014,
+            "upper": 0.168
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.25
+          }
+        ]
+      },
+      {
+        "rule_id": "mateo-controversy-1",
+        "status": "UNKNOWN",
+        "measured": {
+          "lower": 0.0,
+          "upper": 0.65
+        },
+        "limit": 0.0,
+        "gap": null,
+        "breaching_subjects": [],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS",
+          "REGISTRY_ABSENCE"
+        ],
+        "starting": {
+          "status": "UNKNOWN",
+          "measured": {
+            "lower": 0.0,
+            "upper": 0.5
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.25
+          }
+        ]
+      }
+    ],
+    "rules_not_evaluated": [],
+    "starting_portfolio_findings": [
+      {
+        "rule_id": "mateo-excl-energy-1",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.014,
+          "upper": 0.168
+        },
+        "limit": 0.0,
+        "gap": 0.014,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ENBRIDGE",
+            "lower": 0.008,
+            "upper": 0.162
+          },
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "CANADIAN_NATURAL_RESOURCES",
+            "lower": 0.006,
+            "upper": 0.16
+          }
+        ],
+        "purchase_effect": {
+          "lower_change": 0.003,
+          "upper_change": 0.003
+        }
+      }
+    ],
+    "data_coverage": [
+      {
+        "fund_id": "XIU.TO",
+        "portfolio_weight": 0.2,
+        "coverage_fraction": 0.98,
+        "sector_labelled_fraction": 0.98,
+        "uncovered_portfolio_weight": 0.004,
+        "status": "PARTIAL"
+      },
+      {
+        "fund_id": "ESGV",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 0.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.15,
+        "status": "MISSING"
+      },
+      {
+        "fund_id": "SPY",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 1.0,
+        "sector_labelled_fraction": 1.0,
+        "uncovered_portfolio_weight": 0.0,
+        "status": "COVERED"
+      }
+    ],
+    "scenario": null,
+    "max_compliant": {
+      "status": "NO_FEASIBLE_PURCHASE",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": {
+        "type": "RULE",
+        "rule_id": "mateo-excl-energy-1"
+      },
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "HAS_FAIL",
+      "counts": {
+        "pass": 0,
+        "fail": 1,
+        "unknown": 1
+      },
+      "rules_evaluated": 2,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 1,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

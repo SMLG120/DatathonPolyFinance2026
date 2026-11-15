@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/source.schema.json",
+  "title": "source",
+  "description": "One documented data source: where a file came from, which date it describes, when it was retrieved, its hash, how it was processed, the reuse terms and its known limitations (Case p.10, p.13, p.14; BUILD_BRIEF section 4).",
+  "type": "object",
+  "required": ["source_id", "publisher", "title", "url", "relevant_date", "retrieval_date", "sha256", "processing", "terms", "limitations"],
+  "additionalProperties": false,
+  "properties": {
+    "source_id": { "$ref": "common.schema.json#/$defs/source_id" },
+    "publisher": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "title": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "url": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Null only for material with no public URL (e.g. an organizer-supplied file)." },
+    "relevant_date": { "$ref": "common.schema.json#/$defs/date", "description": "The date the content describes (observation or 'as of' date), not the retrieval date." },
+    "retrieval_date": { "$ref": "common.schema.json#/$defs/date" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA-256 of the file as retrieved." },
+    "processing": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "terms": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "limitations": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+  },
+  "$defs": {
+    "registry": {
+      "title": "source_registry",
+      "description": "File shape of data/processed/sources.json. Each key equals the entry's source_id.",
+      "type": "object",
+      "required": ["schema_version", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "sources": { "type": "object", "propertyNames": { "$ref": "common.schema.json#/$defs/source_id" }, "additionalProperties": { "$ref": "#" } }
+      }
+    }
+  }
+}

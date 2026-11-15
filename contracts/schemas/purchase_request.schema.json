@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/purchase_request.schema.json",
+  "title": "purchase_request",
+  "description": "A resolved, simulated purchase (LEAD_DECISIONS D5). target_direct_weight is the FINAL direct weight of the instrument, not the amount added. The purchase is funded from cash; every other position is unchanged; fees and taxes are excluded. Range and semantic problems (negative, above 1, below the current direct weight, unsupported instrument) are deliberately NOT schema errors: the engine reports them as execution.status INVALID_REQUEST.",
+  "type": "object",
+  "required": ["instrument_id", "target_direct_weight", "funding", "original_words"],
+  "additionalProperties": false,
+  "properties": {
+    "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+    "target_direct_weight": { "type": "number", "description": "Final direct weight (fraction of the portfolio)." },
+    "funding": { "$ref": "common.schema.json#/$defs/funding" },
+    "original_words": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "The user's sentence, verbatim, or null when the request was made with structured controls only." }
+  },
+  "$defs": {
+    "unresolved": {
+      "title": "unresolved_purchase_request",
+      "description": "Free-text request accepted only by POST /investigations. The investigator must resolve it into a purchase_request or ask a clarification; it never reaches the engine in this form.",
+      "type": "object",
+      "required": ["instrument_id", "target_direct_weight", "funding", "original_words"],
+      "additionalProperties": false,
+      "properties": {
+        "instrument_id": { "type": "null" },
+        "target_direct_weight": { "type": "null" },
+        "funding": { "$ref": "common.schema.json#/$defs/funding" },
+        "original_words": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+      }
+    },
+    "nullable": { "anyOf": [{ "$ref": "#" }, { "type": "null" }] }
+  }
+}

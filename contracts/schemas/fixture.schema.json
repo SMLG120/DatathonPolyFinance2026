@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/fixture.schema.json",
+  "title": "Fixture envelopes",
+  "description": "Wrappers used by contracts/fixtures. The wrapped payloads stay schema-pure; the flags live on the envelope. Every fixture is marked fixture: true and says whether its numbers are synthetic.",
+  "$defs": {
+    "api_fixture": {
+      "type": "object",
+      "required": ["fixture", "fixture_id", "synthetic", "synthetic_note", "description", "route", "http_status", "request_headers", "request_body", "response_schema", "response_body"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": { "const": true },
+        "fixture_id": { "$ref": "common.schema.json#/$defs/id" },
+        "synthetic": { "type": "boolean" },
+        "synthetic_note": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "description": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "route": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "http_status": { "type": "integer", "minimum": 200, "maximum": 599 },
+        "request_headers": { "type": "object", "additionalProperties": { "type": "string" } },
+        "request_body": { "type": ["object", "null"] },
+        "response_schema": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Schema reference the response_body validates against, e.g. 'check_result.schema.json' or 'api.schema.json#/$defs/error_response'." },
+        "response_body": { "type": "object" }
+      }
+    },
+    "engine_universe": {
+      "type": "object",
+      "required": ["fixture", "universe_id", "synthetic", "synthetic_note", "instruments", "holdings", "market_data", "controversies", "sources"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": { "const": true },
+        "universe_id": { "$ref": "common.schema.json#/$defs/id" },
+        "synthetic": { "const": true },
+        "synthetic_note": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "instruments": { "$ref": "instrument.schema.json#/$defs/registry" },
+        "holdings": { "$ref": "holdings_snapshot.schema.json" },
+        "market_data": { "$ref": "market_data.schema.json" },
+        "controversies": { "$ref": "controversy_record.schema.json#/$defs/registry" },
+        "sources": { "$ref": "source.schema.json#/$defs/registry" }
+      }
+    },
+    "engine_fixture": {
+      "type": "object",
+      "required": ["fixture", "fixture_id", "synthetic", "synthetic_note", "title", "tests", "universe", "hand_calc", "inputs", "expected"],
+      "additionalProperties": false,
+      "properties": {
+        "fixture": { "const": true },
+        "fixture_id": { "$ref": "common.schema.json#/$defs/id" },
+        "synthetic": { "const": true },
+        "synthetic_note": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "title": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "tests": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "The BUILD_BRIEF section 9 topics this case exercises." },
+        "universe": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "File name of the engine_universe in the same folder." },
+        "hand_calc": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Heading in HAND_CALCS.md with the arithmetic." },
+        "inputs": {
+          "type": "object", "required": ["portfolio", "policy", "purchase_request"], "additionalProperties": false,
+          "properties": {
+            "portfolio": { "$ref": "portfolio.schema.json" },
+            "policy": { "$ref": "policy.schema.json" },
+            "purchase_request": { "$ref": "purchase_request.schema.json" }
+          }
+        },
+        "expected": { "type": "object", "description": "A PARTIAL check_result. Subset match, implemented once in byb_contracts.subset_mismatches(expected, actual): every key present here must be present and equal in the engine output (numbers within 1e-9). Arrays must have the same length; arrays of objects are paired by their id key (rule_id, issuer_id, fund_id, instrument_id, subject_id) in any order, except rule_results, rules_not_evaluated, starting_portfolio_findings and conflicts, which must be in policy order; arrays of scalars are compared ignoring order. Keys absent here are not asserted." }
+      }
+    }
+  }
+}

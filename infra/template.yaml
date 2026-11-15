@@ -1,0 +1,602 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Before You Buy backend (datathon prototype, fictional simulation): an HTTP API behind a bearer-code Lambda
+  authorizer, a thin API Lambda, an asynchronous investigation worker that calls Amazon Bedrock Converse, and one
+  private S3 bucket for jobs, results and traces - S3 conditional writes are the only job store, so there is no
+  database or queue to operate, and the API never waits for the model.
+
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+  com.aws.cloudformation.Context:
+    arch: >-
+      browser -> HTTP API (Lambda authorizer) -> API fn -> S3 job QUEUED -> async invoke -> worker fn ->
+      Bedrock Converse + allowlisted tools -> S3 result & trace; client polls GET /investigations/{id}
+    must:
+      - API fn & worker fn keep separate roles; no s3:*, no bedrock:*, no Resource "*" in any identity policy
+      - s3:PutObject is allowed only with If-None-Match / If-Match; the job lifecycle relies on conditional writes
+      - worker Timeout >= JOB_DEADLINE_SECONDS + 10 s; the API fn never waits for the worker (HTTP API integration max 30 s)
+      - no $default route - API Gateway must keep answering CORS preflight without the authorizer
+      - the access code lives only in SSM (SecureString); it is never a parameter value, env var or output
+    ref:
+      - infra/README.md
+
+Parameters:
+  CodeS3Bucket:
+    Type: String
+    Description: Bucket holding the Lambda zip built by scripts/package.py.
+    AllowedPattern: ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$
+  CodeS3Key:
+    Type: String
+    Description: Key of the Lambda zip. Content-addressed (lambda/byb-backend-<sha16>.zip), so a new build is a new key.
+    AllowedPattern: ^[A-Za-z0-9!_.*'()/-]{1,512}$
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-sonnet-5-5
+    Description: Cross-Region inference profile id used by the worker (application model).
+    AllowedPattern: ^[a-z]{2,6}\.[a-z0-9-]+\.[A-Za-z0-9.:-]+$
+  BedrockFoundationModelId:
+    Type: String
+    Default: anthropic.claude-sonnet-5-5
+    Description: Foundation model the inference profile routes to (see GetInferenceProfile). Must match BedrockModelId.
+    AllowedPattern: ^[a-z0-9-]+\.[A-Za-z0-9.:-]+$
+  AllowedOrigin:
+    Type: String
+    Default: "*"
+    Description: CORS allowed origin. "*" until the Amplify origin is known; tighten it to that origin afterwards.
+  AccessCodeParameterName:
+    Type: String
+    Default: /before-you-buy/access-code
+    Description: Name of the SSM SecureString parameter holding the access code. Created out-of-band, never here.
+    AllowedPattern: ^/[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$
+  PythonRuntime:
+    Type: String
+    Default: python3.14
+    Description: Lambda runtime. python3.14 is the newest generally available runtime; python3.15 is a public preview.
+    AllowedValues:
+      - python3.13
+      - python3.14
+      - python3.15
+  LogRetentionDays:
+    Type: Number
+    Default: 7
+    AllowedValues: [1, 3, 5, 7, 14, 30]
+    Description: Retention of every log group in this stack.
+  WorkerReservedConcurrency:
+    Type: Number
+    Default: 5
+    MinValue: 0
+    MaxValue: 10
+    Description: >-
+      Hard cap on concurrent investigations, and so on concurrent Bedrock conversations. 0 stops the worker.
+      This account can reserve 10 at most (unreserved pool 110, of which Lambda keeps 100 unreserved).
+
+Resources:
+  # ---------------------------------------------------------------- storage
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          Single private store: snapshots/ policies/ jobs/ results/ traces/. Name generated (no hardcoded name).
+          Versioning off on purpose: job documents are rewritten by compare-and-swap several times per job, results
+          and traces are write-once, and everything here is reproducible fictional data.
+        must:
+          - all four Block Public Access flags stay true
+          - jobs/ & traces/ expire after a few days; results/ are kept (old reports stay reproducible)
+          - Retain - deleting the stack must not delete reports; empty and delete the bucket by hand on teardown
+        mutable: change-with-constraints
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireJobs
+            Status: Enabled
+            Prefix: jobs/
+            ExpirationInDays: 3
+          - Id: ExpireTraces
+            Status: Enabled
+            Prefix: traces/
+            ExpirationInDays: 3
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 1
+      Tags:
+        - Key: project
+          Value: before-you-buy
+
+  DataBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Deny-only policy - refuses any request that is not over TLS. Grants nothing; access comes from the two function roles.
+        must:
+          - never add an Allow with Principal "*"
+    Properties:
+      Bucket: !Ref DataBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt DataBucket.Arn
+              - !Sub ${DataBucket.Arn}/*
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+  # ------------------------------------------------------------------- logs
+  ApiLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-api
+      RetentionInDays: !Ref LogRetentionDays
+
+  WorkerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-worker
+      RetentionInDays: !Ref LogRetentionDays
+
+  AuthorizerLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AWS::StackName}-authorizer
+      RetentionInDays: !Ref LogRetentionDays
+
+  HttpApiAccessLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Access log of the HTTP API. /aws/vendedlogs/ prefix keeps API Gateway log delivery out of the account-wide resource policy size limit.
+        must:
+          - the access log format must never include request headers or the caller address
+    Properties:
+      LogGroupName: !Sub /aws/vendedlogs/apigateway/${AWS::StackName}-http-api
+      RetentionInDays: !Ref LogRetentionDays
+
+  # ------------------------------------------------------------------ roles
+  ApiFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          API fn only creates/reads job documents, reads results and hands the job to the worker. No Bedrock, no
+          snapshots, no traces. ListBucket limited to jobs/ so a missing job is a 404 rather than a 403.
+        must:
+          - lambda:InvokeFunction on the worker fn only
+          - PutObject on jobs/ only, and only as a conditional write
+        mutable: review-required
+    Properties:
+      Description: Execution role of the Before You Buy API function.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-api
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-api:*
+      Policies:
+        - PolicyName: api-function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt ApiLogGroup.Arn
+              - Sid: ReadJobsAndResults
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub ${DataBucket.Arn}/jobs/*
+                  - !Sub ${DataBucket.Arn}/results/*
+              - Sid: CreateJobOnlyIfAbsent
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${DataBucket.Arn}/jobs/*
+                Condition:
+                  "Null":
+                    s3:if-none-match: "false"
+              - Sid: UpdateJobOnlyByCompareAndSwap
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${DataBucket.Arn}/jobs/*
+                Condition:
+                  "Null":
+                    s3:if-match: "false"
+              - Sid: ListJobsPrefixOnly
+                Effect: Allow
+                Action: s3:ListBucket
+                Resource: !GetAtt DataBucket.Arn
+                Condition:
+                  StringLike:
+                    s3:prefix: jobs/*
+              - Sid: DispatchToWorkerOnly
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt WorkerFunction.Arn
+      Tags:
+        - Key: project
+          Value: before-you-buy
+
+  WorkerFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          Worker reads its job and snapshots, updates the job by compare-and-swap, writes result & trace once, and
+          calls Bedrock Converse through one inference profile. Converse needs bedrock:InvokeModel; the streaming
+          action is left out because nothing streams. Foundation-model ARNs are usable only via that profile.
+        must:
+          - Bedrock resources = the inference profile + the foundation-model ARNs it routes to (us-east-1, us-east-2, us-west-2), nothing else
+          - results/ & traces/ are create-only (If-None-Match); jobs/ is update-only (If-Match)
+          - if BedrockModelId changes, re-check the routed Regions with GetInferenceProfile
+        mutable: review-required
+    Properties:
+      Description: Execution role of the Before You Buy investigation worker.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-worker
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-worker:*
+      Policies:
+        - PolicyName: worker-function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt WorkerLogGroup.Arn
+              - Sid: ReadJobsAndSnapshots
+                Effect: Allow
+                Action: s3:GetObject
+                Resource:
+                  - !Sub ${DataBucket.Arn}/jobs/*
+                  - !Sub ${DataBucket.Arn}/snapshots/*
+              - Sid: UpdateJobOnlyByCompareAndSwap
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${DataBucket.Arn}/jobs/*
+                Condition:
+                  "Null":
+                    s3:if-match: "false"
+              - Sid: WriteResultAndTraceOnce
+                Effect: Allow
+                Action: s3:PutObject
+                Resource:
+                  - !Sub ${DataBucket.Arn}/results/*
+                  - !Sub ${DataBucket.Arn}/traces/*
+                Condition:
+                  "Null":
+                    s3:if-none-match: "false"
+              - Sid: ConverseThroughInferenceProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
+              - Sid: RoutedFoundationModelsOnlyViaThatProfile
+                Effect: Allow
+                Action: bedrock:InvokeModel
+                Resource:
+                  - !Sub arn:${AWS::Partition}:bedrock:us-east-1::foundation-model/${BedrockFoundationModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:us-east-2::foundation-model/${BedrockFoundationModelId}
+                  - !Sub arn:${AWS::Partition}:bedrock:us-west-2::foundation-model/${BedrockFoundationModelId}
+                Condition:
+                  StringEquals:
+                    bedrock:InferenceProfileArn: !Sub arn:${AWS::Partition}:bedrock:${AWS::Region}:${AWS::AccountId}:inference-profile/${BedrockModelId}
+      Tags:
+        - Key: project
+          Value: before-you-buy
+
+  AuthorizerFunctionRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Authorizer reads exactly one SSM parameter (the access code). No S3, no Lambda, no Bedrock.
+        must:
+          - ssm:GetParameter on the access-code parameter only
+        mutable: review-required
+    Properties:
+      Description: Execution role of the Before You Buy Lambda authorizer.
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn:
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-authorizer
+                  - !Sub arn:${AWS::Partition}:lambda:${AWS::Region}:${AWS::AccountId}:function:${AWS::StackName}-authorizer:*
+      Policies:
+        - PolicyName: authorizer-function
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: WriteOwnLogs
+                Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt AuthorizerLogGroup.Arn
+              - Sid: ReadAccessCodeOnly
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter${AccessCodeParameterName}
+      Tags:
+        - Key: project
+          Value: before-you-buy
+
+  # -------------------------------------------------------------- functions
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Thin HTTP handlers. Stores the validated request, invokes the worker asynchronously, answers 202 only once Lambda accepted the event.
+        must:
+          - Timeout stays well under the 30 s HTTP API integration limit
+          - JOB_DEADLINE_SECONDS here + 10 <= worker fn Timeout
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-api
+      Description: Before You Buy HTTP API handlers (investigations).
+      Handler: backend.api.handler.handler
+      Runtime: !Ref PythonRuntime
+      Architectures:
+        - arm64
+      CodeUri:
+        Bucket: !Ref CodeS3Bucket
+        Key: !Ref CodeS3Key
+      Role: !GetAtt ApiFunctionRole.Arn
+      Timeout: 15
+      MemorySize: 512
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: !Ref ApiLogGroup
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          WORKER_FUNCTION_NAME: !Ref WorkerFunction
+          JOB_DEADLINE_SECONDS: "150"
+          LOG_LEVEL: INFO
+      Events:
+        CreateInvestigation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /investigations
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+            RouteSettings:
+              ThrottlingBurstLimit: 4
+              ThrottlingRateLimit: 1
+        GetInvestigation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /investigations/{id}
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+      Tags:
+        project: before-you-buy
+
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          Runs one investigation per asynchronous event: bounded Bedrock Converse tool loop, steps appended to the
+          job as they complete, result & trace written once. Retries are 0 because a retry would arrive a minute
+          later, after most of the job deadline, and would bill Bedrock twice; the job record carries the failure.
+        must:
+          - MaximumRetryAttempts 0 - the handler is still idempotent because async delivery is at least once
+          - Timeout (160) = job deadline (150) + 10 s margin
+          - keep ReservedConcurrentExecutions - HTTP API throttling is best effort (measured - 79 of 80 burst requests
+            passed a 1 rps / burst 4 route limit), so this is the only hard bound on concurrent Bedrock use
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-worker
+      Description: Before You Buy asynchronous investigation worker (Bedrock Converse tool loop).
+      Handler: backend.worker.handler.handler
+      Runtime: !Ref PythonRuntime
+      Architectures:
+        - arm64
+      CodeUri:
+        Bucket: !Ref CodeS3Bucket
+        Key: !Ref CodeS3Key
+      Role: !GetAtt WorkerFunctionRole.Arn
+      Timeout: 160
+      MemorySize: 512
+      ReservedConcurrentExecutions: !Ref WorkerReservedConcurrency
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: !Ref WorkerLogGroup
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+        MaximumEventAgeInSeconds: 60
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref DataBucket
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          MAX_TOOL_ROUNDS: "6"
+          MAX_TOOL_CALLS: "16"
+          BEDROCK_MAX_TOKENS: "4096"
+          CODE_ARTIFACT: !Ref CodeS3Key
+          LOG_LEVEL: INFO
+      Tags:
+        project: before-you-buy
+
+  AuthorizerFunction:
+    Type: AWS::Serverless::Function
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Compares the bearer token with the SSM access code in constant time. Demo-grade shared code, not user identity.
+        must:
+          - fail closed - an unreadable or too-short stored code must never authorize
+          - API Gateway waits at most 10 s for an authorizer; keep Timeout below that
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-authorizer
+      Description: Before You Buy Lambda authorizer (bearer access code checked against SSM).
+      Handler: backend.api.authorizer.handler
+      Runtime: !Ref PythonRuntime
+      Architectures:
+        - arm64
+      CodeUri:
+        Bucket: !Ref CodeS3Bucket
+        Key: !Ref CodeS3Key
+      Role: !GetAtt AuthorizerFunctionRole.Arn
+      Timeout: 5
+      MemorySize: 512
+      LoggingConfig:
+        LogFormat: Text
+        LogGroup: !Ref AuthorizerLogGroup
+      Environment:
+        Variables:
+          ACCESS_CODE_PARAMETER_NAME: !Ref AccessCodeParameterName
+          ACCESS_CODE_CACHE_SECONDS: "60"
+          LOG_LEVEL: INFO
+      Tags:
+        project: before-you-buy
+
+  # -------------------------------------------------------------------- API
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: >-
+          HTTP API (not REST): cheaper, built-in CORS that answers preflight without the authorizer, simple-response
+          Lambda authorizer. CORS is convenience for the browser, not access control - the authorizer is.
+        must:
+          - every route keeps the default authorizer; do not add a $default route
+          - AllowedOrigin "*" is temporary - set it to the Amplify origin once known
+          - throttling stays modest - each POST can cost several Bedrock calls
+    Properties:
+      Name: !Sub ${AWS::StackName}-http-api
+      Description: Before You Buy HTTP API.
+      CorsConfiguration:
+        AllowOrigins:
+          - !Ref AllowedOrigin
+        AllowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        AllowHeaders:
+          - authorization
+          - content-type
+          - idempotency-key
+        MaxAge: 600
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      AccessLogSettings:
+        DestinationArn: !GetAtt HttpApiAccessLogGroup.Arn
+        Format: '{"requestId":"$context.requestId","requestTime":"$context.requestTime","routeKey":"$context.routeKey","status":"$context.status","responseLatencyMs":"$context.responseLatency","integrationLatencyMs":"$context.integrationLatency","integrationStatus":"$context.integrationStatus","authorizerError":"$context.authorizer.error","errorMessage":"$context.error.message"}'
+      Auth:
+        DefaultAuthorizer: AccessCodeAuthorizer
+        Authorizers:
+          AccessCodeAuthorizer:
+            FunctionArn: !GetAtt AuthorizerFunction.Arn
+            AuthorizerPayloadFormatVersion: "2.0"
+            EnableSimpleResponses: true
+            EnableFunctionDefaultPermissions: true
+            Identity:
+              Headers:
+                - Authorization
+              ReauthorizeEvery: 300
+      Tags:
+        project: before-you-buy
+
+Outputs:
+  ApiBaseUrl:
+    Description: Base URL of the HTTP API ($default stage), without a trailing slash. The only value the frontend needs.
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}
+  HttpApiId:
+    Description: API Gateway HTTP API id.
+    Value: !Ref HttpApi
+  DataBucketName:
+    Description: Private data bucket (snapshots/ policies/ jobs/ results/ traces/).
+    Value: !Ref DataBucket
+  ApiFunctionName:
+    Description: API Lambda function.
+    Value: !Ref ApiFunction
+  WorkerFunctionName:
+    Description: Investigation worker Lambda function.
+    Value: !Ref WorkerFunction
+  AuthorizerFunctionName:
+    Description: Lambda authorizer function.
+    Value: !Ref AuthorizerFunction
+  AccessCodeParameterName:
+    Description: Name (not value) of the SSM SecureString holding the access code.
+    Value: !Ref AccessCodeParameterName
+  BedrockModelId:
+    Description: Inference profile used by the worker.
+    Value: !Ref BedrockModelId
+  PythonRuntime:
+    Description: Lambda runtime of the three functions.
+    Value: !Ref PythonRuntime
+  CodeArtifact:
+    Description: S3 key of the deployed Lambda zip.
+    Value: !Ref CodeS3Key
+  WorkerLogGroupName:
+    Description: Log group of the worker function.
+    Value: !Ref WorkerLogGroup
+  ApiLogGroupName:
+    Description: Log group of the API function.
+    Value: !Ref ApiLogGroup
+  AuthorizerLogGroupName:
+    Description: Log group of the authorizer function.
+    Value: !Ref AuthorizerLogGroup
+  AccessLogGroupName:
+    Description: Log group of the HTTP API access log.
+    Value: !Ref HttpApiAccessLogGroup

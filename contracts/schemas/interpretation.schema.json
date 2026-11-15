@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/interpretation.schema.json",
+  "title": "interpretation",
+  "description": "Output of the policy interpreter (POST /rules/interpret). It is a DRAFT: nothing here is active and nothing here changes a stored policy. Semantic rules (byb_contracts.validate_interpretation): every proposed rule has status PROPOSED; a proposed rule carries a number only when the user's own words contained it (threshold_source USER_WORDS with the quoted span, origin USER_STATED), otherwise origin SYSTEM_PROPOSED with a null threshold; the interpreter never emits FICTIONAL_SCENARIO rules; ambiguous language produces a clarification, never a 'contradiction'.",
+  "type": "object",
+  "required": ["schema_version", "interpretation_id", "persona_id", "created_at", "model_id", "original_words", "objectives", "proposed_rules", "unsupported", "clarifications"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "interpretation_id": { "$ref": "common.schema.json#/$defs/id" },
+    "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+    "created_at": { "$ref": "common.schema.json#/$defs/datetime" },
+    "model_id": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Application model that produced the draft; null for a canned or template result." },
+    "original_words": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The user's text, verbatim." },
+    "objectives": { "type": "array", "items": { "$ref": "objective.schema.json" } },
+    "proposed_rules": { "type": "array", "items": { "$ref": "rule.schema.json" } },
+    "unsupported": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["words", "code", "reason"], "additionalProperties": false,
+        "properties": {
+          "words": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The verbatim span that cannot be supported." },
+          "code": { "$ref": "common.schema.json#/$defs/unsupported_code", "description": "UNSUPPORTED_DEFINITION: e.g. 'oil producers' without a sourced classification. UNSUPPORTED_RULE_TYPE: no rule type measures this. OUT_OF_SCOPE: asks for advice, a forecast, a recommendation or a trade. INSTRUCTION_IGNORED: text that tries to instruct the system; treated as data." },
+          "reason": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+        }
+      }
+    },
+    "clarifications": { "type": "array", "items": { "$ref": "#/$defs/clarification" } }
+  },
+  "$defs": {
+    "clarification": {
+      "type": "object",
+      "required": ["clarification_id", "about_words", "question", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "clarification_id": { "$ref": "common.schema.json#/$defs/id" },
+        "about_words": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The verbatim span that is ambiguous." },
+        "question": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "options": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/clarification_option" } }
+      }
+    },
+    "clarification_option": {
+      "type": "object",
+      "required": ["option_id", "label", "description", "supported", "proposed_rule", "purchase_request"],
+      "additionalProperties": false,
+      "description": "Choosing an option needs no second model call: a supported option carries the draft it leads to. proposed_rule (status PROPOSED) for a rule clarification; purchase_request for a purchase clarification; both null when the option needs more input or is unsupported.",
+      "properties": {
+        "option_id": { "$ref": "common.schema.json#/$defs/id" },
+        "label": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "description": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "supported": { "type": "boolean", "description": "False for definitions we cannot evaluate yet; shown disabled with the reason in `description`." },
+        "proposed_rule": { "anyOf": [{ "type": "null" }, { "$ref": "rule.schema.json" }] },
+        "purchase_request": { "$ref": "purchase_request.schema.json#/$defs/nullable" }
+      }
+    },
+    "nullable_clarification": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/clarification" }] }
+  }
+}

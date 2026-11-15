@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/market_data.schema.json",
+  "title": "market_data",
+  "description": "File shape of data/processed/market_data.json. series holds [date, adj_close] pairs in the instrument's listing currency, strictly ascending by date, with no forward-fill (rows exist only on days a price was reported). adj_close is already adjusted for splits and dividends: use it as is for returns. fx_usdcad holds [date, CAD per 1 USD] pairs (Bank of Canada), strictly ascending, with no row on Canadian holidays: consumers take the latest rate on or before the date they value (backward match) and report its age in days.",
+  "type": "object",
+  "required": ["schema_version", "valuation_date", "prices", "fx_usdcad"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "valuation_date": { "$ref": "common.schema.json#/$defs/date" },
+    "prices": {
+      "type": "object",
+      "propertyNames": { "$ref": "common.schema.json#/$defs/instrument_id" },
+      "additionalProperties": {
+        "type": "object",
+        "required": ["currency", "series"],
+        "additionalProperties": false,
+        "properties": {
+          "currency": { "$ref": "common.schema.json#/$defs/currency" },
+          "series": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dated_value" } }
+        }
+      }
+    },
+    "fx_usdcad": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/dated_value" } }
+  },
+  "$defs": {
+    "dated_value": {
+      "type": "array",
+      "prefixItems": [{ "$ref": "common.schema.json#/$defs/date" }, { "type": "number", "exclusiveMinimum": 0 }],
+      "items": false,
+      "minItems": 2
+    }
+  }
+}

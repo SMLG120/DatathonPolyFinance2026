@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/holdings_snapshot.schema.json",
+  "title": "holdings_snapshot",
+  "description": "File shape of data/processed/holdings.json. Weights are fractions of the fund and are NEVER rescaled. coverage_fraction == sum(holdings.weight_fraction) (checked within 1e-8); n_holdings == len(holdings); each key equals fund_id. A fund that is absent from `funds` has no holdings file: its coverage is 0 and its whole portfolio weight is unknown exposure, never zero exposure (LEAD_DECISIONS D4). Holdings are a snapshot at holdings_date used for current look-through only, never as historical composition.",
+  "type": "object",
+  "required": ["schema_version", "funds"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "funds": { "type": "object", "propertyNames": { "$ref": "common.schema.json#/$defs/instrument_id" }, "additionalProperties": { "$ref": "#/$defs/fund" } }
+  },
+  "$defs": {
+    "fund": {
+      "type": "object",
+      "required": ["fund_id", "holdings_date", "publication_date", "retrieval_date", "source_id", "coverage_fraction", "non_constituent_weight", "n_holdings", "holdings"],
+      "additionalProperties": false,
+      "properties": {
+        "fund_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+        "holdings_date": { "$ref": "common.schema.json#/$defs/date", "description": "The 'as of' date printed in the issuer's file." },
+        "publication_date": { "$ref": "common.schema.json#/$defs/nullable_date", "description": "When the issuer published the file, if known." },
+        "retrieval_date": { "$ref": "common.schema.json#/$defs/date" },
+        "source_id": { "$ref": "common.schema.json#/$defs/source_id" },
+        "coverage_fraction": { "type": "number", "minimum": 0, "description": "Sum of the constituent weights held in `holdings`. Not capped at 1 in the schema because issuer rounding can exceed 1 slightly; the engine uses max(0, 1 - coverage_fraction) as the uncovered share." },
+        "non_constituent_weight": { "type": "number", "description": "Reported weight of lines that are not look-through constituents (cash, derivatives). Informational; it is part of the uncovered share." },
+        "non_constituent_note": { "type": "string", "description": "Optional free-text explanation written by the data pipeline." },
+        "n_holdings": { "type": "integer", "minimum": 0 },
+        "holdings": { "type": "array", "items": { "$ref": "#/$defs/holding" } }
+      }
+    },
+    "holding": {
+      "type": "object",
+      "required": ["fund_id", "issuer_id", "instrument_id", "name", "weight_fraction", "sector", "sector_source"],
+      "additionalProperties": false,
+      "properties": {
+        "fund_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+        "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
+        "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+        "name": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "weight_fraction": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 },
+        "sector": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Sector as reported for this constituent, or null. A null sector is an UNKNOWN classification: for a fund_reported_sector exclusion its weight counts toward the upper bound only." },
+        "sector_source": { "$ref": "common.schema.json#/$defs/nullable_source_id" }
+      }
+    }
+  }
+}

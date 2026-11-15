@@ -1,0 +1,24 @@
+== API https://3t4hod912l.execute-api.us-east-1.amazonaws.com   idempotency key e2e-20261114T235103Z-20935
+== 1. authentication
+PASS  POST without a token -> HTTP 401 in 0.074372s
+      {"message":"Unauthorized"}
+PASS  GET without a token -> HTTP 401 in 0.078129s
+      {"message":"Unauthorized"}
+PASS  POST with a wrong token -> HTTP 403 in 0.085460s
+      {"message":"Forbidden"}
+== 2. CORS preflight (no token)
+PASS  OPTIONS /investigations -> HTTP 204 in 0.070428s
+      access-control-allow-origin: *
+      access-control-allow-methods: GET,OPTIONS,POST
+      access-control-allow-headers: authorization,content-type,idempotency-key
+      access-control-max-age: 600
+      CORS headers on the 401: 1 access-control-allow-origin header(s)
+== 3. validation
+FAIL  POST with an invalid body -> HTTP 429 (expected 400) in 0.071933s
+      {"message":"Too Many Requests"}
+PASS  GET an unknown investigation -> HTTP 404 in 0.169338s
+      {"error":{"code":"INVESTIGATION_NOT_FOUND","message":"The service has no record of this investigation.","request_id":"G2sJVh1ooAMEPVg="}}
+== 4. create (202 only after the worker invocation was accepted)
+FAIL  POST /investigations -> HTTP 429 (expected 202) in 0.072760s
+      {"message":"Too Many Requests"}
+no investigation id returned; stopping

@@ -1,0 +1,146 @@
+{
+  "fixture": true,
+  "fixture_id": "confirm_robert_v1",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "Robert accepts both fictional-scenario rules with their scenario numbers unchanged: policy version 1 is created. The rules keep origin FICTIONAL_SCENARIO because the numbers were accepted as offered.",
+  "route": "POST /rules/confirm",
+  "http_status": 201,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "persona_id": "robert",
+    "policy_id": null,
+    "base_version": null,
+    "objectives": [
+      {
+        "objective_id": "obj-robert-1",
+        "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+        "kind": "goal",
+        "source": "FICTIONAL_SCENARIO",
+        "case_reference": "Case p.7"
+      }
+    ],
+    "confirmations": [
+      {
+        "rule": {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no more than 10% of the portfolio in any single company, funds included.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        "threshold": 0.1
+      },
+      {
+        "rule": {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: replayed through 2022, the portfolio should not end the year more than 10% lower.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        "threshold": 0.1
+      }
+    ],
+    "withdraw_rule_ids": [],
+    "change_note": "Fictional-scenario rules confirmed by the user."
+  },
+  "response_schema": "api.schema.json#/$defs/confirm_response",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-robert-demo",
+      "persona_id": "robert",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [
+        {
+          "objective_id": "obj-robert-1",
+          "original_words": "Preserve my capital while keeping some growth potential over the next 3 to 5 years.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.7"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: no more than 10% of the portfolio in any single company, funds included.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "parameters": {
+            "scenario_id": "replay_2022"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_loss_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: replayed through 2022, the portfolio should not end the year more than 10% lower.",
+          "objective_id": "obj-robert-1",
+          "scope_description": "Maximum terminal loss of the evaluated allocation replayed from 2021-12-31 to 2022-12-30 (buy and hold, cash earning 0, in CAD). This replays an assumed allocation through history: it is not a forecast and not a maximum future loss. Drawdown inside the period is reported separately and is not part of this rule.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Fictional-scenario rules confirmed by the user.",
+      "content_hash": "sha256:4b3f463c39645a8759e70b315f1818e905cb926edc7740d05fe54771fcdbbe1d"
+    }
+  }
+}

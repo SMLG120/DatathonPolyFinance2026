@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/controversy_record.schema.json",
+  "title": "controversy_record",
+  "description": "One dated, sourced controversy record about an issuer. `nature` separates an allegation from a finding. A sector label is never a controversy record. An issuer with no record is NOT ASSESSED: absence is UNKNOWN, never proof that no controversy exists (BUILD_BRIEF section 4).",
+  "type": "object",
+  "required": ["record_id", "issuer_id", "event_date", "nature", "summary", "source_ids", "coverage_note"],
+  "additionalProperties": false,
+  "properties": {
+    "record_id": { "$ref": "common.schema.json#/$defs/id" },
+    "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
+    "event_date": { "$ref": "common.schema.json#/$defs/date", "description": "Date of the event or decision, not the retrieval date." },
+    "nature": { "$ref": "common.schema.json#/$defs/controversy_nature" },
+    "summary": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Neutral summary faithful to the cited source." },
+    "source_ids": { "type": "array", "minItems": 1, "items": { "$ref": "common.schema.json#/$defs/source_id" } },
+    "coverage_note": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "What was and was not looked for regarding this issuer." }
+  },
+  "$defs": {
+    "registry": {
+      "title": "controversy_registry",
+      "description": "File shape of data/processed/controversies.json. registry_scope states what the registry covers; issuers outside issuers_researched were not researched at all.",
+      "type": "object",
+      "required": ["schema_version", "registry_scope", "records"],
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "registry_scope": {
+          "type": "object",
+          "required": ["purpose", "issuers_researched", "research_date", "absence_meaning", "source_policy", "not_evidence", "limits"],
+          "additionalProperties": false,
+          "properties": {
+            "purpose": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+            "issuers_researched": { "type": "array", "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/issuer_id" } },
+            "research_date": { "$ref": "common.schema.json#/$defs/date" },
+            "absence_meaning": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+            "source_policy": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+            "not_evidence": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+            "limits": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+          }
+        },
+        "records": { "type": "array", "items": { "$ref": "#" } }
+      }
+    }
+  }
+}

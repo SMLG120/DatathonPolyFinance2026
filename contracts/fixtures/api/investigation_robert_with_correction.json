@@ -1,0 +1,1620 @@
+{
+  "fixture": true,
+  "fixture_id": "investigation_robert_with_correction",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of SPY, XIU.TO, NVDA or any other instrument. Portfolio weights and thresholds are fictional-scenario values.",
+  "description": "The same finished investigation after the CORRECT_FACT challenge: result and evidence are identical; the correction is appended to proposed_corrections.",
+  "route": "GET /investigations/{id}",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>"
+  },
+  "request_body": null,
+  "response_schema": "investigation_job.schema.json",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "id": "inv-robert-0001",
+    "status": "SUCCEEDED",
+    "created_at": "2026-11-14T15:02:00Z",
+    "updated_at": "2026-11-14T15:02:27Z",
+    "deadline_at": "2026-11-14T15:04:00Z",
+    "expires_at": "2026-11-15T15:02:00Z",
+    "idempotency_key": "0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61",
+    "persona_id": "robert",
+    "policy_id": "pol-robert-demo",
+    "policy_version": 1,
+    "request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25,
+      "funding": "CASH",
+      "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+    },
+    "resolved_request": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25,
+      "funding": "CASH",
+      "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+    },
+    "parent_investigation_id": null,
+    "challenge": null,
+    "agent": {
+      "mode": "MODEL",
+      "model_id": "us.anthropic.claude-sonnet-5-5",
+      "tool_rounds": 4,
+      "note": null
+    },
+    "steps": [
+      {
+        "seq": 1,
+        "tool": "get_portfolio",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:03Z",
+        "finished_at": "2026-11-14T15:02:05Z",
+        "status": "OK",
+        "input_summary": "Persona robert.",
+        "result_summary": "Fictional portfolio loaded: 5 positions, 30.0% cash, valuation date 2026-11-12.",
+        "evidence_ids": [
+          "ev-cash-start",
+          "ev-w-spy",
+          "ev-w-xiu",
+          "ev-w-ry"
+        ]
+      },
+      {
+        "seq": 2,
+        "tool": "get_policy",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:06Z",
+        "finished_at": "2026-11-14T15:02:08Z",
+        "status": "OK",
+        "input_summary": "Policy pol-robert-demo, version 1.",
+        "result_summary": "2 confirmed rules: single-company limit 10.0%; 2022 loss budget 10.0%.",
+        "evidence_ids": [
+          "ev-cap-threshold",
+          "ev-budget-threshold"
+        ]
+      },
+      {
+        "seq": 3,
+        "tool": "simulate_change",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:09Z",
+        "finished_at": "2026-11-14T15:02:11Z",
+        "status": "OK",
+        "input_summary": "NVDA to a final direct weight of 25.0%, funded from cash.",
+        "result_summary": "Additional purchase 25.0%; cash after the purchase 5.0%; feasible.",
+        "evidence_ids": [
+          "ev-w-nvda-start",
+          "ev-w-nvda-target",
+          "ev-cash-after"
+        ]
+      },
+      {
+        "seq": 4,
+        "tool": "get_holdings",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:12Z",
+        "finished_at": "2026-11-14T15:02:14Z",
+        "status": "OK",
+        "input_summary": "Funds SPY and XIU.TO.",
+        "result_summary": "SPY: 8 constituents, 100.0% covered, as of 2026-11-12. XIU.TO: 4 constituents, 98.0% covered, as of 2026-11-12.",
+        "evidence_ids": [
+          "ev-spy-coverage",
+          "ev-xiu-coverage",
+          "ev-spy-nvda-weight"
+        ]
+      },
+      {
+        "seq": 5,
+        "tool": "compute_exposure",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:15Z",
+        "finished_at": "2026-11-14T15:02:17Z",
+        "status": "OK",
+        "input_summary": "Company NVIDIA, portfolio after the purchase.",
+        "result_summary": "NVIDIA: 25.0% direct + 1.2% through SPY = 26.2%; up to 26.4% counting the uncovered part of XIU.TO.",
+        "evidence_ids": [
+          "ev-nvda-via-spy",
+          "ev-nvda-lower",
+          "ev-nvda-upper",
+          "ev-xiu-unattributed"
+        ]
+      },
+      {
+        "seq": 6,
+        "tool": "replay_period",
+        "initiated_by": "MODEL",
+        "started_at": "2026-11-14T15:02:18Z",
+        "finished_at": "2026-11-14T15:02:20Z",
+        "status": "OK",
+        "input_summary": "Scenario replay_2022, portfolio after the purchase.",
+        "result_summary": "Terminal return -15.25% (-6.50% before the purchase); deepest drawdown -22.35%.",
+        "evidence_ids": [
+          "ev-scn-prop-return",
+          "ev-scn-start-return",
+          "ev-scn-prop-dd",
+          "ev-ret-nvda"
+        ]
+      },
+      {
+        "seq": 7,
+        "tool": "check_rules",
+        "initiated_by": "SERVER",
+        "started_at": "2026-11-14T15:02:21Z",
+        "finished_at": "2026-11-14T15:02:23Z",
+        "status": "OK",
+        "input_summary": "Every confirmed rule of policy version 1.",
+        "result_summary": "2 rules evaluated: 0 PASS, 2 FAIL, 0 UNKNOWN.",
+        "evidence_ids": [
+          "ev-cap-gap",
+          "ev-budget-gap"
+        ]
+      },
+      {
+        "seq": 8,
+        "tool": "max_compliant_amount",
+        "initiated_by": "SERVER",
+        "started_at": "2026-11-14T15:02:24Z",
+        "finished_at": "2026-11-14T15:02:26Z",
+        "status": "OK",
+        "input_summary": "NVDA, cash funding, every confirmed rule.",
+        "result_summary": "Maximum compliant final direct weight 8.6% (additional purchase 8.6%); the single-company limit binds; verified by re-run.",
+        "evidence_ids": [
+          "ev-max-final",
+          "ev-max-added"
+        ]
+      }
+    ],
+    "clarification": null,
+    "result": {
+      "schema_version": "1.0.0",
+      "persona_id": "robert",
+      "portfolio_id": "pf-robert-fictional-1",
+      "policy_id": "pol-robert-demo",
+      "policy_version": 1,
+      "preview": false,
+      "calculation_version": "fixture-calc-1.0.0",
+      "valuation_date": "2026-11-12",
+      "purchase_request": {
+        "instrument_id": "NVDA",
+        "target_direct_weight": 0.25,
+        "funding": "CASH",
+        "original_words": "Everyone is talking about Nvidia. I want it to be 25% of my portfolio."
+      },
+      "execution": {
+        "status": "OK",
+        "code": null,
+        "message": null
+      },
+      "feasibility": {
+        "funding": "CASH",
+        "starting_direct_weight": 0.0,
+        "target_direct_weight": 0.25,
+        "additional_purchase": 0.25,
+        "cash_before": 0.3,
+        "cash_after": 0.05,
+        "status": "FEASIBLE"
+      },
+      "policy_consistency": {
+        "status": "CONSISTENT",
+        "conflicts": []
+      },
+      "rule_results": [
+        {
+          "rule_id": "robert-issuer-cap-1",
+          "rule_type": "max_issuer_exposure",
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.262,
+            "upper": 0.264
+          },
+          "limit": 0.1,
+          "gap": 0.162,
+          "breaching_subjects": [
+            {
+              "subject_kind": "ISSUER",
+              "subject_id": "NVIDIA",
+              "lower": 0.262,
+              "upper": 0.264
+            }
+          ],
+          "out_of_scope": [
+            {
+              "instrument_id": "XBB.TO",
+              "weight": 0.3,
+              "reason": "Bond fund: outside the scope of the company-exposure rules; not assessed."
+            }
+          ],
+          "unknown_causes": [
+            "PARTIAL_HOLDINGS"
+          ],
+          "starting": {
+            "status": "PASS",
+            "measured": {
+              "lower": 0.058,
+              "upper": 0.06
+            }
+          },
+          "evidence_ids": [
+            "ev-nvda-lower",
+            "ev-nvda-upper",
+            "ev-cap-threshold",
+            "ev-cap-gap",
+            "ev-xiu-unattributed"
+          ],
+          "reason": "Total exposure to NVIDIA after the purchase is between 26.2% and 26.4% of the portfolio (25.0% direct, 1.2% through SPY, up to 0.2% that the incomplete XIU.TO holdings cannot rule out). The confirmed limit is 10.0%: the rule fails by 16.2 percentage points."
+        },
+        {
+          "rule_id": "robert-loss-budget-1",
+          "rule_type": "scenario_loss_budget",
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.1525,
+            "upper": 0.1525
+          },
+          "limit": 0.1,
+          "gap": 0.0525,
+          "breaching_subjects": [],
+          "out_of_scope": [],
+          "unknown_causes": [],
+          "starting": {
+            "status": "PASS",
+            "measured": {
+              "lower": 0.065,
+              "upper": 0.065
+            }
+          },
+          "evidence_ids": [
+            "ev-scn-prop-loss",
+            "ev-budget-threshold",
+            "ev-budget-gap",
+            "ev-scn-prop-return"
+          ],
+          "reason": "Replayed through 2022, the allocation after the purchase ends 15.25% lower; the confirmed budget is a 10.0% loss. The rule fails by 5.25 percentage points. This replays an assumed allocation through history and is not a forecast."
+        }
+      ],
+      "rules_not_evaluated": [],
+      "starting_portfolio_findings": [],
+      "data_coverage": [
+        {
+          "fund_id": "SPY",
+          "portfolio_weight": 0.2,
+          "coverage_fraction": 1.0,
+          "sector_labelled_fraction": 0.0,
+          "uncovered_portfolio_weight": 0.0,
+          "status": "COVERED",
+          "holdings_date": "2026-11-12",
+          "source_id": "SYNTHETIC_FIXTURE"
+        },
+        {
+          "fund_id": "XIU.TO",
+          "portfolio_weight": 0.1,
+          "coverage_fraction": 0.98,
+          "sector_labelled_fraction": 0.0,
+          "uncovered_portfolio_weight": 0.002,
+          "status": "PARTIAL",
+          "holdings_date": "2026-11-12",
+          "source_id": "SYNTHETIC_FIXTURE"
+        }
+      ],
+      "scenario": {
+        "scenario_id": "replay_2022",
+        "label": "Replay of the assumed allocation through calendar 2022 (historical replay, not a forecast)",
+        "base_date": "2021-12-31",
+        "end_date": "2022-12-30",
+        "status": "COMPUTED",
+        "starting": {
+          "scenario_terminal_return": -0.065,
+          "scenario_max_drawdown": -0.0985,
+          "max_drawdown_date": "2022-06-30"
+        },
+        "proposed": {
+          "scenario_terminal_return": -0.1525,
+          "scenario_max_drawdown": -0.2235,
+          "max_drawdown_date": "2022-06-30"
+        },
+        "target_instrument_return": -0.35,
+        "instrument_returns": [
+          {
+            "instrument_id": "XBB.TO",
+            "currency": "CAD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": null,
+            "end_fx_date": null,
+            "base_fx_age_days": null,
+            "end_fx_age_days": null,
+            "return_cad": -0.1
+          },
+          {
+            "instrument_id": "SPY",
+            "currency": "USD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": "2021-12-31",
+            "end_fx_date": "2022-12-30",
+            "base_fx_age_days": 0,
+            "end_fx_age_days": 0,
+            "return_cad": -0.155
+          },
+          {
+            "instrument_id": "XIU.TO",
+            "currency": "CAD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": null,
+            "end_fx_date": null,
+            "base_fx_age_days": null,
+            "end_fx_age_days": null,
+            "return_cad": -0.05
+          },
+          {
+            "instrument_id": "RY.TO",
+            "currency": "CAD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": null,
+            "end_fx_date": null,
+            "base_fx_age_days": null,
+            "end_fx_age_days": null,
+            "return_cad": -0.02
+          },
+          {
+            "instrument_id": "JNJ",
+            "currency": "USD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": "2021-12-31",
+            "end_fx_date": "2022-12-30",
+            "base_fx_age_days": 0,
+            "end_fx_age_days": 0,
+            "return_cad": 0.04
+          },
+          {
+            "instrument_id": "NVDA",
+            "currency": "USD",
+            "base_price_date": "2021-12-31",
+            "end_price_date": "2022-12-30",
+            "base_price_age_days": 0,
+            "end_price_age_days": 0,
+            "base_fx_date": "2021-12-31",
+            "end_fx_date": "2022-12-30",
+            "base_fx_age_days": 0,
+            "end_fx_age_days": 0,
+            "return_cad": -0.35
+          }
+        ],
+        "missing_instruments": [],
+        "assumptions": [
+          "Initial weights are the evaluated allocation, applied at the base date.",
+          "Buy and hold: no rebalancing during the period.",
+          "Cash earns a return of 0 (no interest credited).",
+          "Each instrument uses its own adjusted-close series; a fund uses the fund's series, not its constituents.",
+          "USD prices are converted to CAD with the latest Bank of Canada rate on or before each valuation date.",
+          "A price or rate more than 7 days older than the base or end date is not used: the result is then unknown.",
+          "Fees and taxes are excluded."
+        ],
+        "evidence_ids": [
+          "ev-scn-start-return",
+          "ev-scn-prop-return",
+          "ev-scn-start-dd",
+          "ev-scn-prop-dd",
+          "ev-ret-nvda"
+        ]
+      },
+      "goal_context": [
+        {
+          "objective_id": "obj-robert-1",
+          "context_type": "LINKED_RULE_RESULTS",
+          "text": "Two rules are linked to this objective as context: the single-company limit (FAIL) and the 2022 loss budget (FAIL). The objective itself is qualitative and has no PASS or FAIL.",
+          "evidence_ids": [
+            "ev-cap-gap",
+            "ev-budget-gap"
+          ]
+        },
+        {
+          "objective_id": "obj-robert-1",
+          "context_type": "CONCENTRATION",
+          "text": "Largest single-company exposure: 5.8% to 6.0% (Royal Bank of Canada) before the purchase, 26.2% to 26.4% (NVIDIA) after it.",
+          "evidence_ids": [
+            "ev-ry-lower-start",
+            "ev-ry-upper-start",
+            "ev-nvda-lower",
+            "ev-nvda-upper"
+          ]
+        },
+        {
+          "objective_id": "obj-robert-1",
+          "context_type": "SCENARIO_DRAWDOWN",
+          "text": "Deepest fall inside the 2022 replay: 9.85% before the purchase, 22.35% after it. Context only; drawdown is not one of the rules.",
+          "evidence_ids": [
+            "ev-scn-start-dd",
+            "ev-scn-prop-dd"
+          ]
+        }
+      ],
+      "max_compliant": {
+        "status": "SUPPORTED",
+        "final_direct_weight": 0.086,
+        "additional_purchase": 0.086,
+        "binding_constraint": {
+          "type": "RULE",
+          "rule_id": "robert-issuer-cap-1"
+        },
+        "verified_by_rerun": true,
+        "reason": "The largest final direct weight of NVDA that passes every confirmed rule with cash funding is 8.6% (an additional purchase of 8.6%). The single-company limit binds first. Verified by re-running the same checks at that weight.",
+        "evidence_ids": [
+          "ev-max-final",
+          "ev-max-added"
+        ]
+      },
+      "exposure": {
+        "possible_extra": {
+          "starting": 0.002,
+          "proposed": 0.002
+        },
+        "issuers": [
+          {
+            "issuer_id": "NVIDIA",
+            "name": "NVIDIA",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.012
+                }
+              ],
+              "lower": 0.012,
+              "upper": 0.014
+            },
+            "proposed": {
+              "direct": 0.25,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.012
+                }
+              ],
+              "lower": 0.262,
+              "upper": 0.264
+            }
+          },
+          {
+            "issuer_id": "ROYAL_BANK_OF_CANADA",
+            "name": "Royal Bank of Canada",
+            "starting": {
+              "direct": 0.05,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.008
+                }
+              ],
+              "lower": 0.058,
+              "upper": 0.06
+            },
+            "proposed": {
+              "direct": 0.05,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.008
+                }
+              ],
+              "lower": 0.058,
+              "upper": 0.06
+            }
+          },
+          {
+            "issuer_id": "JOHNSON_AND_JOHNSON",
+            "name": "Johnson & Johnson",
+            "starting": {
+              "direct": 0.05,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.002
+                }
+              ],
+              "lower": 0.052,
+              "upper": 0.054
+            },
+            "proposed": {
+              "direct": 0.05,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.002
+                }
+              ],
+              "lower": 0.052,
+              "upper": 0.054
+            }
+          },
+          {
+            "issuer_id": "SYN_US_ISSUER_1",
+            "name": "Synthetic U.S. filler company 1",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            }
+          },
+          {
+            "issuer_id": "SYN_US_ISSUER_2",
+            "name": "Synthetic U.S. filler company 2",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            }
+          },
+          {
+            "issuer_id": "SYN_US_ISSUER_3",
+            "name": "Synthetic U.S. filler company 3",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            }
+          },
+          {
+            "issuer_id": "SYN_US_ISSUER_4",
+            "name": "Synthetic U.S. filler company 4",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "SPY",
+                  "known": 0.04
+                }
+              ],
+              "lower": 0.04,
+              "upper": 0.042
+            }
+          },
+          {
+            "issuer_id": "SYN_CA_ISSUER_1",
+            "name": "Synthetic Canadian filler company 1",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            }
+          },
+          {
+            "issuer_id": "SYN_CA_ISSUER_2",
+            "name": "Synthetic Canadian filler company 2",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            }
+          },
+          {
+            "issuer_id": "SYN_CA_ISSUER_3",
+            "name": "Synthetic Canadian filler company 3",
+            "starting": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            },
+            "proposed": {
+              "direct": 0.0,
+              "indirect_by_fund": [
+                {
+                  "fund_id": "XIU.TO",
+                  "known": 0.03
+                }
+              ],
+              "lower": 0.03,
+              "upper": 0.032
+            }
+          }
+        ],
+        "selection_note": "Shown: the company being bought, companies named by a rule or causing a breach, then the largest company exposures after the purchase. At most 10 companies, largest first."
+      },
+      "evidence": [
+        {
+          "evidence_id": "ev-w-nvda-start",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.0,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "NVDA",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-nvda-target",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.25,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "NVDA",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "Hypothetical purchase requested by the user; not executed."
+          ],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-spy",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.2,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "SPY",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-xiu",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.1,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "XIU.TO",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-w-ry",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "position_weight",
+          "value": 0.05,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "RY.TO",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-cash-start",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "cash_weight",
+          "value": 0.3,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-cash-after",
+          "label": "CALCULATION",
+          "metric_id": "cash_after_purchase",
+          "value": 0.05,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "Funded from cash; fees and taxes excluded."
+          ],
+          "derived_from": [
+            "ev-cash-start",
+            "ev-w-nvda-start",
+            "ev-w-nvda-target"
+          ],
+          "formula": "0.30 - (0.25 - 0.00) = 0.05",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-spy-nvda-weight",
+          "label": "FACT",
+          "metric_id": "fund_constituent_weight",
+          "value": 0.06,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "NVIDIA",
+            "via_fund_id": "SPY",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-ry-weight",
+          "label": "FACT",
+          "metric_id": "fund_constituent_weight",
+          "value": 0.08,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ROYAL_BANK_OF_CANADA",
+            "via_fund_id": "XIU.TO",
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-spy-coverage",
+          "label": "CALCULATION",
+          "metric_id": "fund_coverage_fraction",
+          "value": 1.0,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "FUND",
+            "id": "SPY",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": "sum of the reported constituent weights = 1.00",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-coverage",
+          "label": "CALCULATION",
+          "metric_id": "fund_coverage_fraction",
+          "value": 0.98,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "FUND",
+            "id": "XIU.TO",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": "sum of the reported constituent weights = 0.98",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-xiu-unattributed",
+          "label": "CALCULATION",
+          "metric_id": "unattributed_fund_weight",
+          "value": 0.002,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "FUND",
+            "id": "XIU.TO",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "The part of a fund not covered by its holdings file could be any issuer; it is never treated as zero."
+          ],
+          "derived_from": [
+            "ev-w-xiu",
+            "ev-xiu-coverage"
+          ],
+          "formula": "0.10 x (1 - 0.98) = 0.002",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-nvda-via-spy",
+          "label": "CALCULATION",
+          "metric_id": "issuer_exposure_via_fund",
+          "value": 0.012,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "NVIDIA",
+            "via_fund_id": "SPY",
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-spy",
+            "ev-spy-nvda-weight"
+          ],
+          "formula": "0.20 x 0.06 = 0.012",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-nvda-lower",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.262,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "NVIDIA",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-nvda-target",
+            "ev-nvda-via-spy"
+          ],
+          "formula": "0.25 + 0.012 = 0.262",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-nvda-upper",
+          "label": "CALCULATION",
+          "metric_id": "exposure_upper",
+          "value": 0.264,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "NVIDIA",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-nvda-lower",
+            "ev-xiu-unattributed"
+          ],
+          "formula": "0.262 + 0.002 = 0.264",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-ry-lower-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_lower",
+          "value": 0.058,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ROYAL_BANK_OF_CANADA",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-w-ry",
+            "ev-w-xiu",
+            "ev-xiu-ry-weight"
+          ],
+          "formula": "0.05 + 0.10 x 0.08 = 0.058",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-ry-upper-start",
+          "label": "CALCULATION",
+          "metric_id": "exposure_upper",
+          "value": 0.06,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "ISSUER",
+            "id": "ROYAL_BANK_OF_CANADA",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-ry-lower-start",
+            "ev-xiu-unattributed"
+          ],
+          "formula": "0.058 + 0.002 = 0.060",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-cap-threshold",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "rule_threshold",
+          "value": 0.1,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "robert-issuer-cap-1",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-cap-gap",
+          "label": "CALCULATION",
+          "metric_id": "gap_to_limit",
+          "value": 0.162,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "robert-issuer-cap-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-nvda-lower",
+            "ev-nvda-upper",
+            "ev-cap-threshold"
+          ],
+          "formula": "0.262 - 0.10 = 0.162",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-budget-threshold",
+          "label": "FICTIONAL_SCENARIO",
+          "metric_id": "rule_threshold",
+          "value": 0.1,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "robert-loss-budget-1",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [],
+          "formula": null,
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-ret-nvda",
+          "label": "CALCULATION",
+          "metric_id": "scenario_instrument_return",
+          "value": -0.35,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "NVDA",
+            "via_fund_id": null,
+            "portfolio_state": "NOT_APPLICABLE"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "USD prices converted to CAD with the latest Bank of Canada rate on or before each date."
+          ],
+          "derived_from": [],
+          "formula": "(50 x 1.30) / (80 x 1.25) - 1 = -0.35",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-scn-start-return",
+          "label": "CALCULATION",
+          "metric_id": "scenario_terminal_return",
+          "value": -0.065,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "Initial weights are the evaluated allocation, applied at the base date.",
+            "Buy and hold: no rebalancing during the period.",
+            "Cash earns a return of 0 (no interest credited).",
+            "Each instrument uses its own adjusted-close series; a fund uses the fund's series, not its constituents.",
+            "USD prices are converted to CAD with the latest Bank of Canada rate on or before each valuation date.",
+            "A price or rate more than 7 days older than the base or end date is not used: the result is then unknown.",
+            "Fees and taxes are excluded."
+          ],
+          "derived_from": [],
+          "formula": "0.30 x (-0.10) + 0.20 x (-0.155) + 0.10 x (-0.05) + 0.05 x (-0.02) + 0.05 x 0.04 + 0.30 x 0 = -0.065",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-scn-prop-return",
+          "label": "CALCULATION",
+          "metric_id": "scenario_terminal_return",
+          "value": -0.1525,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [],
+          "assumptions": [
+            "Initial weights are the evaluated allocation, applied at the base date.",
+            "Buy and hold: no rebalancing during the period.",
+            "Cash earns a return of 0 (no interest credited).",
+            "Each instrument uses its own adjusted-close series; a fund uses the fund's series, not its constituents.",
+            "USD prices are converted to CAD with the latest Bank of Canada rate on or before each valuation date.",
+            "A price or rate more than 7 days older than the base or end date is not used: the result is then unknown.",
+            "Fees and taxes are excluded."
+          ],
+          "derived_from": [
+            "ev-scn-start-return",
+            "ev-ret-nvda",
+            "ev-w-nvda-start",
+            "ev-w-nvda-target"
+          ],
+          "formula": "-0.065 + (0.25 - 0.00) x (-0.35) = -0.1525",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-scn-prop-loss",
+          "label": "CALCULATION",
+          "metric_id": "scenario_loss",
+          "value": 0.1525,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-scn-prop-return"
+          ],
+          "formula": "-(-0.1525) = 0.1525",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-budget-gap",
+          "label": "CALCULATION",
+          "metric_id": "gap_to_limit",
+          "value": 0.0525,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "RULE",
+            "id": "robert-loss-budget-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-scn-prop-loss",
+            "ev-budget-threshold"
+          ],
+          "formula": "0.1525 - 0.10 = 0.0525",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-scn-start-dd",
+          "label": "CALCULATION",
+          "metric_id": "scenario_max_drawdown",
+          "value": -0.0985,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "STARTING"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "Context only: drawdown is not a rule."
+          ],
+          "derived_from": [],
+          "formula": "lowest value 0.9015 on 2022-06-30 against a running maximum of 1.0000",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-scn-prop-dd",
+          "label": "CALCULATION",
+          "metric_id": "scenario_max_drawdown",
+          "value": -0.2235,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "PORTFOLIO",
+            "id": "pf-robert-fictional-1",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "RANGE",
+            "start_date": "2021-12-31",
+            "end_date": "2022-12-30"
+          },
+          "source_ids": [
+            "SYNTHETIC_FIXTURE"
+          ],
+          "assumptions": [
+            "Context only: drawdown is not a rule."
+          ],
+          "derived_from": [],
+          "formula": "lowest value 0.7765 on 2022-06-30 against a running maximum of 1.0000",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-max-final",
+          "label": "CALCULATION",
+          "metric_id": "max_compliant_final_weight",
+          "value": 0.086,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "NVDA",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-cap-threshold",
+            "ev-nvda-via-spy",
+            "ev-xiu-unattributed",
+            "ev-budget-threshold",
+            "ev-scn-start-return",
+            "ev-ret-nvda",
+            "ev-cash-start"
+          ],
+          "formula": "min(cap: 0.10 - 0.012 - 0.002 = 0.086; budget: (0.10 - 0.065) / 0.35 = 0.100; cash: 0.00 + 0.30 = 0.300) = 0.086",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        },
+        {
+          "evidence_id": "ev-max-added",
+          "label": "CALCULATION",
+          "metric_id": "max_compliant_additional_purchase",
+          "value": 0.086,
+          "unit": "fraction",
+          "currency": null,
+          "subject": {
+            "kind": "INSTRUMENT",
+            "id": "NVDA",
+            "via_fund_id": null,
+            "portfolio_state": "PROPOSED"
+          },
+          "period": {
+            "type": "AS_OF",
+            "date": "2026-11-12"
+          },
+          "source_ids": [],
+          "assumptions": [],
+          "derived_from": [
+            "ev-max-final",
+            "ev-w-nvda-start"
+          ],
+          "formula": "0.086 - 0.000 = 0.086",
+          "calculation_version": "fixture-calc-1.0.0",
+          "policy_version": 1
+        }
+      ],
+      "summary": {
+        "headline": "HAS_FAIL",
+        "counts": {
+          "pass": 0,
+          "fail": 2,
+          "unknown": 0
+        },
+        "rules_evaluated": 2,
+        "rules_not_evaluated": 0,
+        "starting_portfolio_breaches": 0,
+        "feasibility_status": "FEASIBLE"
+      },
+      "disclosures": [
+        "Simulation only: fictional portfolio, no real transaction, not personalized financial advice.",
+        "The purchase is funded from existing cash; every other position is unchanged. Selling, shorting and leverage are not supported.",
+        "Fees and taxes are excluded.",
+        "Fund look-through uses a dated holdings snapshot; it is not the fund's historical composition.",
+        "Historical replays describe the past. They are not forecasts and do not guarantee future results."
+      ]
+    },
+    "explanation": [
+      {
+        "statement_id": "st-1",
+        "text": "Total exposure to NVIDIA after the purchase is between 26.2% and 26.4% of the portfolio (25.0% direct, 1.2% through SPY, up to 0.2% that the incomplete XIU.TO holdings cannot rule out). The confirmed limit is 10.0%: the rule fails by 16.2 percentage points.",
+        "evidence_ids": [
+          "ev-nvda-lower",
+          "ev-nvda-upper",
+          "ev-cap-threshold",
+          "ev-cap-gap",
+          "ev-xiu-unattributed"
+        ],
+        "rendered_by": "TEMPLATE"
+      },
+      {
+        "statement_id": "st-2",
+        "text": "Replayed through 2022, the allocation after the purchase ends 15.25% lower; the confirmed budget is a 10.0% loss. The rule fails by 5.25 percentage points. This replays an assumed allocation through history and is not a forecast.",
+        "evidence_ids": [
+          "ev-scn-prop-loss",
+          "ev-budget-threshold",
+          "ev-budget-gap",
+          "ev-scn-prop-return"
+        ],
+        "rendered_by": "TEMPLATE"
+      },
+      {
+        "statement_id": "st-3",
+        "text": "The largest final direct weight of NVDA that passes every confirmed rule with cash funding is 8.6% (an additional purchase of 8.6%). The single-company limit binds first. Verified by re-running the same checks at that weight.",
+        "evidence_ids": [
+          "ev-max-final",
+          "ev-max-added"
+        ],
+        "rendered_by": "TEMPLATE"
+      },
+      {
+        "statement_id": "st-4",
+        "text": "You asked for NVIDIA at 25% of the portfolio. Your stated goal, to preserve capital while keeping some growth potential, is qualitative and is not scored. What can be measured is concentration: the purchase would make NVIDIA your largest single-company exposure, at 26.2% to 26.4% of the portfolio, where the largest one today is 5.8% to 6.0%.",
+        "evidence_ids": [
+          "ev-w-nvda-target",
+          "ev-nvda-lower",
+          "ev-nvda-upper",
+          "ev-ry-lower-start",
+          "ev-ry-upper-start"
+        ],
+        "rendered_by": "MODEL_VALIDATED"
+      },
+      {
+        "statement_id": "st-5",
+        "text": "This is a simulation on a fictional portfolio. It is not advice, and no trade is made.",
+        "evidence_ids": [],
+        "rendered_by": "TEMPLATE"
+      }
+    ],
+    "failure": null,
+    "proposed_corrections": [
+      {
+        "correction_id": "corr-robert-0001",
+        "challenge_id": "ch-robert-0002",
+        "investigation_id": "inv-robert-0001",
+        "evidence_id": "ev-spy-nvda-weight",
+        "original_value": 0.06,
+        "original_unit": "fraction",
+        "asserted_value": 0.08,
+        "asserted_unit": "fraction",
+        "provenance": {
+          "asserted_by": "USER",
+          "asserted_at": "2026-11-14T15:09:00Z",
+          "user_note": "The fund fact sheet I have shows a higher NVIDIA weight in SPY.",
+          "user_source": "SPY fact sheet, user's own copy (not retrieved by the system)"
+        },
+        "status": "UNVERIFIED",
+        "applied_to_calculation": false
+      }
+    ]
+  }
+}

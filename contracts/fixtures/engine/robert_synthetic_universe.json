@@ -1,0 +1,465 @@
+{
+  "fixture": true,
+  "universe_id": "robert_synthetic_universe",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. The instrument ids are Robert's real D7 holdings, but the SPY and XIU.TO constituent weights and every 2022 price and FX rate here are INVENTED. They are NOT the real holdings or prices of SPY, XIU.TO or any company.",
+  "instruments": {
+    "schema_version": "1.0.0",
+    "instruments": {
+      "XBB.TO": {
+        "instrument_id": "XBB.TO",
+        "issuer_id": "XBB.TO",
+        "name": "iShares Core Canadian Universe Bond Index ETF",
+        "asset_class": "etf_bond",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": false,
+        "sector": "Bonds (Canada aggregate)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SPY": {
+        "instrument_id": "SPY",
+        "issuer_id": "SPY",
+        "name": "SPDR S&P 500 ETF Trust",
+        "asset_class": "etf_equity",
+        "currency": "USD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (U.S.)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "XIU.TO": {
+        "instrument_id": "XIU.TO",
+        "issuer_id": "XIU.TO",
+        "name": "iShares S&P/TSX 60 Index ETF",
+        "asset_class": "etf_equity",
+        "currency": "CAD",
+        "is_fund": true,
+        "equity_scope": true,
+        "sector": "Broad market (Canada)",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "RY.TO": {
+        "instrument_id": "RY.TO",
+        "issuer_id": "ROYAL_BANK_OF_CANADA",
+        "name": "Royal Bank of Canada",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Financials",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "JNJ": {
+        "instrument_id": "JNJ",
+        "issuer_id": "JOHNSON_AND_JOHNSON",
+        "name": "Johnson & Johnson",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Health Care",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "NVDA": {
+        "instrument_id": "NVDA",
+        "issuer_id": "NVIDIA",
+        "name": "NVIDIA",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Information Technology",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "AAPL": {
+        "instrument_id": "AAPL",
+        "issuer_id": "APPLE",
+        "name": "Apple",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Information Technology",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "MSFT": {
+        "instrument_id": "MSFT",
+        "issuer_id": "MICROSOFT",
+        "name": "Microsoft",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": "Information Technology",
+        "sector_source": "SYNTHETIC_FIXTURE"
+      },
+      "SYN_US1": {
+        "instrument_id": "SYN_US1",
+        "issuer_id": "SYN_US_ISSUER_1",
+        "name": "Synthetic U.S. filler company 1",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_US2": {
+        "instrument_id": "SYN_US2",
+        "issuer_id": "SYN_US_ISSUER_2",
+        "name": "Synthetic U.S. filler company 2",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_US3": {
+        "instrument_id": "SYN_US3",
+        "issuer_id": "SYN_US_ISSUER_3",
+        "name": "Synthetic U.S. filler company 3",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_US4": {
+        "instrument_id": "SYN_US4",
+        "issuer_id": "SYN_US_ISSUER_4",
+        "name": "Synthetic U.S. filler company 4",
+        "asset_class": "equity",
+        "currency": "USD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_CA1": {
+        "instrument_id": "SYN_CA1",
+        "issuer_id": "SYN_CA_ISSUER_1",
+        "name": "Synthetic Canadian filler company 1",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_CA2": {
+        "instrument_id": "SYN_CA2",
+        "issuer_id": "SYN_CA_ISSUER_2",
+        "name": "Synthetic Canadian filler company 2",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      },
+      "SYN_CA3": {
+        "instrument_id": "SYN_CA3",
+        "issuer_id": "SYN_CA_ISSUER_3",
+        "name": "Synthetic Canadian filler company 3",
+        "asset_class": "equity",
+        "currency": "CAD",
+        "is_fund": false,
+        "equity_scope": true,
+        "sector": null,
+        "sector_source": null
+      }
+    }
+  },
+  "holdings": {
+    "schema_version": "1.0.0",
+    "funds": {
+      "SPY": {
+        "fund_id": "SPY",
+        "holdings_date": "2026-11-12",
+        "publication_date": null,
+        "retrieval_date": "2026-11-14",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "coverage_fraction": 1.0,
+        "non_constituent_weight": 0.0,
+        "n_holdings": 8,
+        "holdings": [
+          {
+            "fund_id": "SPY",
+            "issuer_id": "NVIDIA",
+            "instrument_id": "NVDA",
+            "name": "NVIDIA (synthetic weight)",
+            "weight_fraction": 0.06,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "APPLE",
+            "instrument_id": "AAPL",
+            "name": "Apple (synthetic weight)",
+            "weight_fraction": 0.07,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "MICROSOFT",
+            "instrument_id": "MSFT",
+            "name": "Microsoft (synthetic weight)",
+            "weight_fraction": 0.06,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "JOHNSON_AND_JOHNSON",
+            "instrument_id": "JNJ",
+            "name": "Johnson & Johnson (synthetic weight)",
+            "weight_fraction": 0.01,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "SYN_US_ISSUER_1",
+            "instrument_id": "SYN_US1",
+            "name": "Synthetic U.S. filler company 1",
+            "weight_fraction": 0.2,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "SYN_US_ISSUER_2",
+            "instrument_id": "SYN_US2",
+            "name": "Synthetic U.S. filler company 2",
+            "weight_fraction": 0.2,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "SYN_US_ISSUER_3",
+            "instrument_id": "SYN_US3",
+            "name": "Synthetic U.S. filler company 3",
+            "weight_fraction": 0.2,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "SPY",
+            "issuer_id": "SYN_US_ISSUER_4",
+            "instrument_id": "SYN_US4",
+            "name": "Synthetic U.S. filler company 4",
+            "weight_fraction": 0.2,
+            "sector": null,
+            "sector_source": null
+          }
+        ]
+      },
+      "XIU.TO": {
+        "fund_id": "XIU.TO",
+        "holdings_date": "2026-11-12",
+        "publication_date": null,
+        "retrieval_date": "2026-11-14",
+        "source_id": "SYNTHETIC_FIXTURE",
+        "coverage_fraction": 0.98,
+        "non_constituent_weight": 0.0,
+        "n_holdings": 4,
+        "holdings": [
+          {
+            "fund_id": "XIU.TO",
+            "issuer_id": "ROYAL_BANK_OF_CANADA",
+            "instrument_id": "RY.TO",
+            "name": "Royal Bank of Canada (synthetic weight)",
+            "weight_fraction": 0.08,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "XIU.TO",
+            "issuer_id": "SYN_CA_ISSUER_1",
+            "instrument_id": "SYN_CA1",
+            "name": "Synthetic Canadian filler company 1",
+            "weight_fraction": 0.3,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "XIU.TO",
+            "issuer_id": "SYN_CA_ISSUER_2",
+            "instrument_id": "SYN_CA2",
+            "name": "Synthetic Canadian filler company 2",
+            "weight_fraction": 0.3,
+            "sector": null,
+            "sector_source": null
+          },
+          {
+            "fund_id": "XIU.TO",
+            "issuer_id": "SYN_CA_ISSUER_3",
+            "instrument_id": "SYN_CA3",
+            "name": "Synthetic Canadian filler company 3",
+            "weight_fraction": 0.3,
+            "sector": null,
+            "sector_source": null
+          }
+        ]
+      }
+    }
+  },
+  "market_data": {
+    "schema_version": "1.0.0",
+    "valuation_date": "2026-11-12",
+    "prices": {
+      "XBB.TO": {
+        "currency": "CAD",
+        "series": [
+          [
+            "2021-12-31",
+            30.0
+          ],
+          [
+            "2022-06-30",
+            26.4
+          ],
+          [
+            "2022-12-30",
+            27.0
+          ]
+        ]
+      },
+      "SPY": {
+        "currency": "USD",
+        "series": [
+          [
+            "2021-12-31",
+            400.0
+          ],
+          [
+            "2022-06-30",
+            300.0
+          ],
+          [
+            "2022-12-30",
+            325.0
+          ]
+        ]
+      },
+      "XIU.TO": {
+        "currency": "CAD",
+        "series": [
+          [
+            "2021-12-31",
+            30.0
+          ],
+          [
+            "2022-06-30",
+            27.0
+          ],
+          [
+            "2022-12-30",
+            28.5
+          ]
+        ]
+      },
+      "RY.TO": {
+        "currency": "CAD",
+        "series": [
+          [
+            "2021-12-31",
+            100.0
+          ],
+          [
+            "2022-06-30",
+            95.0
+          ],
+          [
+            "2022-12-30",
+            98.0
+          ]
+        ]
+      },
+      "JNJ": {
+        "currency": "USD",
+        "series": [
+          [
+            "2021-12-31",
+            150.0
+          ],
+          [
+            "2022-06-30",
+            150.0
+          ],
+          [
+            "2022-12-30",
+            150.0
+          ]
+        ]
+      },
+      "NVDA": {
+        "currency": "USD",
+        "series": [
+          [
+            "2021-12-31",
+            80.0
+          ],
+          [
+            "2022-06-30",
+            40.0
+          ],
+          [
+            "2022-12-30",
+            50.0
+          ]
+        ]
+      }
+    },
+    "fx_usdcad": [
+      [
+        "2021-12-31",
+        1.25
+      ],
+      [
+        "2022-06-30",
+        1.25
+      ],
+      [
+        "2022-12-30",
+        1.3
+      ]
+    ]
+  },
+  "controversies": {
+    "schema_version": "1.0.0",
+    "registry_scope": {
+      "purpose": "SYNTHETIC registry for engine tests. Not real research.",
+      "issuers_researched": [],
+      "research_date": "2026-11-14",
+      "absence_meaning": "Absence from this registry means NOT ASSESSED, never 'no controversy'.",
+      "source_policy": "Synthetic test data only.",
+      "not_evidence": "A sector label is never evidence of a controversy.",
+      "limits": "Synthetic."
+    },
+    "records": []
+  },
+  "sources": {
+    "schema_version": "1.0.0",
+    "sources": {
+      "SYNTHETIC_FIXTURE": {
+        "source_id": "SYNTHETIC_FIXTURE",
+        "publisher": "Before You Buy team (synthetic test data)",
+        "title": "Invented fixture numbers for hand calculation",
+        "url": null,
+        "relevant_date": "2026-11-12",
+        "retrieval_date": "2026-11-14",
+        "sha256": "9a149e591e076cbfb21ecb44c5d37d62d96f335ad8ecf01835fd0e484423b5d5",
+        "processing": "None. Typed in by hand. The sha256 is the hash of the sentence: 'Before You Buy synthetic fixture data (invented numbers, not a real source)'.",
+        "terms": "Team-authored test data; no third-party terms apply.",
+        "limitations": "Not real data. Never display it as an issuer disclosure or as market data."
+      }
+    }
+  }
+}

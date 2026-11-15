@@ -1,0 +1,102 @@
+{
+  "fixture": true,
+  "fixture_id": "challenge_clarify_preference",
+  "synthetic": false,
+  "synthetic_note": "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values invented by the team; persona facts quote the official case.",
+  "description": "POST /investigations/inv-mateo-0001/challenge. Mateo clarifies 'oil'. The reply is a fresh draft interpretation; 'companies that produce oil' is reported as an unsupported definition and no stored rule changes.",
+  "route": "POST /investigations/{id}/challenge",
+  "http_status": 200,
+  "request_headers": {
+    "Authorization": "Bearer <access code typed by the user>",
+    "Content-Type": "application/json"
+  },
+  "request_body": {
+    "type": "CLARIFY_PREFERENCE",
+    "payload": {
+      "text": "By oil I meant companies that produce oil, not pipelines or utilities.",
+      "objective_id": "obj-mateo-1"
+    }
+  },
+  "response_schema": "api.schema.json#/$defs/challenge_response",
+  "response_body": {
+    "schema_version": "1.0.0",
+    "challenge": {
+      "challenge_id": "ch-mateo-0001",
+      "investigation_id": "inv-mateo-0001",
+      "type": "CLARIFY_PREFERENCE",
+      "payload": {
+        "text": "By oil I meant companies that produce oil, not pipelines or utilities.",
+        "objective_id": "obj-mateo-1"
+      },
+      "created_at": "2026-11-14T15:16:00Z"
+    },
+    "proposed_correction": null,
+    "interpretation": {
+      "schema_version": "1.0.0",
+      "interpretation_id": "int-mateo-0002",
+      "persona_id": "mateo",
+      "created_at": "2026-11-14T15:16:00Z",
+      "model_id": "us.anthropic.claude-sonnet-5-5",
+      "original_words": "By oil I meant companies that produce oil, not pipelines or utilities.",
+      "objectives": [],
+      "proposed_rules": [],
+      "unsupported": [
+        {
+          "words": "companies that produce oil",
+          "code": "UNSUPPORTED_DEFINITION",
+          "reason": "We hold no sourced classification of oil producers. The confirmed Energy-label rule stays as it is until you confirm a change."
+        }
+      ],
+      "clarifications": [
+        {
+          "clarification_id": "clar-oil-2",
+          "about_words": "companies that produce oil",
+          "question": "We cannot check 'companies that produce oil' yet. Which supported definition should stand in for it, if any?",
+          "options": [
+            {
+              "option_id": "energy-sector-label",
+              "label": "Holdings labelled Energy in what the funds report",
+              "description": "Uses the sector label in each fund issuer's holdings file (and the registry label for direct holdings). Broader than oil: it also covers pipelines and gas.",
+              "supported": true,
+              "purchase_request": null,
+              "proposed_rule": {
+                "rule_id": "draft-excl-energy-2",
+                "rule_type": "exclusion",
+                "parameters": {
+                  "definition": {
+                    "kind": "fund_reported_sector",
+                    "sector": "Energy"
+                  }
+                },
+                "threshold": null,
+                "threshold_kind": "max_fraction",
+                "threshold_source": null,
+                "threshold_quote": null,
+                "unit": "fraction",
+                "status": "PROPOSED",
+                "origin": "SYSTEM_PROPOSED",
+                "original_words": "companies that produce oil",
+                "objective_id": null,
+                "scope_description": "Maximum total equity exposure to holdings labelled 'Energy': the sector label reported in the fund issuer's holdings file for fund constituents, the instrument registry label for direct holdings. Constituents without a label count as unknown, not as zero. A sector label is not a list of oil producers and is not a controversy finding. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+                "confirmed_at": null,
+                "confirmed_by": null,
+                "supersedes_rule_id": null,
+                "superseded_by_rule_id": null
+              }
+            },
+            {
+              "option_id": "named-companies",
+              "label": "Specific companies that I name",
+              "description": "Supported once you name them: type the companies in a new sentence and a named-company exclusion will be drafted.",
+              "supported": true,
+              "proposed_rule": null,
+              "purchase_request": null
+            }
+          ]
+        }
+      ]
+    },
+    "policy": null,
+    "investigation": null
+  }
+}

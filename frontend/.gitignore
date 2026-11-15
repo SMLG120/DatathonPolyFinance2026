@@ -1,0 +1,7 @@
+# The repository root .gitignore already covers node_modules/, .next/, out/,
+# coverage/, playwright-report/, test-results/ and .env files.
+# These are the extra files Next.js and TypeScript generate in this folder.
+next-env.d.ts
+*.tsbuildinfo
+/blob-report/
+/playwright/.cache/

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/evidence_record.schema.json",
+  "title": "evidence_record",
+  "description": "One inspectable number or fact behind a result (BUILD_BRIEF section 6). An explanation statement is valid only if the records it cites have the right metric, subject, unit and period for what it says: matching the digits is not enough. label: FACT = taken unchanged from a cited source or from a confirmed policy record; ASSUMPTION = a modelling choice; FICTIONAL_SCENARIO = invented for the simulation (persona weights, scenario thresholds, the hypothetical purchase); CALCULATION = computed by the engine from the records in derived_from.",
+  "type": "object",
+  "required": ["evidence_id", "label", "metric_id", "value", "unit", "currency", "subject", "period", "source_ids", "assumptions", "derived_from", "formula", "calculation_version", "policy_version"],
+  "additionalProperties": false,
+  "properties": {
+    "evidence_id": { "$ref": "common.schema.json#/$defs/id", "description": "Unique within one check_result." },
+    "label": { "$ref": "common.schema.json#/$defs/evidence_label" },
+    "metric_id": { "$ref": "common.schema.json#/$defs/metric_id" },
+    "value": { "type": ["number", "string", "null"], "description": "Number for numeric units; string for unit 'date' or 'text'; null only when the value could not be computed." },
+    "unit": { "$ref": "common.schema.json#/$defs/evidence_unit", "description": "'fraction' for every weight, exposure, limit, return and gap. Never a percentage." },
+    "currency": { "anyOf": [{ "$ref": "common.schema.json#/$defs/currency" }, { "type": "null" }], "description": "Set only when unit is 'price'." },
+    "subject": {
+      "type": "object",
+      "required": ["kind", "id", "via_fund_id", "portfolio_state"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "$ref": "common.schema.json#/$defs/subject_kind" },
+        "id": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "instrument_id, issuer_id, fund_id, rule_id, 'USDCAD' for FX, or the portfolio_id." },
+        "via_fund_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/instrument_id" }, { "type": "null" }], "description": "The fund through which an issuer figure arises (fund_constituent_weight, issuer_exposure_via_fund); otherwise null." },
+        "portfolio_state": { "$ref": "common.schema.json#/$defs/portfolio_state", "description": "STARTING = before the purchase; PROPOSED = after it; NOT_APPLICABLE for source facts." }
+      }
+    },
+    "period": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "date"], "additionalProperties": false,
+          "properties": { "type": { "const": "AS_OF" }, "date": { "$ref": "common.schema.json#/$defs/date" } } },
+        { "type": "object", "required": ["type", "start_date", "end_date"], "additionalProperties": false,
+          "properties": { "type": { "const": "RANGE" }, "start_date": { "$ref": "common.schema.json#/$defs/date" }, "end_date": { "$ref": "common.schema.json#/$defs/date" } } }
+      ]
+    },
+    "source_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/source_id" }, "description": "Sources in sources.json. May be empty only for FICTIONAL_SCENARIO and ASSUMPTION records and for CALCULATION records that list derived_from." },
+    "assumptions": { "$ref": "common.schema.json#/$defs/string_list" },
+    "derived_from": { "$ref": "common.schema.json#/$defs/id_list", "description": "evidence_ids this value was computed from (the calculation path). Empty for non-CALCULATION records." },
+    "formula": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Template-rendered formula with the numbers used, for CALCULATION records; otherwise null." },
+    "calculation_version": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "policy_version": { "type": ["integer", "null"], "minimum": 1, "description": "Policy version the result was computed under; null in a preview (draft thresholds)." }
+  },
+  "allOf": [
+    { "if": { "properties": { "unit": { "const": "price" } } }, "then": { "properties": { "currency": { "$ref": "common.schema.json#/$defs/currency" } } }, "else": { "properties": { "currency": { "type": "null" } } } },
+    { "if": { "properties": { "unit": { "enum": ["date", "text"] } } }, "then": { "properties": { "value": { "type": ["string", "null"] } } }, "else": { "properties": { "value": { "type": ["number", "null"] } } } }
+  ]
+}

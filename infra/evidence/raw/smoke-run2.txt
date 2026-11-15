@@ -1,0 +1,113 @@
+== API https://3t4hod912l.execute-api.us-east-1.amazonaws.com   idempotency key e2e-20261114T232226Z-27650
+== 1. authentication
+PASS  POST without a token -> HTTP 401 in 0.101762s
+      {"message":"Unauthorized"}
+PASS  GET without a token -> HTTP 401 in 0.092624s
+      {"message":"Unauthorized"}
+PASS  POST with a wrong token -> HTTP 403 in 0.101456s
+      {"message":"Forbidden"}
+== 2. CORS preflight (no token)
+PASS  OPTIONS /investigations -> HTTP 204 in 0.100809s
+      access-control-allow-origin: *
+      access-control-allow-methods: GET,OPTIONS,POST
+      access-control-allow-headers: authorization,content-type,idempotency-key
+      access-control-max-age: 600
+      CORS headers on the 401: 1 access-control-allow-origin header(s)
+== 3. validation
+PASS  POST with an invalid body -> HTTP 400 in 0.792663s
+      {"error":{"code":"INVALID_REQUEST","message":"purchase.target_direct_weight must be between 0 and 1 (a portfolio fraction, 10% is 0.10).","request_id":"G2n9GjTJIAMEJ4A="}}
+PASS  GET an unknown investigation -> HTTP 404 in 0.245565s
+      {"error":{"code":"INVESTIGATION_NOT_FOUND","message":"The service has no record of this investigation.","request_id":"G2n9OgywIAMEcpg="}}
+== 4. create (202 only after the worker invocation was accepted)
+PASS  POST /investigations -> HTTP 202 in 0.286765s
+      {"investigation_id":"inv_2e82a727867efaff5483a582721a6bdb","status":"QUEUED","created_at":"2026-11-14T23:22:09.275Z","updated_at":"2026-11-14T23:22:09.275Z","deadline_at":"2026-11-14T23:24:39.275Z","replayed":false,"poll":{"href":"/investigations/inv_2e82a727867efaff5483a582721a6bdb","interval_ms":1500}}
+      location: /investigations/inv_2e82a727867efaff5483a582721a6bdb
+== 5. idempotency
+PASS  duplicate POST (same key, same body) -> HTTP 202 in 0.493763s
+      {"investigation_id":"inv_2e82a727867efaff5483a582721a6bdb","status":"QUEUED","created_at":"2026-11-14T23:22:09.275Z","updated_at":"2026-11-14T23:22:09.275Z","deadline_at":"2026-11-14T23:24:39.275Z","replayed":true,"poll":{"href":"/investigations/inv_2e82a727867efaff5483a582721a6bdb","interval_ms":1500}}
+PASS  same investigation id returned (inv_2e82a727867efaff5483a582721a6bdb)
+PASS  same key, different body -> HTTP 409 in 0.397455s
+      {"error":{"code":"IDEMPOTENCY_KEY_REUSED","message":"This idempotency key was already used with a different request.","request_id":"G2n9aiZcoAMEcIg=","investigation_id":"inv_2e82a727867efaff5483a582721a6bdb"}}
+== 6. poll until terminal
+      t+1s status=RUNNING steps=0
+      t+4s status=SUCCEEDED steps=1
+PASS  investigation SUCCEEDED
+== 7. final job document
+{
+  "investigation_id": "inv_2e82a727867efaff5483a582721a6bdb",
+  "status": "SUCCEEDED",
+  "created_at": "2026-11-14T23:22:09.275Z",
+  "started_at": "2026-11-14T23:22:10.339Z",
+  "finished_at": "2026-11-14T23:22:13.045Z",
+  "deadline_at": "2026-11-14T23:24:39.275Z",
+  "request": {
+    "persona_id": "robert",
+    "policy_version": null,
+    "purchase": {
+      "instrument_id": "NVDA",
+      "target_direct_weight": 0.25
+    },
+    "question": "What is my exposure to NVDA after this purchase?"
+  },
+  "steps": [
+    {
+      "duration_ms": 0,
+      "error": null,
+      "finished_at": "2026-11-14T23:22:11.216Z",
+      "input_summary": "instrument_id=NVDA, target_direct_weight=0.25",
+      "origin": "model",
+      "result_summary": "PLACEHOLDER result: direct_weight=0.25 (25.0% of the portfolio); indirect exposure not computed (unknown, not zero)",
+      "seq": 1,
+      "started_at": "2026-11-14T23:22:11.216Z",
+      "status": "SUCCEEDED",
+      "tool": "compute_exposure",
+      "tool_use_id": "tooluse_XRAGOouCPVmJFCPyItLKCQ"
+    }
+  ],
+  "error": null,
+  "result": {
+    "placeholder": true,
+    "exposure": {
+      "calculation_version": "phase1-placeholder-1",
+      "coverage": "NOT_COMPUTED",
+      "direct_weight": 0.25,
+      "direct_weight_percent": 25.0,
+      "indirect_weight": null,
+      "instrument_id": "NVDA",
+      "notes": [
+        "PLACEHOLDER: this result repeats the requested final direct weight and nothing else.",
+        "Indirect exposure through funds was not computed. It is unknown, not zero.",
+        "No portfolio, holdings or rule data was read. This is not a verdict."
+      ],
+      "placeholder": true,
+      "total_exposure_lower_bound": 0.25,
+      "total_exposure_upper_bound": null,
+      "unit": "portfolio_fraction"
+    },
+    "exposure_source": {
+      "origin": "model",
+      "step_seq": 1,
+      "tool": "compute_exposure"
+    },
+    "explanation": {
+      "author": "model",
+      "model_id": "us.anthropic.claude-sonnet-5-5",
+      "note": "Model-written text. Phase 1 does not check its statements against evidence records.",
+      "prompt_version": "investigator-phase1-1",
+      "text": "This result is a placeholder (version phase1-placeholder-1). It only repeats the direct weight you asked for. It didn't read any portfolio, holdings or rule data.\n\nThe tool returned a direct NVDA weight of 0.25 (25.0%). Indirect exposure through funds was not computed, so it is unknown and not zero. Coverage is marked NOT_COMPUTED.\n\nTotal exposure therefore has a lower bound of 0.25. The upper bound is null, meaning it is unknown.\n\nThis is not a verdict, and it doesn't show your full exposure to NVDA after the purchase.",
+      "verified_against_evidence": false
+    },
+    "usage": {
+      "bedrock_latency_ms": 2394,
+      "input_tokens": 2380,
+      "model_attempts": 2,
+      "model_calls": 2,
+      "model_wall_ms": 2457,
+      "output_tokens": 284,
+      "total_tokens": 2664
+    },
+    "trace_key": "traces/inv_2e82a727867efaff5483a582721a6bdb.json"
+  }
+}
+PASS  GET the finished investigation -> HTTP 200 in 0.337269s
+== 0 check(s) failed

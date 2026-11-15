@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0.0",
+  "registry_scope": {
+    "purpose": "Fictional-simulation support for the persona Mateo, who 'wants to avoid companies involved in significant environmental or social controversies' (official case, p. 6). Deliberately tiny.",
+    "issuers_researched": [
+      "CANADIAN_NATURAL_RESOURCES",
+      "ENBRIDGE",
+      "EXXON_MOBIL"
+    ],
+    "research_date": "2026-11-14",
+    "absence_meaning": "Absence from this registry means NOT ASSESSED, never 'no controversy'. Every issuer that is not listed in issuers_researched was not researched at all; for the issuers that were researched, only the records below were looked for and retrieved, so other events may exist.",
+    "source_policy": "A record exists only if a primary or official source (court ruling, regulator order or enforcement notice, government press release, the company's own regulatory filing) was retrieved on the research date and its hash recorded. No blogs, no advocacy-group summaries as sole source, nothing from memory.",
+    "not_evidence": "A sector label is never evidence of a controversy.",
+    "limits": "At most 5 records for at most 3 issuers in this phase. Research was limited to two official listings read on the research date: the U.S. EPA list 'Civil and Cleanup Enforcement Cases and Settlements' (for Exxon Mobil and Enbridge) and the Alberta Energy Regulator news-release listing, pages 1 to 3 (for Canadian Natural Resources). A record states what the cited page says; it is not an assessment of whether the event is 'significant'."
+  },
+  "records": [
+    {
+      "record_id": "exxon-mobil-2017-10-31-epa-clean-air-act-settlement",
+      "issuer_id": "EXXON_MOBIL",
+      "event_date": "2017-10-31",
+      "nature": "SETTLEMENT",
+      "summary": "On October 31, 2017 the U.S. EPA, the U.S. Department of Justice and the Louisiana Department of Environmental Quality announced a proposed settlement with Exxon Mobil Corporation and its subsidiary ExxonMobil Oil Corporation that resolves allegations of Clean Air Act violations in the operation and monitoring of industrial flares at eight petrochemical plants in Texas and Louisiana, with a $2.5 million civil penalty and required pollution controls. These are allegations resolved by agreement, not a court finding; the proposed consent decree was subject to a 30-day public comment period and final court approval, and the source does not report the outcome.",
+      "source_ids": [
+        "epa_exxonmobil_caa_settlement_2026-11-14"
+      ],
+      "coverage_note": "Looked for on 2026-11-14 only in the U.S. EPA list 'Civil and Cleanup Enforcement Cases and Settlements'. That list shows five entries naming ExxonMobil entities: this one is recorded; the 'ExxonMobil Mayflower Clean Water Settlement' (2015) was read but not recorded, because the page names ExxonMobil Pipeline Company and Mobil Pipeline Company and does not state their relationship to the listed company; three other entries (a refinery settlement, a Clean Water Act settlement and a hazardous-waste settlement) were not read. Not searched: court dockets, U.S. state regulators, regulators outside the United States, the company's own filings, anything after the page's last update (January 5, 2026). The link to ticker XOM rests on the company name: EPA names 'Exxon Mobil Corporation', a publicly traded company; the starter universe names XOM 'Exxon Mobil'; the SPY holdings file prints the XOM line as 'EXXONMOBIL HOLDINGS CORP'. Any corporate reorganisation since 2017 was not researched."
+    },
+    {
+      "record_id": "enbridge-2016-07-20-epa-clean-water-act-settlement",
+      "issuer_id": "ENBRIDGE",
+      "event_date": "2016-07-20",
+      "nature": "SETTLEMENT",
+      "summary": "On July 20, 2016 the U.S. EPA and the U.S. Department of Justice announced a settlement with Enbridge Energy Limited Partnership and several related Enbridge companies to resolve Clean Water Act claims stemming from two 2010 pipeline oil spills, in Marshall, Michigan and Romeoville, Illinois, with $62 million in civil penalties and at least $110 million in spill-prevention measures. EPA states that a revised consent decree was submitted to the court on January 19, 2017 and that Enbridge paid the penalties; this is a negotiated settlement and the source reports no court ruling on liability.",
+      "source_ids": [
+        "epa_enbridge_cwa_settlement_2026-11-14",
+        "epa_enbridge_dredging_order_2026-11-14"
+      ],
+      "coverage_note": "Looked for on 2026-11-14 only in the U.S. EPA list 'Civil and Cleanup Enforcement Cases and Settlements', which shows two entries naming Enbridge; both are cited. The settlement page names 'Enbridge Energy Limited Partnership and several related Enbridge companies', not Enbridge Inc. (the listed company held by XIU); the link to the listed company rests on EPA's 2013 case summary, which names Enbridge Inc. as the company ordered to clean up the same July 2010 spill. Whether Enbridge Inc. is itself a party to the consent decree was not checked (the decree was not retrieved). Not searched: Canadian regulators and courts, U.S. state regulators and courts, the company's own filings, anything after the pages' last updates (August 4, 2026 and October 20, 2026)."
+    },
+    {
+      "record_id": "canadian-natural-resources-2024-07-15-aer-administrative-penalty",
+      "issuer_id": "CANADIAN_NATURAL_RESOURCES",
+      "event_date": "2024-07-15",
+      "nature": "REGULATORY_FINDING",
+      "summary": "On July 15, 2024 the Alberta Energy Regulator announced that, following an investigation, it had determined that Canadian Natural Resources Limited contravened section 155 of Alberta's Environmental Protection and Enhancement Act between May 21 and August 4, 2022 by failing to prevent a hazardous substance containing bitumen from coming into contact with birds and other wildlife, resulting in bird fatalities, and that it had ordered the company to pay $278,000. This is a regulator's determination and penalty; the release does not say whether the decision was appealed.",
+      "source_ids": [
+        "aer_cnrl_penalty_news_release_2026-11-14"
+      ],
+      "coverage_note": "Looked for on 2026-11-14 only in the Alberta Energy Regulator's news-release listing, pages 1 to 3 as served that day (30 releases dated 2023-06-06 to 2025-04-09); this is the only one of them that names the company. The enforcement decision itself (AER Compliance Dashboard) was not retrieved, so the site, the reasoning and any appeal are not covered. Not searched: other AER decisions and orders, federal and other provincial regulators, courts, the company's own filings."
+    }
+  ]
+}

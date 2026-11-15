@@ -1,0 +1,243 @@
+{
+  "schema_version": "1.0.0",
+  "fictional": true,
+  "fiction_notice": "Fictional simulation. The persona facts come from the official case (page references given). The portfolio, the objective wording, every threshold and every scripted request were invented by the team for the demonstration; the case gives the personas no numbers. Nothing here is advice, a recommendation or a real account.",
+  "persona": {
+    "persona_id": "amira",
+    "display_name": "Amira",
+    "case_reference": "Case p.5",
+    "facts": [
+      {
+        "fact_id": "age_occupation",
+        "label": "Age and occupation",
+        "text": "26 years old, software engineer",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "profile",
+        "label": "Profile",
+        "text": "Single, no children; intermediate investment experience.",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "objective",
+        "label": "Investment objective",
+        "text": "Her objective is to grow her capital over the long term.",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "preference_tech",
+        "label": "Preference",
+        "text": "Very interested in artificial intelligence and emerging technologies.",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "preference_risk",
+        "label": "Preference",
+        "text": "Open to high-growth companies and significant volatility; interested in crypto assets.",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "preference_diversification",
+        "label": "Constraint",
+        "text": "Still wants some diversification and does not want to invest exclusively in technology.",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "horizon",
+        "label": "Investment horizon",
+        "text": "15 years or more",
+        "case_reference": "Case p.5"
+      },
+      {
+        "fact_id": "risk_profile",
+        "label": "Risk profile",
+        "text": "High",
+        "case_reference": "Case p.5"
+      }
+    ],
+    "what_this_persona_tests": {
+      "text": "How much risk will the system accept? It should account for an aggressive profile without interpreting \"high risk\" as \"anything goes,\" while respecting Amira's desire for diversification.",
+      "case_reference": "Case p.5"
+    }
+  },
+  "portfolio": {
+    "schema_version": "1.0.0",
+    "portfolio_id": "pf-amira-fictional-1",
+    "persona_id": "amira",
+    "fictional": true,
+    "valuation_date": "2026-11-12",
+    "base_currency": "CAD",
+    "cash_weight": 0.1,
+    "positions": [
+      {
+        "instrument_id": "SPY",
+        "weight": 0.3
+      },
+      {
+        "instrument_id": "XIU.TO",
+        "weight": 0.1
+      },
+      {
+        "instrument_id": "NVDA",
+        "weight": 0.1
+      },
+      {
+        "instrument_id": "MSFT",
+        "weight": 0.1
+      },
+      {
+        "instrument_id": "SHOP.TO",
+        "weight": 0.05
+      },
+      {
+        "instrument_id": "JPM",
+        "weight": 0.05
+      },
+      {
+        "instrument_id": "BTC-USD",
+        "weight": 0.12
+      },
+      {
+        "instrument_id": "ETH-USD",
+        "weight": 0.08
+      }
+    ]
+  },
+  "objectives": [
+    {
+      "objective_id": "obj-amira-1",
+      "original_words": "Grow my capital over 15 years or more. I accept high risk and I like AI and crypto, but I still want some diversification and not only technology.",
+      "kind": "goal",
+      "source": "FICTIONAL_SCENARIO",
+      "case_reference": "Case p.5"
+    }
+  ],
+  "scenario_rules": [
+    {
+      "rule_id": "amira-issuer-cap-1",
+      "rule_type": "max_issuer_exposure",
+      "parameters": {
+        "issuer_scope": "any"
+      },
+      "threshold": 0.2,
+      "threshold_kind": "max_fraction",
+      "threshold_source": "FICTIONAL_SCENARIO",
+      "threshold_quote": null,
+      "unit": "fraction",
+      "status": "PROPOSED",
+      "origin": "FICTIONAL_SCENARIO",
+      "original_words": "Fictional scenario: no more than 20% of the portfolio in any single company, funds included.",
+      "objective_id": "obj-amira-1",
+      "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+      "confirmed_at": null,
+      "confirmed_by": null,
+      "supersedes_rule_id": null,
+      "superseded_by_rule_id": null
+    }
+  ],
+  "alternative_rule_sets": [
+    {
+      "set_id": "proven-conflict-pair",
+      "label": "Minimum 20% and maximum 10% in the same company",
+      "purpose": "Demonstrates a PROVEN conflict: a supported calculation shows that no exposure to NVIDIA can be at least 0.20 and at most 0.10.",
+      "rules": [
+        {
+          "rule_id": "amira-min-nvidia-1",
+          "rule_type": "min_issuer_exposure",
+          "parameters": {
+            "issuer_id": "NVIDIA"
+          },
+          "threshold": 0.2,
+          "threshold_kind": "min_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: keep at least 20% of the portfolio in NVIDIA.",
+          "objective_id": "obj-amira-1",
+          "scope_description": "Minimum total equity exposure to the company NVIDIA: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        },
+        {
+          "rule_id": "amira-max-nvidia-1",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "NVIDIA"
+          },
+          "threshold": 0.1,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "PROPOSED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Fictional scenario: never more than 10% of the portfolio in NVIDIA.",
+          "objective_id": "obj-amira-1",
+          "scope_description": "Maximum total equity exposure to the company NVIDIA: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": null,
+          "confirmed_by": null,
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ]
+    }
+  ],
+  "demo_phrases": [
+    {
+      "phrase_id": "amira-ambiguous",
+      "original_words": "I want maximum growth and strict diversification.",
+      "expected_outcome": "CLARIFICATION",
+      "note": "Ambiguous language, not a proven contradiction. The correct outcome is a targeted clarification question; a 'contradictory rules' verdict here is a defect."
+    }
+  ],
+  "demo_requests": [
+    {
+      "request_id": "amira-nvda-15",
+      "label": "Make NVDA 15% of the portfolio (final direct weight), funded from cash",
+      "purchase_request": {
+        "instrument_id": "NVDA",
+        "target_direct_weight": 0.15,
+        "funding": "CASH",
+        "original_words": "Take my Nvidia position to 15% of my portfolio."
+      }
+    },
+    {
+      "request_id": "amira-btc-15",
+      "label": "Make BTC-USD 15% of the portfolio (final direct weight), funded from cash",
+      "purchase_request": {
+        "instrument_id": "BTC-USD",
+        "target_direct_weight": 0.15,
+        "funding": "CASH",
+        "original_words": "Take my Bitcoin position to 15% of my portfolio."
+      }
+    }
+  ],
+  "demo_challenge": null,
+  "demo_steps": [
+    {
+      "seq": 1,
+      "stage": "PERSONA_PORTFOLIO",
+      "description": "Load Amira and her fictional portfolio (10% cash, 30% SPY, 10% XIU.TO, 10% NVDA, 10% MSFT, 5% SHOP.TO, 5% JPM, 12% BTC-USD, 8% ETH-USD)."
+    },
+    {
+      "seq": 2,
+      "stage": "GOALS_RULES",
+      "description": "Type 'I want maximum growth and strict diversification.': the interpreter asks a clarification question and proposes nothing with a number."
+    },
+    {
+      "seq": 3,
+      "stage": "GOALS_RULES",
+      "description": "Confirm the explicit pair (minimum 0.20 and maximum 0.10 in NVIDIA): policy consistency reports a proven conflict with the calculation."
+    },
+    {
+      "seq": 4,
+      "stage": "PROPOSED_PURCHASE",
+      "description": "Request NVDA at a final direct weight of 0.15; crypto positions are shown as outside the scope of the company-exposure rules."
+    }
+  ]
+}

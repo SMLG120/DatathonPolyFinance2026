@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/check_result.schema.json",
+  "title": "check_result",
+  "description": "Output of the deterministic engine; body of POST /check; `result` of a finished investigation. Five things are kept apart on purpose: execution (did the check run), feasibility (can cash fund it), policy_consistency (are the rules provably incompatible), rule_results (PASS/FAIL/UNKNOWN per confirmed rule on the PROPOSED portfolio) and data_coverage. There is NO overall 'compliant' boolean. `summary` is derived mechanically (see contracts/SEMANTICS.md section 9) and must never be computed any other way. When execution.status is not OK: feasibility, scenario, max_compliant and exposure are null, every list is empty and policy_consistency.status is NOT_ASSESSED.",
+  "type": "object",
+  "required": [
+    "schema_version", "persona_id", "portfolio_id", "policy_id", "policy_version", "preview", "calculation_version", "valuation_date",
+    "purchase_request", "execution", "feasibility", "policy_consistency", "rule_results", "rules_not_evaluated",
+    "starting_portfolio_findings", "data_coverage", "scenario", "goal_context", "max_compliant", "exposure", "evidence", "summary", "disclosures"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+    "portfolio_id": { "$ref": "common.schema.json#/$defs/id" },
+    "policy_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "Null in a preview." },
+    "policy_version": { "type": ["integer", "null"], "minimum": 1, "description": "Stored policy version evaluated; null in a preview." },
+    "preview": { "type": "boolean", "description": "True when draft_rules were evaluated instead of a stored policy version. A preview never changes the stored policy and must be labelled as a preview in the UI." },
+    "calculation_version": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+    "valuation_date": { "$ref": "common.schema.json#/$defs/date" },
+    "purchase_request": { "$ref": "purchase_request.schema.json" },
+    "execution": {
+      "type": "object", "required": ["status", "code", "message"], "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "common.schema.json#/$defs/execution_status" },
+        "code": { "anyOf": [{ "$ref": "common.schema.json#/$defs/execution_code" }, { "type": "null" }], "description": "Null when status is OK." },
+        "message": { "$ref": "common.schema.json#/$defs/nullable_string" }
+      }
+    },
+    "feasibility": {
+      "anyOf": [{ "type": "null" }, {
+        "type": "object",
+        "required": ["funding", "starting_direct_weight", "target_direct_weight", "additional_purchase", "cash_before", "cash_after", "status"],
+        "additionalProperties": false,
+        "properties": {
+          "funding": { "$ref": "common.schema.json#/$defs/funding" },
+          "starting_direct_weight": { "$ref": "common.schema.json#/$defs/fraction" },
+          "target_direct_weight": { "$ref": "common.schema.json#/$defs/fraction" },
+          "additional_purchase": { "$ref": "common.schema.json#/$defs/fraction", "description": "target_direct_weight - starting_direct_weight." },
+          "cash_before": { "$ref": "common.schema.json#/$defs/fraction" },
+          "cash_after": { "type": "number", "description": "cash_before - additional_purchase. Negative when cash is insufficient." },
+          "status": { "$ref": "common.schema.json#/$defs/feasibility_status", "description": "INSUFFICIENT_CASH iff cash_after < -1e-9. Never a rule FAIL and never a policy contradiction." }
+        }
+      }]
+    },
+    "policy_consistency": {
+      "type": "object", "required": ["status", "conflicts"], "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "common.schema.json#/$defs/consistency_status", "description": "CONSISTENT means only that no supported calculation proved a conflict. PROVEN_CONFLICT iff conflicts is non-empty." },
+        "conflicts": { "type": "array", "items": { "$ref": "#/$defs/conflict" } }
+      }
+    },
+    "rule_results": { "type": "array", "items": { "$ref": "#/$defs/rule_result" }, "description": "One entry per evaluated rule (CONFIRMED with a number; in a preview, every draft rule with a number that is not SUPERSEDED), in policy order." },
+    "rules_not_evaluated": {
+      "type": "array",
+      "items": { "type": "object", "required": ["rule_id", "status", "reason"], "additionalProperties": false,
+        "properties": { "rule_id": { "$ref": "common.schema.json#/$defs/id" }, "status": { "$ref": "common.schema.json#/$defs/rule_status" }, "reason": { "$ref": "common.schema.json#/$defs/non_empty_string" } } }
+    },
+    "starting_portfolio_findings": { "type": "array", "items": { "$ref": "#/$defs/starting_finding" }, "description": "Rules that are already FAIL on the STARTING portfolio, before any purchase. One entry iff that rule's rule_results[].starting.status is FAIL." },
+    "data_coverage": { "type": "array", "items": { "$ref": "#/$defs/fund_coverage" }, "description": "One entry per equity fund (is_fund and equity_scope) held in the PROPOSED portfolio." },
+    "scenario": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/scenario" }], "description": "Null when no evaluated rule needs a scenario." },
+    "goal_context": { "type": "array", "items": { "$ref": "#/$defs/goal_context" } },
+    "max_compliant": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/max_compliant" }] },
+    "exposure": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/exposure" }] },
+    "evidence": { "type": "array", "items": { "$ref": "evidence_record.schema.json" } },
+    "summary": { "$ref": "#/$defs/summary" },
+    "disclosures": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "description": "Fixed disclosure texts (simulation only, no advice, fees and taxes excluded, funding path)." }
+  },
+  "$defs": {
+    "conflict": {
+      "type": "object",
+      "required": ["conflict_type", "rule_ids", "issuer_id", "min_fraction", "max_fraction", "calculation"],
+      "additionalProperties": false,
+      "properties": {
+        "conflict_type": { "$ref": "common.schema.json#/$defs/conflict_type" },
+        "rule_ids": { "type": "array", "minItems": 2, "items": { "$ref": "common.schema.json#/$defs/id" }, "description": "[min rule id, max rule id]." },
+        "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
+        "min_fraction": { "$ref": "common.schema.json#/$defs/fraction" },
+        "max_fraction": { "$ref": "common.schema.json#/$defs/fraction" },
+        "calculation": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Template text of the proof, e.g. 'minimum 0.20 > maximum 0.10 for issuer ISS_A: no exposure satisfies both'." }
+      }
+    },
+    "breaching_subject": {
+      "type": "object", "required": ["subject_kind", "subject_id", "lower", "upper"], "additionalProperties": false,
+      "properties": {
+        "subject_kind": { "const": "ISSUER" },
+        "subject_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
+        "lower": { "$ref": "common.schema.json#/$defs/fraction" },
+        "upper": { "$ref": "common.schema.json#/$defs/fraction" }
+      }
+    },
+    "rule_evaluation_snapshot": {
+      "type": "object", "required": ["status", "measured"], "additionalProperties": false,
+      "properties": { "status": { "$ref": "common.schema.json#/$defs/verdict_status" }, "measured": { "$ref": "common.schema.json#/$defs/nullable_bounds" } }
+    },
+    "rule_result": {
+      "type": "object",
+      "required": ["rule_id", "rule_type", "status", "measured", "limit", "gap", "breaching_subjects", "out_of_scope", "unknown_causes", "starting", "evidence_ids", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": { "$ref": "common.schema.json#/$defs/id" },
+        "rule_type": { "$ref": "common.schema.json#/$defs/rule_type" },
+        "status": { "$ref": "common.schema.json#/$defs/verdict_status", "description": "Status on the PROPOSED portfolio." },
+        "measured": { "$ref": "common.schema.json#/$defs/nullable_bounds", "description": "Measured quantity on the PROPOSED portfolio as [lower, upper]. Exposure for exposure rules; loss (= -scenario_terminal_return) for scenario_loss_budget. Null only when it cannot be computed (INSUFFICIENT_HISTORY)." },
+        "limit": { "$ref": "common.schema.json#/$defs/fraction", "description": "The rule's threshold." },
+        "gap": { "type": ["number", "null"], "description": "Positive = amount of breach, zero or negative = headroom, null when UNKNOWN. Max-type and loss rules: FAIL lower - limit, PASS upper - limit. Min-type rules: FAIL limit - upper, PASS limit - lower." },
+        "breaching_subjects": { "type": "array", "items": { "$ref": "#/$defs/breaching_subject" }, "description": "Issuers whose PROVEN (lower-bound) exposure causes the breach, largest first, at most 10. Empty for scenario_loss_budget and for PASS." },
+        "out_of_scope": {
+          "type": "array",
+          "items": { "type": "object", "required": ["instrument_id", "weight", "reason"], "additionalProperties": false,
+            "properties": { "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" }, "weight": { "$ref": "common.schema.json#/$defs/fraction" }, "reason": { "$ref": "common.schema.json#/$defs/non_empty_string" } } },
+          "description": "Positions of the PROPOSED portfolio that this rule does not measure (equity_scope false). Always empty for scenario_loss_budget."
+        },
+        "unknown_causes": { "type": "array", "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/unknown_cause" }, "description": "Why lower != upper or why the value is not computable. May be non-empty with FAIL or PASS: a proven failure can coexist with unknown parts." },
+        "starting": { "$ref": "#/$defs/rule_evaluation_snapshot", "description": "The same rule evaluated on the STARTING portfolio." },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" },
+        "reason": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Template-rendered sentence. Never model-written." }
+      }
+    },
+    "starting_finding": {
+      "type": "object",
+      "required": ["rule_id", "status", "measured", "limit", "gap", "breaching_subjects", "purchase_effect", "evidence_ids", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "rule_id": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "const": "FAIL" },
+        "measured": { "$ref": "common.schema.json#/$defs/bounds", "description": "Measured on the STARTING portfolio." },
+        "limit": { "$ref": "common.schema.json#/$defs/fraction" },
+        "gap": { "type": "number", "exclusiveMinimum": 0 },
+        "breaching_subjects": { "type": "array", "items": { "$ref": "#/$defs/breaching_subject" } },
+        "purchase_effect": {
+          "type": "object", "required": ["lower_change", "upper_change"], "additionalProperties": false,
+          "properties": { "lower_change": { "type": "number" }, "upper_change": { "type": "number" } },
+          "description": "PROPOSED minus STARTING measured bounds: what the purchase itself adds, kept distinct from the pre-existing breach."
+        },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" },
+        "reason": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+      }
+    },
+    "fund_coverage": {
+      "type": "object",
+      "required": ["fund_id", "portfolio_weight", "coverage_fraction", "sector_labelled_fraction", "uncovered_portfolio_weight", "holdings_date", "source_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "fund_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+        "portfolio_weight": { "$ref": "common.schema.json#/$defs/fraction", "description": "Weight of the fund in the PROPOSED portfolio." },
+        "coverage_fraction": { "type": "number", "minimum": 0, "description": "0 when the fund has no holdings file." },
+        "sector_labelled_fraction": { "type": "number", "minimum": 0, "description": "Sum of the weights of holdings rows that carry a sector label." },
+        "uncovered_portfolio_weight": { "$ref": "common.schema.json#/$defs/fraction", "description": "portfolio_weight x max(0, 1 - coverage_fraction)." },
+        "holdings_date": { "$ref": "common.schema.json#/$defs/nullable_date" },
+        "source_id": { "$ref": "common.schema.json#/$defs/nullable_source_id" },
+        "status": { "$ref": "common.schema.json#/$defs/coverage_status", "description": "MISSING: no holdings file. COVERED: coverage_fraction >= 1 - 1e-9. PARTIAL: otherwise." }
+      }
+    },
+    "scenario_measures": {
+      "type": "object", "required": ["scenario_terminal_return", "scenario_max_drawdown", "max_drawdown_date"], "additionalProperties": false,
+      "properties": {
+        "scenario_terminal_return": { "$ref": "common.schema.json#/$defs/signed_fraction", "description": "Value at end_date / value at base_date - 1. The metric used by scenario_loss_budget." },
+        "scenario_max_drawdown": { "type": "number", "minimum": -1, "maximum": 0, "description": "Lowest value of V(t) / running maximum of V - 1 over the period. Context only; never a rule in schema v1." },
+        "max_drawdown_date": { "$ref": "common.schema.json#/$defs/nullable_date", "description": "Date of the trough; null when the drawdown is 0." }
+      }
+    },
+    "scenario": {
+      "type": "object",
+      "required": ["scenario_id", "label", "base_date", "end_date", "status", "starting", "proposed", "target_instrument_return", "instrument_returns", "missing_instruments", "assumptions", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "scenario_id": { "$ref": "common.schema.json#/$defs/scenario_id" },
+        "label": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Must say that an assumed allocation is replayed through history and that it is not a forecast." },
+        "base_date": { "$ref": "common.schema.json#/$defs/date" },
+        "end_date": { "$ref": "common.schema.json#/$defs/date" },
+        "status": { "$ref": "common.schema.json#/$defs/scenario_status" },
+        "starting": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/scenario_measures" }] },
+        "proposed": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/scenario_measures" }] },
+        "target_instrument_return": { "$ref": "common.schema.json#/$defs/nullable_signed_fraction", "description": "CAD return of the purchased instrument over the period: r in R(w) = R(w0) + (w - w0) x r." },
+        "instrument_returns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["instrument_id", "currency", "base_price_date", "end_price_date", "base_price_age_days", "end_price_age_days", "base_fx_date", "end_fx_date", "base_fx_age_days", "end_fx_age_days", "return_cad"],
+            "additionalProperties": false,
+            "properties": {
+              "instrument_id": { "$ref": "common.schema.json#/$defs/instrument_id" },
+              "currency": { "$ref": "common.schema.json#/$defs/currency" },
+              "base_price_date": { "$ref": "common.schema.json#/$defs/date" },
+              "end_price_date": { "$ref": "common.schema.json#/$defs/date" },
+              "base_price_age_days": { "type": "integer", "minimum": 0 },
+              "end_price_age_days": { "type": "integer", "minimum": 0 },
+              "base_fx_date": { "$ref": "common.schema.json#/$defs/nullable_date", "description": "Null for CAD instruments." },
+              "end_fx_date": { "$ref": "common.schema.json#/$defs/nullable_date" },
+              "base_fx_age_days": { "type": ["integer", "null"], "minimum": 0 },
+              "end_fx_age_days": { "type": ["integer", "null"], "minimum": 0 },
+              "return_cad": { "$ref": "common.schema.json#/$defs/signed_fraction" }
+            }
+          }
+        },
+        "missing_instruments": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/instrument_id" }, "description": "Instruments with no price on or before base_date or end_date. Non-empty iff status is INSUFFICIENT_HISTORY. No proxy is ever substituted." },
+        "assumptions": { "$ref": "common.schema.json#/$defs/string_list" },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" }
+      }
+    },
+    "goal_context": {
+      "type": "object", "required": ["objective_id", "context_type", "text", "evidence_ids"], "additionalProperties": false,
+      "description": "Qualitative context for an objective. It has no status field by design: an objective is never PASS or FAIL.",
+      "properties": {
+        "objective_id": { "$ref": "common.schema.json#/$defs/id" },
+        "context_type": { "$ref": "common.schema.json#/$defs/goal_context_type" },
+        "text": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" }
+      }
+    },
+    "max_compliant": {
+      "type": "object",
+      "required": ["status", "final_direct_weight", "additional_purchase", "binding_constraint", "verified_by_rerun", "reason", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "status": { "$ref": "common.schema.json#/$defs/max_compliant_status" },
+        "final_direct_weight": { "$ref": "common.schema.json#/$defs/nullable_fraction", "description": "Largest FINAL direct weight of the requested instrument at which every evaluated rule is PASS and cash is sufficient." },
+        "additional_purchase": { "$ref": "common.schema.json#/$defs/nullable_fraction", "description": "final_direct_weight - starting direct weight: the amount ADDED." },
+        "binding_constraint": {
+          "anyOf": [{ "type": "null" }, {
+            "type": "object", "required": ["type", "rule_id"], "additionalProperties": false,
+            "properties": { "type": { "$ref": "common.schema.json#/$defs/binding_constraint_type" }, "rule_id": { "$ref": "common.schema.json#/$defs/nullable_id" } }
+          }]
+        },
+        "verified_by_rerun": { "type": "boolean", "description": "True iff the same evaluator, re-run at final_direct_weight, returned PASS for every evaluated rule and FEASIBLE." },
+        "reason": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "SUPPORTED" } } },
+          "then": { "properties": { "final_direct_weight": { "type": "number" }, "additional_purchase": { "type": "number" }, "binding_constraint": { "type": "object" }, "verified_by_rerun": { "const": true } } },
+          "else": { "properties": { "final_direct_weight": { "type": "null" }, "additional_purchase": { "type": "null" }, "verified_by_rerun": { "const": false } } } },
+        { "if": { "properties": { "status": { "const": "WITHHELD" } } }, "then": { "properties": { "binding_constraint": { "type": "null" } } } },
+        { "if": { "properties": { "status": { "const": "NO_FEASIBLE_PURCHASE" } } }, "then": { "properties": { "binding_constraint": { "type": "object" } } } }
+      ]
+    },
+    "exposure_breakdown": {
+      "type": "object", "required": ["direct", "indirect_by_fund", "lower", "upper"], "additionalProperties": false,
+      "properties": {
+        "direct": { "$ref": "common.schema.json#/$defs/fraction" },
+        "indirect_by_fund": {
+          "type": "array",
+          "items": { "type": "object", "required": ["fund_id", "known"], "additionalProperties": false,
+            "properties": { "fund_id": { "$ref": "common.schema.json#/$defs/instrument_id" }, "known": { "$ref": "common.schema.json#/$defs/fraction", "description": "fund portfolio weight x issuer weight in that fund." } } }
+        },
+        "lower": { "$ref": "common.schema.json#/$defs/fraction", "description": "direct + sum(known)." },
+        "upper": { "$ref": "common.schema.json#/$defs/fraction", "description": "lower + possible_extra of that portfolio state." }
+      }
+    },
+    "exposure": {
+      "type": "object", "required": ["possible_extra", "issuers", "selection_note"], "additionalProperties": false,
+      "description": "Chart data. Issuers listed: the purchased instrument's issuer (if in equity scope), every issuer named in a rule parameter or in breaching_subjects, then the largest remaining issuers by PROPOSED lower bound, at most 10 in total, sorted by PROPOSED lower descending then issuer_id.",
+      "properties": {
+        "possible_extra": {
+          "type": "object", "required": ["starting", "proposed"], "additionalProperties": false,
+          "properties": { "starting": { "$ref": "common.schema.json#/$defs/fraction" }, "proposed": { "$ref": "common.schema.json#/$defs/fraction" } },
+          "description": "Sum over equity funds of portfolio weight x max(0, 1 - coverage). It could belong to any issuer."
+        },
+        "issuers": {
+          "type": "array",
+          "items": { "type": "object", "required": ["issuer_id", "name", "starting", "proposed"], "additionalProperties": false,
+            "properties": {
+              "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
+              "name": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+              "starting": { "$ref": "#/$defs/exposure_breakdown" },
+              "proposed": { "$ref": "#/$defs/exposure_breakdown" }
+            } }
+        },
+        "selection_note": { "$ref": "common.schema.json#/$defs/non_empty_string" }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["headline", "counts", "rules_evaluated", "rules_not_evaluated", "starting_portfolio_breaches", "feasibility_status"],
+      "additionalProperties": false,
+      "description": "Derived, never authored. headline is the first match of: execution ERROR -> EXECUTION_ERROR; execution INVALID_REQUEST -> INVALID_REQUEST; policy_consistency PROVEN_CONFLICT -> POLICY_CONFLICT; no evaluated rule -> NO_RULES_EVALUATED; any FAIL -> HAS_FAIL; any UNKNOWN -> NO_FAIL_BUT_UNKNOWN; otherwise ALL_PASS. The headline summarizes rule_results only: feasibility_status must always be shown next to it.",
+      "properties": {
+        "headline": { "$ref": "common.schema.json#/$defs/headline" },
+        "counts": {
+          "type": "object", "required": ["pass", "fail", "unknown"], "additionalProperties": false,
+          "properties": { "pass": { "type": "integer", "minimum": 0 }, "fail": { "type": "integer", "minimum": 0 }, "unknown": { "type": "integer", "minimum": 0 } }
+        },
+        "rules_evaluated": { "type": "integer", "minimum": 0, "description": "len(rule_results) == pass + fail + unknown." },
+        "rules_not_evaluated": { "type": "integer", "minimum": 0 },
+        "starting_portfolio_breaches": { "type": "integer", "minimum": 0 },
+        "feasibility_status": { "anyOf": [{ "$ref": "common.schema.json#/$defs/feasibility_status" }, { "type": "null" }] }
+      }
+    }
+  }
+}

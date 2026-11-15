@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/policy.schema.json",
+  "title": "policy",
+  "description": "One immutable version of an investor's policy: qualitative objectives plus rules. A version is never rewritten; any change creates version+1 with parent_version set. Semantic rules (byb_contracts.validate_policy): parent_version is null iff version == 1, else parent_version < version; rule_id and objective_id values are unique; a rule's objective_id refers to an objective in the same version; supersedes/superseded_by links are mutual and stay inside the version; content_hash == 'sha256:' + sha256 of the canonical JSON of the policy without content_hash (byb_contracts.compute_content_hash).",
+  "type": "object",
+  "required": ["schema_version", "policy_id", "persona_id", "version", "parent_version", "created_at", "objectives", "rules", "change_note", "content_hash"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "policy_id": { "$ref": "common.schema.json#/$defs/id" },
+    "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+    "version": { "type": "integer", "minimum": 1 },
+    "parent_version": { "type": ["integer", "null"], "minimum": 1 },
+    "created_at": { "$ref": "common.schema.json#/$defs/datetime" },
+    "objectives": { "type": "array", "items": { "$ref": "objective.schema.json" } },
+    "rules": { "type": "array", "items": { "$ref": "rule.schema.json" } },
+    "change_note": { "type": "string", "description": "Why this version exists, e.g. 'Issuer cap raised from 0.10 to 0.30 by the user (challenge ch-...)'." },
+    "content_hash": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

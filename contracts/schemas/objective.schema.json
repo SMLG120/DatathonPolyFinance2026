@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/objective.schema.json",
+  "title": "objective",
+  "description": "A qualitative objective in the investor's own words. It is never evaluated as PASS/FAIL and never implies a numerical threshold (BUILD_BRIEF section 2).",
+  "type": "object",
+  "required": ["objective_id", "original_words", "kind", "source", "case_reference"],
+  "additionalProperties": false,
+  "properties": {
+    "objective_id": { "$ref": "common.schema.json#/$defs/id" },
+    "original_words": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Verbatim. Never paraphrased or corrected." },
+    "kind": { "$ref": "common.schema.json#/$defs/objective_kind" },
+    "source": { "$ref": "common.schema.json#/$defs/objective_source", "description": "USER_STATED: typed by the user. FICTIONAL_SCENARIO: wording supplied by our fictional persona scenario." },
+    "case_reference": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Official-case page the wording is based on (e.g. 'Case p.7'), or null." }
+  }
+}

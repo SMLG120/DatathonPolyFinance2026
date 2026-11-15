@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/investigation_job.schema.json",
+  "title": "investigation_job",
+  "description": "An asynchronous investigation (body of GET /investigations/{id}). Lifecycle QUEUED -> RUNNING -> SUCCEEDED | FAILED. Once terminal, status, steps, result, explanation, clarification and failure never change. State rules enforced below: QUEUED has no steps and no outcome; RUNNING has no outcome; SUCCEEDED has a result and/or a clarification and no failure; FAILED has a failure and no result. Semantic rules (byb_contracts.validate_investigation_job): steps are numbered 1..n in order; a terminal job has no RUNNING step; every evidence_id cited by a step or an explanation statement exists in result.evidence; a MODEL_VALIDATED statement cites at least one evidence record; result.policy_version == policy_version.",
+  "type": "object",
+  "required": [
+    "schema_version", "id", "status", "created_at", "updated_at", "deadline_at", "expires_at", "idempotency_key",
+    "persona_id", "policy_id", "policy_version", "request", "resolved_request", "parent_investigation_id", "challenge",
+    "agent", "steps", "clarification", "result", "explanation", "failure", "proposed_corrections"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+    "id": { "$ref": "common.schema.json#/$defs/id" },
+    "status": { "$ref": "common.schema.json#/$defs/job_status" },
+    "created_at": { "$ref": "common.schema.json#/$defs/datetime" },
+    "updated_at": { "$ref": "common.schema.json#/$defs/datetime" },
+    "deadline_at": { "$ref": "common.schema.json#/$defs/datetime", "description": "If the job is not terminal by this time it is marked FAILED with DEADLINE_EXCEEDED. Clients stop polling shortly after it." },
+    "expires_at": { "$ref": "common.schema.json#/$defs/datetime", "description": "After this time the job may be deleted and GET returns 410." },
+    "idempotency_key": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+    "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+    "policy_id": { "$ref": "common.schema.json#/$defs/id" },
+    "policy_version": { "type": "integer", "minimum": 1, "description": "The confirmed policy version this job evaluates. Fixed at creation." },
+    "request": { "oneOf": [{ "$ref": "purchase_request.schema.json" }, { "$ref": "purchase_request.schema.json#/$defs/unresolved" }], "description": "Exactly what was submitted and validated before the worker was invoked." },
+    "resolved_request": { "$ref": "purchase_request.schema.json#/$defs/nullable", "description": "The structured request actually evaluated. Equal to `request` when it was structured; filled by the investigator for a free-text request; null while unresolved." },
+    "parent_investigation_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "The investigation this one follows (a challenge or an answered clarification)." },
+    "challenge": { "$ref": "challenge.schema.json#/$defs/nullable", "description": "The CHANGE_RULE challenge that created this job, else null." },
+    "agent": {
+      "type": "object", "required": ["mode", "model_id", "tool_rounds", "note"], "additionalProperties": false,
+      "properties": {
+        "mode": { "$ref": "common.schema.json#/$defs/agent_mode", "description": "DETERMINISTIC_FALLBACK: the model was unavailable or rejected; the server ran the checks itself and every statement is a template." },
+        "model_id": { "$ref": "common.schema.json#/$defs/nullable_string" },
+        "tool_rounds": { "type": "integer", "minimum": 0 },
+        "note": { "$ref": "common.schema.json#/$defs/nullable_string" }
+      }
+    },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/step" }, "description": "Real tool events only, in execution order. Never model reasoning." },
+    "clarification": { "$ref": "interpretation.schema.json#/$defs/nullable_clarification", "description": "A targeted question the user must answer before a (further) check makes sense." },
+    "result": { "anyOf": [{ "type": "null" }, { "$ref": "check_result.schema.json" }], "description": "The server-enforced engine result. The model cannot alter it." },
+    "explanation": { "type": "array", "items": { "$ref": "#/$defs/statement" } },
+    "failure": {
+      "anyOf": [{ "type": "null" }, {
+        "type": "object", "required": ["code", "message", "retryable"], "additionalProperties": false,
+        "properties": {
+          "code": { "$ref": "common.schema.json#/$defs/failure_code" },
+          "message": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+          "retryable": { "type": "boolean", "description": "True when submitting a new investigation (new idempotency key) may succeed." }
+        }
+      }]
+    },
+    "proposed_corrections": { "type": "array", "items": { "$ref": "challenge.schema.json#/$defs/proposed_correction" }, "description": "Unverified user corrections raised against this investigation's evidence. Appending here never changes result or evidence." }
+  },
+  "allOf": [
+    { "if": { "properties": { "status": { "const": "QUEUED" } } },
+      "then": { "properties": { "steps": { "maxItems": 0 }, "result": { "type": "null" }, "clarification": { "type": "null" }, "failure": { "type": "null" }, "explanation": { "maxItems": 0 } } } },
+    { "if": { "properties": { "status": { "const": "RUNNING" } } },
+      "then": { "properties": { "result": { "type": "null" }, "clarification": { "type": "null" }, "failure": { "type": "null" }, "explanation": { "maxItems": 0 } } } },
+    { "if": { "properties": { "status": { "const": "SUCCEEDED" } } },
+      "then": { "properties": { "failure": { "type": "null" } }, "anyOf": [{ "properties": { "result": { "type": "object" } } }, { "properties": { "clarification": { "type": "object" } } }] } },
+    { "if": { "properties": { "status": { "const": "FAILED" } } },
+      "then": { "properties": { "failure": { "type": "object" }, "result": { "type": "null" }, "clarification": { "type": "null" }, "explanation": { "maxItems": 0 } } } }
+  ],
+  "$defs": {
+    "step": {
+      "type": "object",
+      "required": ["seq", "tool", "initiated_by", "started_at", "finished_at", "status", "input_summary", "result_summary", "evidence_ids"],
+      "additionalProperties": false,
+      "properties": {
+        "seq": { "type": "integer", "minimum": 1 },
+        "tool": { "$ref": "common.schema.json#/$defs/tool_name" },
+        "initiated_by": { "$ref": "common.schema.json#/$defs/step_initiator", "description": "MODEL: the investigator chose this call. SERVER: run by the service whatever the model did (mandatory checks)." },
+        "started_at": { "$ref": "common.schema.json#/$defs/datetime" },
+        "finished_at": { "$ref": "common.schema.json#/$defs/nullable_datetime", "description": "Null while status is RUNNING." },
+        "status": { "$ref": "common.schema.json#/$defs/step_status" },
+        "input_summary": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Template-rendered summary of the validated tool input." },
+        "result_summary": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Template-rendered summary of the tool output; null while RUNNING." },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" }
+      },
+      "allOf": [
+        { "if": { "properties": { "status": { "const": "RUNNING" } } },
+          "then": { "properties": { "finished_at": { "type": "null" }, "result_summary": { "type": "null" } } },
+          "else": { "properties": { "finished_at": { "type": "string" }, "result_summary": { "type": "string" } } } }
+      ]
+    },
+    "statement": {
+      "type": "object", "required": ["statement_id", "text", "evidence_ids", "rendered_by"], "additionalProperties": false,
+      "properties": {
+        "statement_id": { "$ref": "common.schema.json#/$defs/id" },
+        "text": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+        "evidence_ids": { "$ref": "common.schema.json#/$defs/id_list" },
+        "rendered_by": { "$ref": "common.schema.json#/$defs/rendered_by", "description": "TEMPLATE: deterministic text. MODEL_VALIDATED: model-written and accepted only because each claim cites evidence records of the right metric, subject, unit and period." }
+      }
+    }
+  }
+}

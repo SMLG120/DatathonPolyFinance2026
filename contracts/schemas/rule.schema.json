@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/rule.schema.json",
+  "title": "rule",
+  "description": "An operational rule (LEAD_DECISIONS D3). The number lives ONLY in `threshold` (a fraction); `threshold_kind` names its D3 meaning. Only rules with status CONFIRMED and a numeric threshold are evaluated. Provenance invariants enforced below: origin SYSTEM_PROPOSED <=> threshold null <=> threshold_source null; origin FICTIONAL_SCENARIO <=> threshold_source FICTIONAL_SCENARIO; origin USER_STATED <=> threshold_source USER_WORDS or USER_ENTERED; CONFIRMED and SUPERSEDED rules carry a number and confirmation fields; PROPOSED rules carry no confirmation fields.",
+  "type": "object",
+  "required": [
+    "rule_id", "rule_type", "parameters", "threshold", "threshold_kind", "threshold_source", "threshold_quote", "unit",
+    "status", "origin", "original_words", "objective_id", "scope_description",
+    "confirmed_at", "confirmed_by", "supersedes_rule_id", "superseded_by_rule_id"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "rule_id": { "$ref": "common.schema.json#/$defs/id", "description": "Unique within a policy across all its versions. A changed rule gets a new rule_id." },
+    "rule_type": { "$ref": "common.schema.json#/$defs/rule_type" },
+    "parameters": { "type": "object", "description": "Shape depends on rule_type; see $defs." },
+    "threshold": { "$ref": "common.schema.json#/$defs/nullable_fraction", "description": "The limit as a fraction, or null while no number has been supplied." },
+    "threshold_kind": { "$ref": "common.schema.json#/$defs/threshold_kind" },
+    "threshold_source": { "anyOf": [{ "$ref": "common.schema.json#/$defs/threshold_source" }, { "type": "null" }], "description": "Where the number came from. USER_WORDS: quoted from the user's sentence. USER_ENTERED: typed or selected by the user. FICTIONAL_SCENARIO: supplied by our persona scenario." },
+    "threshold_quote": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "The verbatim span of the user's words that contains the number (USER_WORDS only)." },
+    "unit": { "const": "fraction" },
+    "status": { "$ref": "common.schema.json#/$defs/rule_status" },
+    "origin": { "$ref": "common.schema.json#/$defs/rule_origin" },
+    "original_words": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The words (user's or scenario's) this rule was derived from, verbatim." },
+    "objective_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "Context link only. It never produces a PASS/FAIL and never implies the threshold." },
+    "scope_description": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Plain-language statement of exactly what is measured and what is out of scope. Printed on the rule card." },
+    "confirmed_at": { "$ref": "common.schema.json#/$defs/nullable_datetime" },
+    "confirmed_by": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "Session label, e.g. 'demo_user'. The access code is not a user identity (D8)." },
+    "supersedes_rule_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+    "superseded_by_rule_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "Set on a SUPERSEDED rule that was replaced; null if it was withdrawn without replacement." }
+  },
+  "allOf": [
+    { "if": { "properties": { "rule_type": { "const": "max_issuer_exposure" } } }, "then": { "properties": { "parameters": { "$ref": "#/$defs/max_issuer_exposure_parameters" }, "threshold_kind": { "const": "max_fraction" } } } },
+    { "if": { "properties": { "rule_type": { "const": "min_issuer_exposure" } } }, "then": { "properties": { "parameters": { "$ref": "#/$defs/min_issuer_exposure_parameters" }, "threshold_kind": { "const": "min_fraction" } } } },
+    { "if": { "properties": { "rule_type": { "const": "exclusion" } } }, "then": { "properties": { "parameters": { "$ref": "#/$defs/exclusion_parameters" }, "threshold_kind": { "const": "max_fraction" } } } },
+    { "if": { "properties": { "rule_type": { "const": "controversy_exclusion" } } }, "then": { "properties": { "parameters": { "$ref": "#/$defs/controversy_exclusion_parameters" }, "threshold_kind": { "const": "max_fraction" } } } },
+    { "if": { "properties": { "rule_type": { "const": "scenario_loss_budget" } } }, "then": { "properties": { "parameters": { "$ref": "#/$defs/scenario_loss_budget_parameters" }, "threshold_kind": { "const": "max_loss_fraction" } } } },
+    { "if": { "properties": { "origin": { "const": "SYSTEM_PROPOSED" } } }, "then": { "properties": { "threshold": { "type": "null" }, "threshold_source": { "type": "null" }, "status": { "const": "PROPOSED" } } } },
+    { "if": { "properties": { "origin": { "const": "FICTIONAL_SCENARIO" } } }, "then": { "properties": { "threshold": { "type": "number" }, "threshold_source": { "const": "FICTIONAL_SCENARIO" } } } },
+    { "if": { "properties": { "origin": { "const": "USER_STATED" } } }, "then": { "properties": { "threshold": { "type": "number" }, "threshold_source": { "enum": ["USER_WORDS", "USER_ENTERED"] } } } },
+    { "if": { "properties": { "threshold_source": { "const": "USER_WORDS" } } }, "then": { "properties": { "threshold_quote": { "type": "string", "minLength": 1 } } }, "else": { "properties": { "threshold_quote": { "type": "null" } } } },
+    { "if": { "properties": { "status": { "const": "PROPOSED" } } }, "then": { "properties": { "confirmed_at": { "type": "null" }, "confirmed_by": { "type": "null" }, "superseded_by_rule_id": { "type": "null" } } }, "else": { "properties": { "threshold": { "type": "number" }, "confirmed_at": { "type": "string" }, "confirmed_by": { "type": "string", "minLength": 1 } } } },
+    { "if": { "properties": { "status": { "const": "CONFIRMED" } } }, "then": { "properties": { "superseded_by_rule_id": { "type": "null" } } } }
+  ],
+  "$defs": {
+    "max_issuer_exposure_parameters": {
+      "type": "object", "required": ["issuer_scope"], "additionalProperties": false,
+      "properties": { "issuer_scope": { "type": "string", "pattern": "^(any|[A-Z0-9][A-Z0-9._-]{0,63})$", "description": "'any' = every issuer, otherwise one issuer_id." } }
+    },
+    "min_issuer_exposure_parameters": {
+      "type": "object", "required": ["issuer_id"], "additionalProperties": false,
+      "properties": { "issuer_id": { "$ref": "common.schema.json#/$defs/issuer_id" } }
+    },
+    "exclusion_parameters": {
+      "type": "object", "required": ["definition"], "additionalProperties": false,
+      "properties": {
+        "definition": {
+          "oneOf": [
+            { "type": "object", "required": ["kind", "issuer_ids"], "additionalProperties": false,
+              "properties": { "kind": { "const": "named_issuers" }, "issuer_ids": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/issuer_id" } } } },
+            { "type": "object", "required": ["kind", "sector"], "additionalProperties": false,
+              "properties": { "kind": { "const": "fund_reported_sector" }, "sector": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Exact, case-sensitive sector label as reported in the fund issuer's holdings file (or the registry label for a direct holding)." } } }
+          ]
+        }
+      }
+    },
+    "controversy_exclusion_parameters": {
+      "type": "object", "required": ["criteria"], "additionalProperties": false,
+      "properties": {
+        "criteria": {
+          "type": "object", "required": ["natures", "event_date_from"], "additionalProperties": false,
+          "properties": {
+            "natures": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "$ref": "common.schema.json#/$defs/controversy_nature" }, "description": "A registry record matches when its nature is in this list." },
+            "event_date_from": { "$ref": "common.schema.json#/$defs/nullable_date", "description": "If set, only records with event_date on or after this date match." }
+          }
+        }
+      }
+    },
+    "scenario_loss_budget_parameters": {
+      "type": "object", "required": ["scenario_id"], "additionalProperties": false,
+      "properties": { "scenario_id": { "$ref": "common.schema.json#/$defs/scenario_id" } }
+    }
+  }
+}

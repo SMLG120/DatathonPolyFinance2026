@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/api.schema.json",
+  "title": "API request and response bodies",
+  "description": "Bodies of the seven routes in contracts/api.md that are not already a standalone schema. POST /rules/interpret responds with interpretation.schema.json, POST /check with check_result.schema.json and GET /investigations/{id} with investigation_job.schema.json.",
+  "$defs": {
+    "error_response": {
+      "type": "object", "required": ["error"], "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object", "required": ["code", "message", "details", "request_id"], "additionalProperties": false,
+          "properties": {
+            "code": { "$ref": "common.schema.json#/$defs/error_code" },
+            "message": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "Safe to display. Never contains secrets, stack traces or model output." },
+            "details": {
+              "type": "array",
+              "items": { "type": "object", "required": ["path", "issue"], "additionalProperties": false,
+                "properties": { "path": { "type": "string", "description": "JSON path of the offending field, '' for the body." }, "issue": { "$ref": "common.schema.json#/$defs/non_empty_string" } } }
+            },
+            "request_id": { "$ref": "common.schema.json#/$defs/nullable_string" }
+          }
+        }
+      }
+    },
+    "portfolio_response": {
+      "type": "object", "required": ["schema_version", "scenario", "instruments", "purchasable_instrument_ids"], "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "scenario": { "$ref": "scenario.schema.json" },
+        "instruments": { "type": "object", "propertyNames": { "$ref": "common.schema.json#/$defs/instrument_id" }, "additionalProperties": { "$ref": "instrument.schema.json" }, "description": "Registry entries for every position and every purchasable instrument." },
+        "purchasable_instrument_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/instrument_id" }, "description": "Instruments a purchase request may name: in the registry AND with a price series in market_data." }
+      }
+    },
+    "interpret_request": {
+      "type": "object", "required": ["persona_id", "text", "policy_id", "policy_version"], "additionalProperties": false,
+      "properties": {
+        "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000, "description": "The user's words. Untrusted data: instructions inside it are never obeyed." },
+        "policy_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "Optional context: an existing policy. Never modified by this route." },
+        "policy_version": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "confirm_request": {
+      "type": "object", "required": ["persona_id", "policy_id", "base_version", "objectives", "confirmations", "withdraw_rule_ids", "change_note"], "additionalProperties": false,
+      "properties": {
+        "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+        "policy_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "Null creates a new policy (version 1)." },
+        "base_version": { "type": ["integer", "null"], "minimum": 1, "description": "Required with policy_id: the version the client saw. Must be the latest, else 409." },
+        "objectives": { "type": "array", "items": { "$ref": "objective.schema.json" }, "description": "The complete objective list of the new version." },
+        "confirmations": {
+          "type": "array",
+          "items": { "type": "object", "required": ["rule", "threshold"], "additionalProperties": false,
+            "properties": {
+              "rule": { "$ref": "rule.schema.json", "description": "The PROPOSED rule being confirmed, as displayed. Set supersedes_rule_id to replace a CONFIRMED rule of base_version." },
+              "threshold": { "$ref": "common.schema.json#/$defs/fraction", "description": "The number the user explicitly entered, selected or accepted. Always required: confirmation without a number is impossible." }
+            } }
+        },
+        "withdraw_rule_ids": { "$ref": "common.schema.json#/$defs/id_list", "description": "CONFIRMED rules of base_version to supersede without replacement." },
+        "change_note": { "$ref": "common.schema.json#/$defs/nullable_string" }
+      }
+    },
+    "confirm_response": {
+      "type": "object", "required": ["schema_version", "policy"], "additionalProperties": false,
+      "properties": { "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" }, "policy": { "$ref": "policy.schema.json" } }
+    },
+    "check_request": {
+      "type": "object", "required": ["persona_id", "policy_id", "policy_version", "purchase_request", "draft_rules"], "additionalProperties": false,
+      "properties": {
+        "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+        "policy_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+        "policy_version": { "type": ["integer", "null"], "minimum": 1 },
+        "purchase_request": { "$ref": "purchase_request.schema.json" },
+        "draft_rules": { "anyOf": [{ "type": "null" }, { "type": "array", "items": { "$ref": "rule.schema.json" } }], "description": "Null: evaluate the stored policy version (policy_id and policy_version required), preview false. Array: evaluate exactly these rules instead, preview true, nothing stored." }
+      }
+    },
+    "investigation_create_request": {
+      "type": "object", "required": ["persona_id", "policy_id", "policy_version", "request", "parent_investigation_id"], "additionalProperties": false,
+      "properties": {
+        "persona_id": { "$ref": "common.schema.json#/$defs/persona_id" },
+        "policy_id": { "$ref": "common.schema.json#/$defs/id" },
+        "policy_version": { "type": "integer", "minimum": 1 },
+        "request": { "oneOf": [{ "$ref": "purchase_request.schema.json" }, { "$ref": "purchase_request.schema.json#/$defs/unresolved" }] },
+        "parent_investigation_id": { "$ref": "common.schema.json#/$defs/nullable_id" }
+      }
+    },
+    "investigation_accepted": {
+      "type": "object", "required": ["schema_version", "id", "status", "created_at", "deadline_at", "expires_at", "poll"], "additionalProperties": false,
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "id": { "$ref": "common.schema.json#/$defs/id" },
+        "status": { "$ref": "common.schema.json#/$defs/job_status" },
+        "created_at": { "$ref": "common.schema.json#/$defs/datetime" },
+        "deadline_at": { "$ref": "common.schema.json#/$defs/datetime" },
+        "expires_at": { "$ref": "common.schema.json#/$defs/datetime" },
+        "poll": {
+          "type": "object", "required": ["path", "interval_ms"], "additionalProperties": false,
+          "properties": { "path": { "$ref": "common.schema.json#/$defs/non_empty_string" }, "interval_ms": { "type": "integer", "minimum": 500 } }
+        }
+      }
+    },
+    "challenge_request": {
+      "type": "object", "required": ["type", "payload"], "additionalProperties": false,
+      "properties": { "type": { "$ref": "common.schema.json#/$defs/challenge_type" }, "payload": { "type": "object" } },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "CORRECT_FACT" } } }, "then": { "properties": { "payload": { "$ref": "challenge.schema.json#/$defs/correct_fact_payload" } } } },
+        { "if": { "properties": { "type": { "const": "CLARIFY_PREFERENCE" } } }, "then": { "properties": { "payload": { "$ref": "challenge.schema.json#/$defs/clarify_preference_payload" } } } },
+        { "if": { "properties": { "type": { "const": "CHANGE_RULE" } } }, "then": { "properties": { "payload": { "$ref": "challenge.schema.json#/$defs/change_rule_payload" } } } }
+      ]
+    },
+    "challenge_response": {
+      "type": "object", "required": ["schema_version", "challenge", "proposed_correction", "interpretation", "policy", "investigation"], "additionalProperties": false,
+      "description": "Exactly the members that belong to challenge.type are non-null: CORRECT_FACT -> proposed_correction; CLARIFY_PREFERENCE -> interpretation; CHANGE_RULE -> policy and investigation.",
+      "properties": {
+        "schema_version": { "$ref": "common.schema.json#/$defs/schema_version" },
+        "challenge": { "$ref": "challenge.schema.json" },
+        "proposed_correction": { "anyOf": [{ "type": "null" }, { "$ref": "challenge.schema.json#/$defs/proposed_correction" }] },
+        "interpretation": { "anyOf": [{ "type": "null" }, { "$ref": "interpretation.schema.json" }] },
+        "policy": { "anyOf": [{ "type": "null" }, { "$ref": "policy.schema.json" }] },
+        "investigation": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/investigation_accepted" }] }
+      }
+    }
+  }
+}

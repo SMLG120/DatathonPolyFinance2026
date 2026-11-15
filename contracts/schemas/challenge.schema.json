@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://before-you-buy.invalid/contracts/schemas/challenge.schema.json",
+  "title": "challenge",
+  "description": "A user's challenge to a finished investigation (POST /investigations/{id}/challenge). CORRECT_FACT creates a proposed_correction and changes nothing else. CLARIFY_PREFERENCE returns a fresh interpretation (a draft). CHANGE_RULE is an explicit confirmation of a new threshold: it creates a new policy version and a child investigation; the earlier policy version and report are preserved.",
+  "type": "object",
+  "required": ["challenge_id", "investigation_id", "type", "payload", "created_at"],
+  "additionalProperties": false,
+  "properties": {
+    "challenge_id": { "$ref": "common.schema.json#/$defs/id" },
+    "investigation_id": { "$ref": "common.schema.json#/$defs/id", "description": "The investigation being challenged." },
+    "type": { "$ref": "common.schema.json#/$defs/challenge_type" },
+    "payload": { "type": "object" },
+    "created_at": { "$ref": "common.schema.json#/$defs/datetime" }
+  },
+  "allOf": [
+    { "if": { "properties": { "type": { "const": "CORRECT_FACT" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/correct_fact_payload" } } } },
+    { "if": { "properties": { "type": { "const": "CLARIFY_PREFERENCE" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/clarify_preference_payload" } } } },
+    { "if": { "properties": { "type": { "const": "CHANGE_RULE" } } }, "then": { "properties": { "payload": { "$ref": "#/$defs/change_rule_payload" } } } }
+  ],
+  "$defs": {
+    "correct_fact_payload": {
+      "type": "object", "required": ["evidence_id", "asserted_value", "asserted_unit", "user_note", "user_source"], "additionalProperties": false,
+      "properties": {
+        "evidence_id": { "$ref": "common.schema.json#/$defs/id", "description": "The evidence record the user disputes. It must exist in the investigation's result." },
+        "asserted_value": { "type": ["number", "string"], "description": "What the user says the value is. Fractions, never percentages, for unit 'fraction'." },
+        "asserted_unit": { "$ref": "common.schema.json#/$defs/evidence_unit" },
+        "user_note": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The user's reason, verbatim. Untrusted text: stored and displayed, never executed or obeyed." },
+        "user_source": { "$ref": "common.schema.json#/$defs/nullable_string", "description": "A citation or URL the user offers, verbatim. Not fetched and not verified in schema v1." }
+      }
+    },
+    "clarify_preference_payload": {
+      "type": "object", "required": ["text", "objective_id"], "additionalProperties": false,
+      "properties": {
+        "text": { "$ref": "common.schema.json#/$defs/non_empty_string", "description": "The user's clarification, verbatim." },
+        "objective_id": { "$ref": "common.schema.json#/$defs/nullable_id", "description": "The objective being clarified, if any." }
+      }
+    },
+    "change_rule_payload": {
+      "type": "object", "required": ["rule_id", "new_threshold", "user_note"], "additionalProperties": false,
+      "properties": {
+        "rule_id": { "$ref": "common.schema.json#/$defs/id", "description": "A CONFIRMED rule of the investigation's policy version." },
+        "new_threshold": { "$ref": "common.schema.json#/$defs/fraction", "description": "The number the user now confirms (a fraction)." },
+        "user_note": { "$ref": "common.schema.json#/$defs/nullable_string" }
+      }
+    },
+    "proposed_correction": {
+      "title": "proposed_correction",
+      "description": "A user-asserted correction with provenance. It is UNVERIFIED, it is never used in a calculation in schema v1 and it never overwrites or hides the evidence record it disputes. The UI must show it as an unverified user assertion next to the original evidence.",
+      "type": "object",
+      "required": ["correction_id", "challenge_id", "investigation_id", "evidence_id", "original_value", "original_unit", "asserted_value", "asserted_unit", "provenance", "status", "applied_to_calculation"],
+      "additionalProperties": false,
+      "properties": {
+        "correction_id": { "$ref": "common.schema.json#/$defs/id" },
+        "challenge_id": { "$ref": "common.schema.json#/$defs/id" },
+        "investigation_id": { "$ref": "common.schema.json#/$defs/id" },
+        "evidence_id": { "$ref": "common.schema.json#/$defs/id" },
+        "original_value": { "type": ["number", "string", "null"], "description": "Copy of the disputed evidence value at the time of the challenge." },
+        "original_unit": { "$ref": "common.schema.json#/$defs/evidence_unit" },
+        "asserted_value": { "type": ["number", "string"] },
+        "asserted_unit": { "$ref": "common.schema.json#/$defs/evidence_unit" },
+        "provenance": {
+          "type": "object", "required": ["asserted_by", "asserted_at", "user_note", "user_source"], "additionalProperties": false,
+          "properties": {
+            "asserted_by": { "const": "USER" },
+            "asserted_at": { "$ref": "common.schema.json#/$defs/datetime" },
+            "user_note": { "$ref": "common.schema.json#/$defs/non_empty_string" },
+            "user_source": { "$ref": "common.schema.json#/$defs/nullable_string" }
+          }
+        },
+        "status": { "$ref": "common.schema.json#/$defs/correction_status" },
+        "applied_to_calculation": { "const": false }
+      }
+    },
+    "nullable": { "anyOf": [{ "type": "null" }, { "$ref": "#" }] }
+  }
+}

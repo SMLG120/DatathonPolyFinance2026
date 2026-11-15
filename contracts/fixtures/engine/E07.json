@@ -1,0 +1,136 @@
+{
+  "fixture": true,
+  "fixture_id": "E07",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "title": "Insufficient cash is a feasibility result, not a rule failure",
+  "tests": [
+    "insufficient cash"
+  ],
+  "universe": "synthetic_universe.json",
+  "hand_calc": "E07",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-e07",
+      "persona_id": "synthetic_test",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.05,
+      "positions": [
+        {
+          "instrument_id": "FUND_A",
+          "weight": 0.85
+        },
+        {
+          "instrument_id": "SYN_A",
+          "weight": 0.1
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-e07",
+      "persona_id": "synthetic_test",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [],
+      "rules": [
+        {
+          "rule_id": "e07-cap",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.5,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "FICTIONAL_SCENARIO",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "FICTIONAL_SCENARIO",
+          "original_words": "Synthetic test rule.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:310531a03dd68c2fdd6191c0c130a28b8c4eba3bcb8dadd124493061039095ea"
+    },
+    "purchase_request": {
+      "instrument_id": "SYN_A",
+      "target_direct_weight": 0.2,
+      "funding": "CASH",
+      "original_words": null
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.1,
+      "target_direct_weight": 0.2,
+      "additional_purchase": 0.1,
+      "cash_before": 0.05,
+      "cash_after": -0.05,
+      "status": "INSUFFICIENT_CASH"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "e07-cap",
+        "status": "PASS",
+        "measured": {
+          "lower": 0.37,
+          "upper": 0.37
+        },
+        "limit": 0.5,
+        "gap": -0.13,
+        "breaching_subjects": [],
+        "unknown_causes": [],
+        "starting": {
+          "status": "PASS",
+          "measured": {
+            "lower": 0.34,
+            "upper": 0.34
+          }
+        }
+      }
+    ],
+    "starting_portfolio_findings": [],
+    "max_compliant": {
+      "status": "SUPPORTED",
+      "final_direct_weight": 0.15,
+      "additional_purchase": 0.05,
+      "binding_constraint": {
+        "type": "CASH",
+        "rule_id": null
+      },
+      "verified_by_rerun": true
+    },
+    "summary": {
+      "headline": "ALL_PASS",
+      "counts": {
+        "pass": 1,
+        "fail": 0,
+        "unknown": 0
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "INSUFFICIENT_CASH"
+    }
+  }
+}
