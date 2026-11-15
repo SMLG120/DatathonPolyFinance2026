@@ -169,6 +169,21 @@ def test_in33_a_wrong_sector_rule_on_oil_is_dropped_and_the_question_is_asked():
     assert "Utilities" not in json.dumps(draft)
 
 
+@pytest.mark.parametrize("text,term,extraction", [
+    ("Petroleum is out.", "Petroleum", EMPTY),
+    ("Petroleum is out.", "Petroleum", dict(EMPTY, ambiguous=[{"words": "Petroleum", "topic": "LOSS_LIMIT"}])),
+    ("Nothing fossil for me.", "fossil", EMPTY),
+    ("I want to avoid oil.", "oil", dict(EMPTY, rules=[{"words": "avoid oil", "rule_type": "max_issuer_exposure"}])),
+    ("I want to avoid oil.", "oil", dict(EMPTY, rules=[{"words": "avoid oil", "rule_type": "scenario_loss_budget"}])),
+], ids=["petroleum-omitted", "petroleum-wrong-topic", "bare-fossil", "oil-as-company-cap", "oil-as-loss-budget"])
+def test_in34_every_catalog_term_gets_only_the_exclusion_question(text, term, extraction):
+    """Observations O9 and O10: petroleum and a bare "fossil" are catalog terms; no rule is drafted about a catalog term."""
+    status, draft = interpret(service(answer(extraction)), text)
+    assert status == 200
+    assert_oil_question(draft, term)
+    assert len(draft["clarifications"]) == 1 and draft["proposed_rules"] == []
+
+
 def test_in03_amira_gets_a_question_never_a_contradiction_and_no_number():
     status, draft = interpret(service(answer(AMIRA_EXTRACTION)), AMIRA_TEXT, persona_id="amira")
     assert status == 200

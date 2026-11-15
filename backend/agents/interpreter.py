@@ -102,7 +102,7 @@ _ADDRESSES_SYSTEM_RE = re.compile(
 _SENTENCE_BREAK_RE = re.compile(r"(?<=[.!?;])\s+|\n+")
 _OIL_RE = re.compile(r"\b(oil|petroleum|fossil)\b", re.IGNORECASE)
 # Ambiguity catalog scanned on the request text itself, independent of the model.
-_CATALOG_RE = re.compile(r"\b(oil|fossil fuels?)\b", re.IGNORECASE)
+_CATALOG_RE = re.compile(r"\b(oil|petroleum|fossil fuels?|fossil)\b", re.IGNORECASE)
 _NAME_NOISE_RE = re.compile(r"\([^)]*\)|\b(inc|corp|corporation|co|company|ltd|limited|plc|sa|nv|ag|class [a-c]|cl [a-c]|com|the)\b")
 
 
@@ -548,6 +548,8 @@ class _Builder:
             else:
                 parameters = {"scenario_id": SCENARIO_IDS[0]}
 
+            if rule_type != "controversy_exclusion" and self._in_catalog(span):
+                continue  # words about a catalog term are answered by the catalog's question only (after the item was validated)
             claimed = item.get("threshold_words")
             number_span = span if claimed in (None, "") else _span(self.text, claimed, "threshold")
             number = user_number(self.text, span, number_span)
