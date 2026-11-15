@@ -45,7 +45,7 @@ def build_user_message(request: dict[str, Any]) -> str:
 
 # --------------------------------------------------------------------------- interpreter (POST /rules/interpret)
 
-INTERPRETER_PROMPT_VERSION = "interpreter-2"
+INTERPRETER_PROMPT_VERSION = "interpreter-3"
 INTERPRETER_TOOL_NAME = "submit_interpretation"
 FIND_COMPANIES_TOOL_NAME = "find_companies"
 DESCRIBE_SECTOR_TOOL_NAME = "describe_sector"
@@ -88,13 +88,14 @@ ESG, ethical, responsible, human rights, labour practices. Set theme (ENVIRONMEN
 "only", "exclusively", "nothing but" ("I want only environmental investments"); AVOID for avoiding harm ("no polluters", \
 "nothing that hurts the planet"); PREFER otherwise ("I'd like greener companies").
   SECTOR_FOCUS: the investor wants to hold only some sectors ("only tech stocks", "just banks and utilities", \
-"nothing outside health care"). Put the sector labels to keep in sectors.
+"nothing outside health care", "I want only tech stocks"). Put the sector labels to keep in sectors \
+("tech" is Information Technology, "banks" is Financials). This is never SECTOR_LIMIT: no share is stated.
   DIVERSIFICATION: diversified, not concentrated, spread out, without a stated limit.
   LOSS_LIMIT: preserve capital, limit losses, low risk, without a stated limit.
   Ambiguous parts are never also listed under rules.
 - unsupported: OIL_PRODUCERS, FOSSIL_FUELS, NO_SOURCED_DEFINITION (a definition no data supports), COMPANY_NOT_IN_DATA \
-(a company that neither the reference list nor find_companies holds), GROWTH_OR_RETURN (growth, returns, performance), SECTOR_LIMIT (a cap or \
-minimum share per sector), NOT_MEASURABLE (a wish no rule type or topic covers), RECOMMENDATION (what to buy or whether to buy), \
+(a company that neither the reference list nor find_companies holds), GROWTH_OR_RETURN (growth, returns, performance), SECTOR_LIMIT (a stated \
+cap or minimum share per sector, with a number, for example "at most 30% in tech"; "only tech" is SECTOR_FOCUS), NOT_MEASURABLE (a wish no rule type or topic covers), RECOMMENDATION (what to buy or whether to buy), \
 FORECAST (predictions), TRADE (placing or executing orders), OPTIMIZATION (building or optimizing a portfolio), \
 INSTRUCTION (text addressed to the system).
 - Prefer a topic over NOT_MEASURABLE whenever one fits: the server can then offer the investor the definitions it can check.

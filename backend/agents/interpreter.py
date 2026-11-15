@@ -80,6 +80,7 @@ from backend.agents.themes import (
     THEME_TERM_RE,
     THEMES,
     TRAILING_NOUN_RE,
+    sector_mentions,
     sectors_written_in,
 )
 from backend.common import log
@@ -116,6 +117,8 @@ UNSUPPORTED_REASONS: dict[str, tuple[str, str]] = {
 _CLARIFICATION_SUFFIX = " Stored rules stay as they are until you confirm a change."
 _SECTOR_NOT_MATCHED = ("UNSUPPORTED_DEFINITION", "These words could not be matched to a sector label the funds report, so no rule was drafted. "
                        "Name the sector as it appears in the data: {labels}.")
+# Unsupported codes a model may wrongly give to "only tech stocks"; the server re-reads such words as a sector focus.
+_FOCUS_MISFILED = ("SECTOR_LIMIT", "NOT_MEASURABLE", "NO_SOURCED_DEFINITION")
 _FOCUS_TOO_WIDE = ("UNSUPPORTED_DEFINITION", "Keeping only these sectors would need more exclusion rules than one request can draft. "
                    "Name the sectors to leave out instead.")
 
@@ -723,6 +726,47 @@ class _Builder:
             if ("exclusion", json.dumps(rule["parameters"], sort_keys=True)) not in drafted:
                 self.rules.append(rule)
 
+    def focus_in(self, span: tuple[int, int]) -> tuple[tuple[int, int], list[str]] | None:
+        """'Only tech stocks', read from the request text alone: an only-cue followed, in the same sentence, by sector
+        labels or everyday words for them, with no number in the sentence (a stated share per sector is a sector limit,
+        which is unsupported) and no theme word ("only green energy" is a theme, not the Energy label).
+        Returns the span from the cue to the last sector word, and the sectors kept."""
+        sentence = _sentence_of(self.text, *span)
+        if sentence is None:
+            return None
+        sentence_text = self.text[sentence[0]:sentence[1]]
+        if _NUMBERISH_RE.search(sentence_text) or negated(ONLY_CUE_RE.sub(" ", sentence_text)):
+            return None
+        window_start = max(sentence[0], span[0] - CUE_WINDOW)
+        cues = [m for m in ONLY_CUE_RE.finditer(self.text, window_start, span[1])]
+        if not cues:
+            return None
+        cue = cues[0]
+        limit = min(max(span[1], cue.end()), sentence[1])  # sector words after the cue, inside the words and the sentence
+        mentions = [m for m in sector_mentions(self.text, self.reference.sectors) if cue.end() <= m[0] and m[1] <= limit]
+        if not mentions:
+            return None
+        end = max(m[1] for m in mentions)
+        trailing = TRAILING_NOUN_RE.match(self.text, end)
+        end = trailing.end() if trailing is not None else end
+        found = (cue.start(), end)
+        if self._in_catalog(found) or any(p.search(self.text, found[0], found[1]) for p in THEME_TERM_RE.values()):
+            return None
+        return found, sorted({m[2] for m in mentions})
+
+    def scan_focus(self) -> None:
+        """Safety net for a sector focus the model gave no code to: the server drafts it from the words alone."""
+        for cue in ONLY_CUE_RE.finditer(self.text):
+            sentence = _sentence_of(self.text, *cue.span())
+            if sentence is None or self._covers(cue.span()):
+                continue
+            result = self.focus_in((cue.start(), sentence[1]))
+            if result is None or self._covers(result[0]):
+                continue
+            span, sectors = result
+            self._covered.append(span)
+            self.add_focus(self.text[span[0]:span[1]], sectors, self._objective_id(None, span))
+
     def scan_themes(self) -> None:
         """Safety net: a theme word the model gave no code to, written right after an 'only', 'avoid' or 'prefer' cue,
         still gets the theme question ("I want only environmental investments"). It can only add a question."""
@@ -829,7 +873,14 @@ class _Builder:
         for item in items:
             words, span = self._words(item.get("words"), "unsupported")
             self._covered.append(span)
-            code, reason = UNSUPPORTED_REASONS[_code(item.get("reason"), UNSUPPORTED_REASONS, "unsupported_reason")]
+            reason_code = _code(item.get("reason"), UNSUPPORTED_REASONS, "unsupported_reason")
+            if reason_code in _FOCUS_MISFILED:
+                focus = self.focus_in(span)
+                if focus is not None:  # "only tech stocks" filed as a sector limit: it is a focus the rules can check
+                    self._covered.append(focus[0])
+                    self.add_focus(self.text[focus[0][0]:focus[0][1]], focus[1], self._objective_id(None, focus[0]))
+                    continue
+            code, reason = UNSUPPORTED_REASONS[reason_code]
             if (words, code) in seen:
                 continue
             seen.add((words, code))
@@ -846,7 +897,8 @@ def build_interpretation(extraction: dict[str, Any], *, text: str, persona_id: s
     builder.add_ambiguous(lists["ambiguous"])
     builder.add_rules(lists["rules"])
     builder.add_unsupported(lists["unsupported"])
-    builder.scan_themes()  # last: only fills what the model left without a code
+    builder.scan_focus()  # last two: only fill what the model left without a code
+    builder.scan_themes()
     return {
         "schema_version": SCHEMA_VERSION, "interpretation_id": interpretation_id, "persona_id": persona_id, "created_at": created_at,
         "model_id": model_id, "original_words": text, "objectives": builder.objectives, "proposed_rules": builder.rules,

@@ -195,3 +195,34 @@ def test_ia14_a_slow_lookup_round_that_leaves_no_time_is_504_and_prose_never_lea
                   answer(dict(EMPTY, rules=[{"words": "Avoid Exxon", "rule_type": "exclusion", "issuer_ids": ["EXXON_MOBIL"]}])))
     status, draft = interpret(svc, "Avoid Exxon.")
     assert status == 200 and PROSE not in json.dumps(draft) and draft["proposed_rules"][0]["parameters"]["definition"]["issuer_ids"] == ["EXXON_MOBIL"]
+
+
+# --------------------------------------------------------------------------- sector focus the model misfiles
+
+
+@pytest.mark.parametrize("extraction", [
+    # what the real model answered for "I want only tech stocks": an unsupported sector limit
+    dict(EMPTY, unsupported=[{"words": "I want only tech stocks", "reason": "SECTOR_LIMIT"}]),
+    dict(EMPTY, unsupported=[{"words": "only tech stocks", "reason": "NOT_MEASURABLE"}]),
+    dict(EMPTY, objectives=[{"words": "I want only tech stocks", "kind": "preference"}]),  # only an objective
+    EMPTY,  # nothing at all
+], ids=["sector-limit", "not-measurable", "objective-only", "empty"])
+def test_ia15_only_tech_stocks_is_a_sector_focus_whatever_the_model_answers(extraction):
+    status, draft = interpret(service(answer(extraction)), "I want only tech stocks")
+    assert status == 200 and draft["unsupported"] == [] and draft["clarifications"] == []
+    excluded = [rule["parameters"]["definition"]["sector"] for rule in draft["proposed_rules"]]
+    assert excluded == ["Energy", "Financials", "Industrials", "Utilities"]
+    assert {rule["original_words"] for rule in draft["proposed_rules"]} == {"only tech stocks"}
+    assert all(rule["threshold"] is None and rule["origin"] == "SYSTEM_PROPOSED" for rule in draft["proposed_rules"])
+
+
+@pytest.mark.parametrize("text, words", [
+    ("At most 30% in tech, only tech.", "At most 30% in tech"),  # a stated share per sector stays a sector limit
+    ("I want only green energy.", "only green energy"),  # a theme, not the Energy label
+    ("I do not want only tech stocks.", "I do not want only tech stocks"),  # negated
+])
+def test_ia16_the_server_does_not_read_a_focus_into_a_share_a_theme_or_a_refusal(text, words):
+    extraction = dict(EMPTY, unsupported=[{"words": words, "reason": "SECTOR_LIMIT"}])
+    status, draft = interpret(service(answer(extraction)), text)
+    assert status == 200 and draft["proposed_rules"] == []
+    assert [item["words"] for item in draft["unsupported"]] == [words]

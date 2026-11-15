@@ -106,3 +106,15 @@ COMPANY_ALIASES: dict[str, str] = {
     "manulife": "manulife financial",
     "nvidia": "nvidia",
 }
+
+
+def sector_mentions(text: str, labels: list[str]) -> list[tuple[int, int, str]]:
+    """Where the investor's text names a snapshot sector label (the label or an everyday word): (start, end, label)."""
+    found = []
+    for label in labels:
+        for match in re.finditer(rf"\b{re.escape(label)}\b", text, re.IGNORECASE):
+            found.append((match.start(), match.end(), label))
+    for pattern, label in _SECTOR_ALIAS_RE:
+        if label in labels:
+            found.extend((match.start(), match.end(), label) for match in pattern.finditer(text))
+    return sorted(set(found))

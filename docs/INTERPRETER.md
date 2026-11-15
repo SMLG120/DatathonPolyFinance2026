@@ -4,9 +4,9 @@ Code: `backend/agents/interpreter.py`. Routes: `POST /rules/interpret` and the
 `CLARIFY_PREFERENCE` challenge (`contracts/api.md` §3 and the challenge section).
 Tests: `backend/tests/service/test_service_interpreter.py` (in01–in36) and
 `backend/tests/service/test_service_interpreter_agent.py` (ia01–ia14, the agent features).
-Server vocabulary: `backend/agents/themes.py`. Prompt version: `interpreter-2`.
+Server vocabulary: `backend/agents/themes.py`. Prompt version: `interpreter-3`.
 
-## The interpretation agent (interpreter-2)
+## The interpretation agent (interpreter-3)
 
 The interpreter is a small bounded agent, not a single keyword parse:
 

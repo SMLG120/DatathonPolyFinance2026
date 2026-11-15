@@ -476,7 +476,7 @@ Not verified, in the order they are met:
    non-allowed origin; whether authorizer refusals carry CORS headers; the
    30-second bound on a rotated code.
 8. The real model with the current prompts (`investigator-4`,
-   `interpreter-2`), and the API function's Bedrock permission.
+   `interpreter-3`), and the API function's Bedrock permission.
 9. The upload to the Amplify URL (content type), the deployment job, and that
    headers set with `UpdateApp` apply to a manual deployment after a redeploy.
 10. The Content-Security-Policy against a real build, including the 3D
