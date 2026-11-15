@@ -370,14 +370,19 @@ def test_sector_label_evidence_quotes_the_fund_file(demo):
     data, result, records = demo["data"], demo["result"], records_of(demo["result"])
     entry = by_rule(result)[ENERGY]
     xiu = fund(data, "XIU.TO")
-    labels = [records[i] for i in entry["evidence_ids"] if records[i]["metric_id"] == "sector_label"]
+    cited_labels = [records[i] for i in entry["evidence_ids"] if records[i]["metric_id"] == "sector_label"]
+    labels = [r for r in cited_labels if r["value"] is not None]
     assert {r["subject"]["id"] for r in labels} == {s["subject_id"] for s in entry["breaching_subjects"]}
+    assert all(r["subject"]["kind"] == "ISSUER" for r in labels)
     for record in labels:
         row = next(r for r in xiu["holdings"] if r["issuer_id"] == record["subject"]["id"])
         assert record["value"] == row["sector"] == "Energy" and record["unit"] == "text" and record["label"] == "FACT"
         assert record["subject"]["via_fund_id"] == "XIU.TO" and record["source_ids"] == [row["sector_source"]]
         assert record["period"] == {"type": "AS_OF", "date": xiu["holdings_date"]}
-    assert not [r for r in result["evidence"] if r["metric_id"] == "sector_label" and r["value"] is not None and r["subject"].get("via_fund_id") == "SPY"]
+    # a null label is only ever about the fund whose file reports none (SEMANTICS section 13); never a positive claim about SPY
+    assert all(r["subject"] == {"kind": "FUND", "id": "SPY", "via_fund_id": None, "portfolio_state": "NOT_APPLICABLE"} for r in cited_labels if r["value"] is None)
+    assert not [r for r in result["evidence"] if r["metric_id"] == "sector_label" and r["value"] is not None
+                and "SPY" in (r["subject"]["id"], r["subject"].get("via_fund_id"))]
 
 
 def test_controversy_evidence_is_dated_sourced_and_about_the_issuer(demo):
@@ -395,27 +400,63 @@ def test_controversy_evidence_is_dated_sourced_and_about_the_issuer(demo):
         assert source["coverage_note"] in record["assumptions"]  # coverage limits travel with the record
 
 
-@pytest.mark.xfail(strict=True, reason="FINDINGS.md E1: controversy_record evidence value is nature/date/summary text, not the registry record_id (SEMANTICS section 13)")
 def test_E1_controversy_record_value_is_the_registry_record_id(demo):
+    """FINDINGS.md E1 (closed in engine 1.0.8). SEMANTICS section 13: the value is the registry ``record_id``, the
+    subject the issuer, the period the event date, the sources the record's sources. The description moved to
+    ``assumptions``; it must still say what the registry says (nature and summary), unchanged."""
     registry = {r["issuer_id"]: r for r in demo["data"]["controversies"]["records"]}
     cited = [r for r in demo["result"]["evidence"] if r["metric_id"] == "controversy_record"]
-    assert cited and all(r["value"] == registry[r["subject"]["id"]]["record_id"] for r in cited)
+    assert len(cited) == 3
+    for record in cited:
+        source = registry[record["subject"]["id"]]
+        assert record["value"] == source["record_id"]
+        assert record["subject"] == {"kind": "ISSUER", "id": source["issuer_id"], "via_fund_id": None, "portfolio_state": "NOT_APPLICABLE"}
+        assert record["period"] == {"type": "AS_OF", "date": source["event_date"]} and record["source_ids"] == source["source_ids"]
+        assert record["label"] == "FACT" and record["unit"] == "text" and record["derived_from"] == []
+        described = " ".join(record["assumptions"])
+        assert source["summary"] in described and source["nature"] in described and source["coverage_note"] in described
+    # same form as the contract fixture
+    fixture = __import__("mateo_helpers").api_fixture("investigation_mateo_succeeded")["response_body"]["result"]["evidence"]
+    if demo["data"]["controversies"]["records"][0]["record_id"].startswith("SYN-"):
+        assert sorted(r["value"] for r in cited) == sorted(r["value"] for r in fixture if r["metric_id"] == "controversy_record")
 
 
-@pytest.mark.xfail(strict=True, reason="FINDINGS.md E2: the sector rule's lower bound cites only the fund's portfolio weight; no record carries the Energy-labelled fund fraction or says that the SPY rows are unlabelled (SEMANTICS section 13)")
 def test_E2_sector_rule_bounds_cite_the_labels_and_weights_they_are_computed_from(demo):
-    """Lower = fund weight x Energy-labelled constituent weights, so the calculation path of the rule-level
-    record should reach constituent-weight / label records; and the unlabelled SPY weight that enters the
-    upper bound should rest on a ``sector_label`` record with a null value for SPY (SEMANTICS section 13,
-    as in the contract fixture ``investigation_mateo_succeeded``: ``ev-spy-sector-labels``)."""
-    result, records = demo["result"], records_of(demo["result"])
+    """FINDINGS.md E2 (closed in engine 1.0.8). The rule-level lower bound is derived from the fund's weight and a
+    sourced record of the fund's Energy-labelled fraction; the upper bound is derived from a ``sector_label``
+    record with a null value for SPY (SEMANTICS section 13; fixture ``ev-spy-sector-labels``). The cited numbers
+    are compared with the holdings files and are enough to recompute both bounds."""
+    data, result, records = demo["data"], demo["result"], records_of(demo["result"])
+    xiu, spy = fund(data, "XIU.TO"), fund(data, "SPY")
     about_rule = lambda state: {"kind": "RULE", "id": ENERGY, "via_fund_id": None, "portfolio_state": state}  # noqa: E731
-    lower = next(r for r in result["evidence"] if r["metric_id"] == "exposure_lower" and r["subject"] == about_rule("PROPOSED"))
-    lower_chain = {records[i]["metric_id"] for i in derivation_closure(records, lower["evidence_id"])}
-    unlabelled = [r for r in result["evidence"] if r["metric_id"] == "sector_label" and r["value"] is None
-                  and "SPY" in (r["subject"]["id"], r["subject"]["via_fund_id"])]
-    assert lower_chain & {"fund_constituent_weight", "issuer_exposure_via_fund", "sector_label"}, sorted(lower_chain)
-    assert unlabelled, "no record says that the SPY holdings file reports no sector label"
+    for state in ("STARTING", "PROPOSED"):
+        lower = next(r for r in result["evidence"] if r["metric_id"] == "exposure_lower" and r["subject"] == about_rule(state))
+        parents = [records[i] for i in lower["derived_from"]]
+        weight = [r for r in parents if r["metric_id"] == "position_weight"]
+        fraction = [r for r in parents if r["metric_id"] == "fund_constituent_weight"]
+        assert len(weight) == 1 and len(fraction) == 1 and len(parents) == 2
+        from_file = sum(row["weight_fraction"] for row in xiu["holdings"] if row["sector"] == "Energy")
+        assert fraction[0]["value"] == approx(from_file) and fraction[0]["source_ids"] == [xiu["source_id"]]
+        assert fraction[0]["subject"] == {"kind": "FUND", "id": "XIU.TO", "via_fund_id": None, "portfolio_state": "NOT_APPLICABLE"}
+        assert fraction[0]["period"] == {"type": "AS_OF", "date": xiu["holdings_date"]} and fraction[0]["formula"]
+        assert weight[0]["subject"]["id"] == "XIU.TO" and weight[0]["value"] == 0.20
+        assert weight[0]["value"] * fraction[0]["value"] == approx(lower["value"])  # recomputed from the cited records alone
+    upper = next(r for r in result["evidence"] if r["metric_id"] == "exposure_upper" and r["subject"] == about_rule("PROPOSED"))
+    parents = [records[i] for i in upper["derived_from"]]
+    unlabelled = [r for r in parents if r["metric_id"] == "sector_label"]
+    assert len(unlabelled) == 1
+    assert unlabelled[0]["value"] is None and unlabelled[0]["unit"] == "text" and unlabelled[0]["label"] == "FACT"
+    assert unlabelled[0]["subject"] == {"kind": "FUND", "id": "SPY", "via_fund_id": None, "portfolio_state": "NOT_APPLICABLE"}
+    assert unlabelled[0]["source_ids"] == [spy["source_id"]] and unlabelled[0]["period"] == {"type": "AS_OF", "date": spy["holdings_date"]}
+    chain = [records[i] for i in derivation_closure(records, upper["evidence_id"])]
+    coverage = next(r for r in chain if r["metric_id"] == "fund_coverage_fraction" and r["subject"]["id"] == "SPY")
+    spy_weight = next(r for r in parents if r["metric_id"] == "position_weight" and r["subject"]["id"] == "SPY")
+    not_reported = sum(r["value"] for r in parents if r["metric_id"] == "unattributed_fund_weight")
+    lower_parent = next(r for r in parents if r["metric_id"] == "exposure_lower")
+    assert lower_parent["value"] + not_reported + spy_weight["value"] * coverage["value"] == approx(upper["value"])
+    # the starting portfolio holds no unlabelled row, so its upper bound cites no "no label" record
+    start_upper = next(r for r in result["evidence"] if r["metric_id"] == "exposure_upper" and r["subject"] == about_rule("STARTING"))
+    assert not [i for i in start_upper["derived_from"] if records[i]["metric_id"] == "sector_label"]
 
 
 def test_a_fund_without_a_holdings_file_claims_no_date_and_no_source(demo):
@@ -498,6 +539,10 @@ def test_demo_max_compliant_is_no_feasible_purchase_with_a_reason_and_no_number(
     assert maximum["binding_constraint"] == {"type": "RULE", "rule_id": ENERGY}  # first rule in policy order failing just above w0
     assert maximum["final_direct_weight"] is None and maximum["additional_purchase"] is None and maximum["verified_by_rerun"] is False
     assert ENERGY in maximum["reason"] and maximum["reason"].strip()
+    cited = [records_of(demo["result"])[i] for i in maximum["evidence_ids"]]  # as in the contract fixture: starting lower bound and limit
+    assert sorted((r["metric_id"], r["subject"]["id"], r["subject"]["portfolio_state"], r["value"]) for r in cited) == [
+        ("exposure_lower", ENERGY, "STARTING", by_rule(demo["result"])[ENERGY]["starting"]["measured"]["lower"]),
+        ("rule_threshold", ENERGY, "NOT_APPLICABLE", 0.0)]
     evaluated = [r for r in demo["policy"]["rules"]]
     assert hand_max_compliant_status(evaluated, demo["portfolio"], demo["request"], demo["data"]) == "NO_FEASIBLE_PURCHASE"
     # every fundable target really is a proven failure of that rule (re-run the evaluator on a few of them)
@@ -540,11 +585,22 @@ def test_max_compliant_gives_no_number_unless_supported(uni, name):
         assert maximum["binding_constraint"] == {"type": "CASH", "rule_id": None} and final == approx(0.25)
     else:
         assert maximum["final_direct_weight"] is None and maximum["additional_purchase"] is None and maximum["verified_by_rerun"] is False
-        assert maximum["evidence_ids"] == []
+        records = records_of(result)
+        cited = [records[i] for i in maximum["evidence_ids"]]  # every id resolves
+        assert not [r for r in cited if r["metric_id"].startswith("max_compliant")]  # no boundary number without SUPPORTED
     if wanted == "WITHHELD":
         assert maximum["binding_constraint"] is None
     if name == "no cash":
         assert maximum["binding_constraint"] == {"type": "CASH", "rule_id": None}
+        assert [(r["metric_id"], r["value"], r["subject"]["portfolio_state"]) for r in cited] == [("cash_weight", 0.0, "STARTING")]
+    if wanted == "NO_FEASIBLE_PURCHASE" and name != "no cash":
+        # the statement "already fails before any purchase" rests on the binding rule's starting lower bound and its limit
+        binding = maximum["binding_constraint"]["rule_id"]
+        entry = by_rule(result)[binding]
+        about = {(r["metric_id"], r["subject"]["portfolio_state"]): r for r in cited if r["subject"] == dict(r["subject"], kind="RULE", id=binding)}
+        assert set(about) == {("exposure_lower", "STARTING"), ("rule_threshold", "NOT_APPLICABLE")} and len(cited) == 2
+        assert about[("exposure_lower", "STARTING")]["value"] == entry["starting"]["measured"]["lower"] > entry["limit"]
+        assert about[("rule_threshold", "NOT_APPLICABLE")]["value"] == entry["limit"]
     if name in ("starting FAIL that buying cannot repair", "UNKNOWN at every target (ESGV missing)", "provable PASS up to the cash limit"):
         evaluated = [r for r in policy["rules"] if r["status"] == "CONFIRMED"]
         assert hand_max_compliant_status(evaluated, held, demo_request(), uni["data"]) == wanted  # brute force over targets agrees
