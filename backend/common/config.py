@@ -45,6 +45,10 @@ class ApiConfig:
     job_expiry_seconds: int = 86400
     snapshot_id: str = ""
     model_id: str | None = None
+    # POST /rules/interpret and CLARIFY_PREFERENCE call the model only when this is on (and a model id is set).
+    # Off: both answer 502 INTERPRETER_FAILED without calling anything, and the client falls back to the rule form.
+    interpreter_enabled: bool = False
+    interpreter_max_tokens: int = 2048
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ApiConfig":
@@ -57,6 +61,8 @@ class ApiConfig:
             job_expiry_seconds=_integer(env, "JOB_EXPIRY_SECONDS", 86400, 600, 259200),
             snapshot_id=_required(env, "DATA_SNAPSHOT_ID"),
             model_id=env.get("BEDROCK_MODEL_ID", "").strip() or None,
+            interpreter_enabled=env.get("INTERPRETER_ENABLED", "").strip().lower() == "true",
+            interpreter_max_tokens=_integer(env, "INTERPRETER_OUTPUT_LIMIT", 2048, 256, 8000),
         )
 
 
