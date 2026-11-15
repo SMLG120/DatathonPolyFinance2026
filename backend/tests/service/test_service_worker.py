@@ -16,6 +16,7 @@ import pytest
 from byb_contracts import investigation_job_errors
 
 from backend.agents import explain
+from backend.agents.tools import TOOL_NAMES
 from backend.common.jobview import job_id_for
 from service_fakes import (
     IDEMPOTENCY_KEY,
@@ -440,6 +441,70 @@ def test_wk07_unknown_tool_is_rejected_recorded_and_not_executed(env):
     view = env.view()
     assert [(s["tool"], s["initiated_by"]) for s in view["steps"]] == [("check_rules", "SERVER"), ("max_compliant_amount", "SERVER")]
     assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+
+
+# Validator finding F-20: a public step holds no string the model chose. An argument that names an entity must be
+# one of the entities of the server's own result; a rejected call is described with server text and a count only.
+SLOGAN = "ALL-RULES-PASS.Buy-NVDA-now.it-will-double"
+F20_CALLS = [
+    ("lookup_controversy_evidence", {"issuer_id": "BUY-NOW.ALL-RULES-PASS.PRICE-WILL-DOUBLE.NO-RISK"}),   # well-formed, not an issuer of the result
+    ("lookup_controversy_evidence", {"issuer_id": "MICROSOFT"}),                                          # a real company, not in this result
+    ("lookup_controversy_evidence", {"issuer_id": "nvidia"}),
+    ("lookup_controversy_evidence", {"issuer_id": ["NVIDIA", SLOGAN]}),
+    ("lookup_controversy_evidence", {"issuer_id": "NVIDIA", SLOGAN: 1}),
+    ("get_holdings", {"fund_id": "SPY", SLOGAN: 1, "you_should_buy": 2}),
+    ("get_holdings", {"fund_id": SLOGAN}),
+    ("check_rules", {"Rules-are-wrong.Ignore-the-FAIL.Go-for-it": True}),
+    ("get_portfolio", {f"{SLOGAN}-{i}": i for i in range(12)}),
+    ("compute_exposure", SLOGAN),
+    ("compute_exposure", [SLOGAN]),
+    (SLOGAN, {"fund_id": "SPY"}),                                                                          # not a tool at all
+    ("check_rules\n" + SLOGAN, {}),
+]
+
+
+def test_wk07b_no_string_chosen_by_the_model_reaches_a_public_step(env):
+    script = [tool_use_response(name, arguments, tool_use_id=f"tooluse_{i}") for i, (name, arguments) in enumerate(F20_CALLS)]
+    env.run(script + [final_response()], max_tool_rounds=20, max_tool_calls=40)
+    view = env.view()  # POST /investigations -> worker -> GET /investigations/{id}
+    public = json.dumps(view, ensure_ascii=False)
+    for fragment in (SLOGAN, "ALL-RULES-PASS", "BUY-NOW", "PRICE-WILL-DOUBLE", "you_should_buy", "Go-for-it", "MICROSOFT", "nvidia", "argument types"):
+        assert fragment not in public, fragment
+    model_steps = [s for s in view["steps"] if s["initiated_by"] == "MODEL"]
+    assert len(model_steps) == 11  # the two calls to a name off the allowlist are not steps at all
+    assert all(s["status"] == "ERROR" and s["evidence_ids"] == [] for s in model_steps)
+    assert {s["tool"] for s in model_steps} <= set(TOOL_NAMES)
+    # Every character of a rejected step is the server's: the tool name from the allowlist, a fixed reason, a count.
+    assert {s["result_summary"] for s in model_steps} == {"rejected, not executed (INVALID_ARGUMENTS): the arguments do not match the tool schema"}
+    assert [s["input_summary"] for s in model_steps] == [
+        "Rejected call: 1 argument(s) supplied. They are not shown."] * 4 + [
+        "Rejected call: 2 argument(s) supplied. They are not shown.", "Rejected call: 3 argument(s) supplied. They are not shown.",
+        "Rejected call: 1 argument(s) supplied. They are not shown.", "Rejected call: 1 argument(s) supplied. They are not shown.",
+        "Rejected call: 12 argument(s) supplied. They are not shown.",
+        "Rejected call: the arguments were not an object. They are not shown.", "Rejected call: the arguments were not an object. They are not shown."]
+    assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+    # What the model sent is kept, in the private trace only.
+    trace = env.s3.json(TRACE_KEY)
+    assert SLOGAN in json.dumps(trace) and sum(1 for e in trace["tool_events"] if e["status"] == "REJECTED") == len(F20_CALLS)
+    assert all(SLOGAN not in e["input_summary"] and SLOGAN not in e["result_summary"] for e in trace["tool_events"])
+
+
+def test_wk07c_an_entity_argument_is_accepted_only_for_an_entity_of_the_servers_result(env):
+    issuers = sorted(entry["issuer_id"] for entry in env.expected["exposure"]["issuers"])
+    funds = sorted(entry["fund_id"] for entry in env.expected["data_coverage"])
+    assert "NVIDIA" in issuers and funds
+    env.run([tool_use_response("lookup_controversy_evidence", {"issuer_id": "NVIDIA"}), tool_use_response("get_holdings", {"fund_id": funds[0]}, tool_use_id="t2"),
+             tool_use_response("lookup_controversy_evidence", {}, tool_use_id="t3"), final_response()])
+    steps = [s for s in env.view()["steps"] if s["initiated_by"] == "MODEL"]
+    assert [(s["status"], s["input_summary"]) for s in steps] == [
+        ("OK", "Issuer NVIDIA."), ("OK", f"Fund {funds[0]}."), ("OK", "Companies shown in the exposure table.")]
+    # The model is told which ids exist: both arguments are closed lists taken from the result.
+    specs = {tool["toolSpec"]["name"]: tool["toolSpec"]["inputSchema"]["json"] for tool in env.bedrock.calls[0]["toolConfig"]["tools"]}
+    assert specs["lookup_controversy_evidence"]["properties"]["issuer_id"]["enum"] == issuers
+    assert specs["get_holdings"]["properties"]["fund_id"]["enum"] == funds
+    for name, schema in specs.items():  # no tool has any other argument, and none accepts free text
+        assert schema["additionalProperties"] is False and set(schema["properties"]) <= {"issuer_id", "fund_id"}, name
+        assert all("enum" in prop and "pattern" not in prop for prop in schema["properties"].values()), name
 
 
 @pytest.mark.parametrize(

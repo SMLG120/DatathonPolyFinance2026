@@ -119,21 +119,22 @@ def _clip(text: str, limit: int = MAX_SUMMARY) -> str:
     return text if len(text) <= limit else text[: limit - 3] + "..."
 
 
-def _safe_name(name: Any) -> str:
+def _trace_name(name: Any) -> str:
+    """A rejected tool name, for the private trace only (never a public step: see ``ToolEvent.is_public``)."""
     text = name if isinstance(name, str) else f"<{type(name).__name__}>"
     cleaned = "".join(ch if (ch.isascii() and (ch.isalnum() or ch in "_-.")) else "?" for ch in text[:64])
     return cleaned or "<empty>"
 
 
-def _describe_untrusted(arguments: Any) -> str:
-    """Shape of rejected arguments: key names and value types, never values."""
+def _rejected_input(arguments: Any) -> str:
+    """Public text for the input of a rejected call: server-written, with a count only.
+
+    No key name, value or type of what the model sent is printed: a key name is a string the model chose.
+    What the model sent stays in the private trace only (the raw model transcript).
+    """
     if not isinstance(arguments, dict):
-        return f"arguments were not an object ({type(arguments).__name__})"
-    if not arguments:
-        return "no arguments"
-    parts = [f"{_safe_name(key)}:{type(value).__name__}" for key, value in list(arguments.items())[:8]]
-    more = len(arguments) - 8
-    return _clip("argument types: " + ", ".join(parts) + (f", +{more} more" if more > 0 else ""))
+        return "Rejected call: the arguments were not an object. They are not shown."
+    return f"Rejected call: {len(arguments)} argument(s) supplied. They are not shown."
 
 
 class ToolRegistry:
@@ -189,9 +190,9 @@ class ToolRegistry:
             message = f"unknown tool; allowed tools: {', '.join(self.names)}"
             return finish(
                 STEP_REJECTED,
-                _safe_name(name),
-                _describe_untrusted(arguments),
-                "rejected, not executed: the tool name is not on the allowlist",
+                _trace_name(name),
+                _rejected_input(arguments),
+                f"rejected, not executed ({ERROR_UNKNOWN_TOOL}): the tool name is not on the allowlist",
                 error={"code": ERROR_UNKNOWN_TOOL, "message": message},
             )
 
@@ -200,8 +201,8 @@ class ToolRegistry:
             return finish(
                 STEP_REJECTED,
                 spec.name,
-                _describe_untrusted(arguments),
-                "rejected, not executed: the arguments do not match the tool schema",
+                _rejected_input(arguments),
+                f"rejected, not executed ({ERROR_INVALID_ARGUMENTS}): the arguments do not match the tool schema",
                 error={"code": ERROR_INVALID_ARGUMENTS, "message": _clip("; ".join(problems), 600)},
             )
 
@@ -282,6 +283,8 @@ def build_investigation_registry(context: InvestigationContext) -> ToolRegistry:
     executed = result["execution"]["status"] == "OK"
     instrument_id = request["instrument_id"]
     fund_ids = sorted(entry["fund_id"] for entry in result.get("data_coverage", []))
+    # Entities a tool argument may name: only those of the server's own result. Anything else is a rejected call.
+    issuer_ids = sorted({entry["issuer_id"] for entry in (result.get("exposure") or {}).get("issuers", [])})
 
     def get_portfolio(_: dict[str, Any]) -> dict[str, Any]:
         portfolio = context.portfolio
@@ -339,7 +342,7 @@ def build_investigation_registry(context: InvestigationContext) -> ToolRegistry:
 
     def lookup_controversy_evidence(arguments: dict[str, Any]) -> dict[str, Any]:
         registry = context.controversies if isinstance(context.controversies, dict) else {}
-        shown_issuers = {entry["issuer_id"] for entry in (result.get("exposure") or {}).get("issuers", [])}
+        shown_issuers = set(issuer_ids)
         wanted = arguments.get("issuer_id")
         records = []
         for record in registry.get("records", []):
@@ -461,7 +464,8 @@ def build_investigation_registry(context: InvestigationContext) -> ToolRegistry:
     }
     issuer_argument = {
         "type": "object",
-        "properties": {"issuer_id": {"type": "string", "description": "Optional: one issuer id as shown by compute_exposure.", "pattern": "^[A-Z0-9][A-Z0-9._-]{0,63}$"}},
+        "properties": {"issuer_id": {"type": "string", "description": "Optional: one issuer id as shown by compute_exposure.", "enum": issuer_ids}}
+        if issuer_ids else {},
         "additionalProperties": False,
     }
     specs = [

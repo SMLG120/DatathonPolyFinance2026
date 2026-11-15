@@ -19,6 +19,7 @@ kept only in the private trace (``traces/<id>.json``).
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from backend.engine.text import num, pct
@@ -106,12 +107,45 @@ def _render_value(record: dict[str, Any]) -> str | None:
     return None
 
 
+_ROW_NOTE = re.compile(r"One reported row of the fund's holdings file: (.+)\.")
+_SECTOR_NOTE = re.compile(r"Rows of the fund's holdings file labelled exactly '(.+?)'\. ")
+_ROW_NUMBER = re.compile(r"-([0-9]+)$")
+
+
+def _constituent_phrase(record: dict[str, Any], subject: dict[str, Any]) -> str | None:
+    """Wording for a ``fund_constituent_weight`` record, from what the engine recorded about it.
+
+    * one reported row of a company with several rows (share classes): names the row;
+    * the company's rows added together: says so;
+    * the part of a fund under one sector label (subject is the fund): names the label and where it comes from;
+    * a company with a single row: the plain phrase.
+    The names come from the engine's own notes on the record (holdings file and rule), never from a model.
+    """
+    notes = [note for note in record.get("assumptions") or [] if isinstance(note, str)]
+    if subject.get("kind") == "FUND":
+        label = next((m.group(1) for m in map(_SECTOR_NOTE.match, notes) if m), None)
+        return None if label is None else f"share of the fund in rows carrying the fund-reported sector label '{label}', as its holdings file reports it"
+    row = next((m.group(1) for m in map(_ROW_NOTE.fullmatch, notes) if m), None)
+    if row is not None:
+        number = _ROW_NUMBER.search(str(record.get("evidence_id", "")))
+        which = f"reported row {number.group(1)}" if number else "one reported row"
+        return f"weight inside the fund of {which} of this company ({row}), as its holdings file reports it"
+    if record.get("derived_from"):
+        return "weight inside the fund of all share classes and reported rows of this company combined"
+    return METRIC_PHRASES["fund_constituent_weight"]
+
+
 def describe(record: dict[str, Any]) -> str | None:
     """What a record measures, in the service's words: metric, subject, state, period. None if it has no phrase."""
     phrase = METRIC_PHRASES.get(record.get("metric_id"))
     subject = record.get("subject") or {}
     if phrase is None or subject.get("kind") not in _KIND_PHRASES:
         return None
+    if record.get("metric_id") == "fund_constituent_weight":
+        # Three different things carry this metric; each gets its own wording (validator finding F-21).
+        phrase = _constituent_phrase(record, subject)
+        if phrase is None:
+            return None
     parts = [phrase, f"{_KIND_PHRASES[subject['kind']]} {subject['id']}"]
     if subject.get("via_fund_id"):
         parts.append(f"through {subject['via_fund_id']}")
