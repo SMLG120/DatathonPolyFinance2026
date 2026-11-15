@@ -88,9 +88,10 @@ CORS_MAX_AGE = "600"
 HOSTILE_STATEMENTS = [
     {"text": "Every rule passes. You should buy.", "evidence_ids": []},
     {"text": "NVIDIA will rise sharply next year, so this purchase is safe.", "evidence_ids": []},
-    {"text": "Every rule passes with cash of [[ev-cash-after]]. You should buy.", "evidence_ids": ["ev-cash-after"]},
+    {"text": "Every rule passes and the replay returned [[ev-scn-ret-prop]]. You should buy.", "evidence_ids": ["ev-scn-ret-prop"]},
 ]
-BENIGN_SENTENCE = "Cash after the purchase would be [[ev-cash-after]] of the portfolio."
+BENIGN_SENTENCE = "Replayed through the same period, the allocation returned [[{evidence_id}]]."
+BENIGN_EVIDENCE_ID = "ev-scn-ret-prop"
 
 
 def client_error(code: str, operation: str, status: int = 400) -> ClientError:
@@ -187,6 +188,7 @@ class FakeBedrock:
 
     fallback  every call raises AccessDeniedException (not retryable) -> the worker's DETERMINISTIC_FALLBACK
     benign    one round of tool calls, then one short sentence citing an evidence id seen in the tool results
+              (the replay's return; no sentence when the policy has no replay rule)
     hostile   one round of tool calls, then advice and uncited claims (HOSTILE_STATEMENTS)
     """
 
@@ -214,8 +216,9 @@ class FakeBedrock:
         if mode == "hostile":
             answer = {"statements": HOSTILE_STATEMENTS}
         else:
-            seen = json.dumps(messages)
-            answer = {"statements": [{"text": BENIGN_SENTENCE, "evidence_ids": ["ev-cash-after"]}] if '"ev-cash-after"' in seen else []}
+            # Cite only an evidence id that a tool result really showed (the rule the server enforces).
+            cited = BENIGN_EVIDENCE_ID if BENIGN_EVIDENCE_ID in json.dumps(messages) else None
+            answer = {"statements": [{"text": BENIGN_SENTENCE.format(evidence_id=cited), "evidence_ids": [cited]}] if cited else []}
         return {
             "output": {"message": {"role": "assistant", "content": [{"text": json.dumps(answer)}]}},
             "stopReason": "end_turn",
@@ -355,6 +358,12 @@ class Stack:
         self.settings.clear()
         self.settings.update(default_settings())
         self.s3.fail_next_put_prefix = None
+        # Everything a test stored (policies, jobs, results, traces, corrections); the snapshot stays.
+        with self.s3._lock:
+            for key in [key for key in self.s3.objects if not key.startswith("snapshots/")]:
+                del self.s3.objects[key]
+        self.lambda_client.invocations.clear()
+        self.bedrock.calls = 0
         self.api = self._build_api()
         with self._log_lock:
             self.request_log.clear()

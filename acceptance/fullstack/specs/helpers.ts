@@ -128,10 +128,30 @@ export class Traffic {
     return this.calls.filter((call) => call.method === method && pattern.test(call.path) && predicate(call));
   }
 
-  async last(method: string, pattern: RegExp, predicate: (call: ApiCall) => boolean = () => true): Promise<ApiCall> {
-    const found = await this.find(method, pattern, predicate);
+  /** The latest matching call; waits up to `timeoutMs` for the first one (a response may still be on its way). */
+  async last(method: string, pattern: RegExp, predicate: (call: ApiCall) => boolean = () => true, timeoutMs = 15_000): Promise<ApiCall> {
+    const deadline = Date.now() + timeoutMs;
+    let found = await this.find(method, pattern, predicate);
+    while (found.length === 0 && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      found = await this.find(method, pattern, predicate);
+    }
     expect(found.length, `the page made no ${method} ${pattern} call matching the predicate`).toBeGreaterThan(0);
     return found[found.length - 1];
+  }
+
+  /** The matching call that `action` causes: the first one answered after it started. */
+  async after(method: string, pattern: RegExp, action: () => Promise<unknown>, timeoutMs = 15_000): Promise<ApiCall> {
+    const before = (await this.find(method, pattern)).length;
+    await action();
+    const deadline = Date.now() + timeoutMs;
+    let found = await this.find(method, pattern);
+    while (found.length <= before && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      found = await this.find(method, pattern);
+    }
+    expect(found.length, `the action caused no ${method} ${pattern} call`).toBeGreaterThan(before);
+    return found[before];
   }
 
   /** Every API call of the page carried the bearer header; nothing went to another host. */
@@ -209,13 +229,15 @@ export async function openAllDetails(page: Page) {
 }
 
 /** Live mode never shows a fixtures / test-data marker. */
-export async function expectNoTestDataMarkers(page: Page, context: string) {
+export async function expectNoTestDataMarkers(page: Page, context: string, options: { wordsToo?: boolean } = {}) {
   await expect(page.getByTestId("fixtures-label"), `fixtures label on: ${context}`).toHaveCount(0);
   await expect(page.getByTestId("test-data-tag"), `"Test data" tag on: ${context}`).toHaveCount(0);
+  await expect(page.getByTestId("simulation-label")).toHaveText("Simulation — fictional portfolio, not advice");
+  // The access-code form offers "Open the simulation with test data instead": a link, not a label of what is shown.
+  if (options.wordsToo === false) return;
   const text = await page.locator("body").innerText();
   expect(text, `the words "test data" on: ${context}`).not.toMatch(/test data/i);
   expect(text, `the word "fixture" on: ${context}`).not.toMatch(/fixtures?\b/i);
-  await expect(page.getByTestId("simulation-label")).toHaveText("Simulation — fictional portfolio, not advice");
 }
 
 export async function shot(page: Page, name: string, options: { fullPage?: boolean; locator?: Locator } = {}) {
