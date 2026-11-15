@@ -25,10 +25,12 @@ engine and never produces PASS, FAIL or UNKNOWN.
   (`10%`, `10 %`, `10 percent`, `2,5 %`) between 0 and 100. The rule then
   carries the literal quote and origin `USER_STATED`. In every other case the
   threshold is null and the investor is asked for the number.
-- **"Oil" is always a question.** The words "oil" or "fossil fuel(s)" always
-  produce a clarification offering the fund-reported Energy sector or named
-  companies, and marking "oil producers" and "fossil fuels" as definitions we
-  cannot check, whatever the model answered.
+- **"Oil" is always a question.** The words "oil", "petroleum", "fossil" or
+  "fossil fuel(s)" always produce a clarification offering the fund-reported
+  Energy sector or named companies, and marking "oil producers" and "fossil
+  fuels" as definitions we cannot check. The server's question wins: the
+  model's own question, sector label or drafted rule about those words is
+  dropped (a controversy rule is kept).
 - **Out-of-scope requests** (recommend, forecast, trade, optimize) and text
   that reads as an instruction to the system are listed as unsupported; no
   rule is drafted from them.
@@ -50,6 +52,12 @@ engine and never produces PASS, FAIL or UNKNOWN.
 - **Company nicknames are not matched.** Companies are matched by id, cleaned
   legal name and upper-case ticker. "Google" does not match Alphabet; the
   request is reported as unsupported for that company.
+- **A model span covering a catalog term and something else is dropped
+  whole.** For "oil and tobacco" marked as one span, only the oil question is
+  asked.
+- **A wrong "instruction" label can sit beside the right question.** If the
+  model flags words about oil as an instruction to the system, that entry is
+  still listed as unsupported next to the correct oil question.
 - **Fixed set of clarification topics:** exclusion definition, diversification,
   loss limit, plus the missing-number question.
 - **Controversy rules** always start with no date filter and a default set of
