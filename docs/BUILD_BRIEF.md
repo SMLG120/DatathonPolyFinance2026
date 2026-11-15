@@ -153,8 +153,13 @@ Mateo:
 - Record controversy dates, allegation vs finding, source and coverage.
 - Absence from the registry is UNKNOWN, not proof of no controversy.
 
-`build_dataset.py` is referenced by the starter README but was **not
-supplied**. Write a documented acquisition script instead of assuming it exists.
+`build_dataset.py` is supplied by the organizers in the `alphaforge_starter`
+folder (owner's correction). It is not yet available on this machine; see
+`docs/PLAN.md` P5. When it is, inspect it and reuse or adapt it, preserving its
+behaviour, rather than duplicating it.
+
+Fund holdings come from issuer files placed locally by the team
+(`docs/PLAN.md` P6). The demo never depends on live issuer access.
 
 ## 5. Historical scenarios
 

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import copy
+from datetime import datetime, timedelta
 
 import api_results as ar
 import engine_cases as ec
+from byb_contracts.constants import INVESTIGATION_DEADLINE_SECONDS, INVESTIGATION_EXPIRY_SECONDS
 from fixture_lib import controversy, exclude_sector, max_issuer, purchase
 
 MODEL_ID = "us.anthropic.claude-sonnet-5-5"
@@ -13,6 +15,11 @@ AUTH = {"Authorization": "Bearer <access code typed by the user>"}
 ROBERT_REQUEST = purchase("NVDA", 0.25, ec.ROBERT_REQUEST_WORDS)
 MATEO_REQUEST = purchase("SPY", 0.15, "Buy SPY so that it is 15% of my portfolio.")
 DISCLAIMER = "This is a simulation on a fictional portfolio. It is not advice, and no trade is made."
+
+
+def _plus(timestamp, seconds):
+    stamp = "%Y-%m-%dT%H:%M:%SZ"
+    return (datetime.strptime(timestamp, stamp) + timedelta(seconds=seconds)).strftime(stamp)
 
 
 def step(seq, tool, by, start, end, status, input_summary, result_summary, evidence=()):
@@ -26,12 +33,10 @@ def statement(statement_id, text, evidence, rendered_by="TEMPLATE"):
 
 def job(job_id, status, created, updated, key, persona, policy_id, version, request, *, resolved="same", parent=None, challenge=None,
         mode="MODEL", rounds=0, note=None, steps=(), clarification=None, result=None, explanation=(), failure=None, corrections=()):
-    day, clock = created.split("T")
-    hh, mm, rest = clock.split(":")
-    deadline = f"{day}T{hh}:{int(mm) + 2:02d}:{rest}"
+    deadline = _plus(created, INVESTIGATION_DEADLINE_SECONDS)
     return {
         "schema_version": "1.0.0", "id": job_id, "status": status, "created_at": created, "updated_at": updated,
-        "deadline_at": deadline, "expires_at": f"2026-11-15T{clock}", "idempotency_key": key,
+        "deadline_at": deadline, "expires_at": _plus(created, INVESTIGATION_EXPIRY_SECONDS), "idempotency_key": key,
         "persona_id": persona, "policy_id": policy_id, "policy_version": version, "request": request,
         "resolved_request": request if resolved == "same" else resolved, "parent_investigation_id": parent, "challenge": challenge,
         "agent": {"mode": mode, "model_id": MODEL_ID if mode == "MODEL" else None, "tool_rounds": rounds, "note": note},

@@ -419,8 +419,8 @@ Resources:
             PayloadFormatVersion: "2.0"
             TimeoutInMillis: 20000
             RouteSettings:
-              ThrottlingBurstLimit: 4
-              ThrottlingRateLimit: 1
+              ThrottlingBurstLimit: 10
+              ThrottlingRateLimit: 5
         GetInvestigation:
           Type: HttpApi
           Properties:
@@ -537,8 +537,8 @@ Resources:
           - idempotency-key
         MaxAge: 600
       DefaultRouteSettings:
-        ThrottlingBurstLimit: 20
-        ThrottlingRateLimit: 10
+        ThrottlingBurstLimit: 40
+        ThrottlingRateLimit: 20
       AccessLogSettings:
         DestinationArn: !GetAtt HttpApiAccessLogGroup.Arn
         Format: '{"requestId":"$context.requestId","requestTime":"$context.requestTime","routeKey":"$context.routeKey","status":"$context.status","responseLatencyMs":"$context.responseLatency","integrationLatencyMs":"$context.integrationLatency","integrationStatus":"$context.integrationStatus","authorizerError":"$context.authorizer.error","errorMessage":"$context.error.message"}'

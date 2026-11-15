@@ -17,7 +17,7 @@ REGION = "us-east-1"
 STACK = "before-you-buy"
 ARTIFACTS_BUCKET = f"byb-artifacts-{ACCOUNT}-{REGION}"
 CODE_KEY = "lambda/byb-backend-5cf91f80c5c1a2ce.zip"
-TEMPLATE_KEY = "templates/template-9b1c94d4e07d8bc3.yaml"
+TEMPLATE_KEY = "templates/template-e076af541c8b13f5.yaml"
 PARAMETER_OVERRIDES = {}  # for example {"AllowedOrigin": "https://main.example.amplifyapp.com"}
 EXECUTE = False
 WAIT_SECONDS = 100
@@ -128,8 +128,10 @@ if EXECUTE and described["Status"] == "CREATE_COMPLETE" and described.get("Execu
         # Match the change set id: right after ExecuteChangeSet the stack can still show its previous terminal status.
         if stack and stack.get("ChangeSetId") == described["ChangeSetId"] and stack["StackStatus"] in TERMINAL:
             break
+    report["waited_seconds"] = waited
     report["stack_status"] = stack["StackStatus"] if stack else None
     report["stack_status_reason"] = (stack or {}).get("StackStatusReason")
+    report["stack_last_updated"] = str((stack or {}).get("LastUpdatedTime"))
 else:
     report["executed"] = False
 result = report
