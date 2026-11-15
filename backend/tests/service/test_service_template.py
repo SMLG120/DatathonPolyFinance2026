@@ -110,3 +110,75 @@ def test_tp08_cors_allows_the_idempotency_header_and_the_code_is_never_in_the_te
         text = block("ApiFunction").split(f"        {route}:", 1)[1].split("PayloadFormatVersion", 1)[1][:400]
         assert "ThrottlingRateLimit: 5" in text and "ThrottlingBurstLimit: 10" in text, route
     assert "PublicAccessBlockConfiguration" in block("DataBucket") and block("DataBucket").count(": true") == 4
+
+
+def test_tp09_a_rotated_access_code_stops_working_within_the_function_cache_only():
+    """API Gateway caches no authorizer answer (it was 300 s), so the only delay is the function's own cache of the code."""
+    assert re.findall(r"^\s+ReauthorizeEvery: (\d+)$", TEMPLATE, re.M) == ["0"]
+    seconds = int(re.search(r'ACCESS_CODE_CACHE_SECONDS: "(\d+)"', block("AuthorizerFunction")).group(1))
+    assert 0 < seconds <= 60
+    from backend.common.config import AuthorizerConfig
+
+    assert AuthorizerConfig(parameter_name="/p").cache_ttl_seconds <= 60
+    assert AuthorizerConfig.from_env({"ACCESS_CODE_PARAMETER_NAME": "/p", "ACCESS_CODE_CACHE_SECONDS": str(seconds)}).cache_ttl_seconds == seconds
+    with pytest.raises(Exception):  # a cache long enough to defeat rotation is a configuration error
+        AuthorizerConfig.from_env({"ACCESS_CODE_PARAMETER_NAME": "/p", "ACCESS_CODE_CACHE_SECONDS": "900"})
+    # The identity source stays, so a request without the header is refused by API Gateway without invoking anything.
+    assert "- Authorization" in block("HttpApi") and "EnableSimpleResponses: true" in block("HttpApi")
+    deploy_guide = (REPO_ROOT / "scripts" / "deploy.md").read_text(encoding="utf-8")
+    assert f"{seconds} seconds" in deploy_guide and "ReauthorizeEvery" in deploy_guide
+
+
+def test_tp09b_the_authorizer_really_drops_the_old_code_after_its_cache():
+    from backend.api.authorizer import AccessCodeAuthorizer
+    from backend.common.config import AuthorizerConfig
+    from service_fakes import FakeClock, FakeSSM
+
+    old, new = "old-access-code-0123456789", "new-access-code-9876543210"
+    ssm, clock = FakeSSM(old), FakeClock()
+    authorizer = AccessCodeAuthorizer(ssm, AuthorizerConfig(parameter_name="/p"), clock)
+
+    def allowed(code):
+        return authorizer.authorize({"routeKey": "POST /check", "identitySource": [f"Bearer {code}"]})["isAuthorized"]
+
+    assert allowed(old) and not allowed(new)
+    ssm.value = new  # rotation
+    clock.advance(AuthorizerConfig(parameter_name="/p").cache_ttl_seconds + 1)
+    assert not allowed(old) and allowed(new)
+
+
+def _deploy_functions():
+    """The pure helpers of the deploy snippet (the snippet itself runs only inside the AWS MCP sandbox)."""
+    import ast
+
+    source = (REPO_ROOT / "scripts" / "mcp" / "02_deploy.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    wanted = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in ("effective_parameter", "origin_refusal")]
+    namespace: dict = {}
+    exec(compile(ast.Module(body=wanted, type_ignores=[]), "02_deploy.py", "exec"), namespace)  # noqa: S102 - our own two pure functions
+    return source, namespace["effective_parameter"], namespace["origin_refusal"]
+
+
+def test_tp10_a_wildcard_cors_origin_is_never_deployed_by_default():
+    source, effective_parameter, origin_refusal = _deploy_functions()
+    # The parameter and its "*" default stay (local development), and the template says what a hosted deployment must do.
+    parameter = TEMPLATE.split("  AllowedOrigin:\n", 1)[1].split("  AccessCodeParameterName:", 1)[0]
+    assert 'Default: "*"' in parameter and "exact origin" in parameter
+    assert re.search(r"^ALLOW_WILDCARD_ORIGIN = False$", source, re.M) and re.search(r"^EXECUTE = False$", source, re.M)
+    assert 'if EXECUTE and report["cors_refusal"]:' in source  # checked before ExecuteChangeSet
+    assert source.index('if EXECUTE and report["cors_refusal"]:') < source.index('"ExecuteChangeSet"')
+
+    template_parameters = [{"ParameterKey": "AllowedOrigin", "DefaultValue": "*"}, {"ParameterKey": "DataSnapshotId"}]
+    deployed = [{"ParameterKey": "AllowedOrigin", "ParameterValue": "*"}]
+    origin = "https://main.d1example.amplifyapp.com"
+    # first deploy with the default, update keeping the deployed "*", explicit "*": all refused unless allowed on purpose
+    for value in (effective_parameter("AllowedOrigin", {}, None, template_parameters),
+                  effective_parameter("AllowedOrigin", {}, deployed, template_parameters),
+                  effective_parameter("AllowedOrigin", {"AllowedOrigin": "*"}, deployed, template_parameters)):
+        assert value == "*" and "NOT EXECUTED" in origin_refusal(value, False) and origin_refusal(value, True) is None
+    assert effective_parameter("AllowedOrigin", {"AllowedOrigin": origin}, deployed, template_parameters) == origin
+    assert origin_refusal(origin, False) is None and origin_refusal("http://localhost:5173", False) is None
+    assert origin_refusal("http://example.org", False) and origin_refusal("", False) and origin_refusal(None, False)
+    # a parameter without default and without previous value is reported as missing before any change set is created
+    assert effective_parameter("DataSnapshotId", {}, deployed, []) is None
+    assert effective_parameter("DataSnapshotId", {"DataSnapshotId": "snap-2026-11-12-0123456789ab"}, deployed, []) == "snap-2026-11-12-0123456789ab"

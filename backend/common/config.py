@@ -87,12 +87,13 @@ class WorkerConfig:
 @dataclass(frozen=True)
 class AuthorizerConfig:
     parameter_name: str
-    cache_ttl_seconds: int = 60
+    cache_ttl_seconds: int = 30
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "AuthorizerConfig":
         env = os.environ if env is None else env
         return cls(
             parameter_name=_required(env, "ACCESS_CODE_PARAMETER_NAME"),
-            cache_ttl_seconds=_integer(env, "ACCESS_CODE_CACHE_SECONDS", 60, 0, 900),
+            # Upper bound 300 s: this is the whole delay before a rotated code stops working (API Gateway caches nothing).
+            cache_ttl_seconds=_integer(env, "ACCESS_CODE_CACHE_SECONDS", 30, 0, 300),
         )

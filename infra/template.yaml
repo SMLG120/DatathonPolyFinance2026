@@ -44,7 +44,10 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: "*"
-    Description: CORS allowed origin. "*" until the Amplify origin is known; tighten it to that origin afterwards.
+    Description: >-
+      CORS allowed origin. The default "*" is for local development against the API only. A deployment that serves a
+      hosted frontend must pass the exact origin (https://<branch>.<app-id>.amplifyapp.com); scripts/mcp/02_deploy.py
+      refuses to execute a change set whose effective value is "*" unless that is explicitly allowed.
   AccessCodeParameterName:
     Type: String
     Default: /before-you-buy/access-code
@@ -554,6 +557,8 @@ Resources:
         why: Compares the bearer token with the SSM access code in constant time. Demo-grade shared code, not user identity.
         must:
           - fail closed - an unreadable or too-short stored code must never authorize
+          - rotation delay = ACCESS_CODE_CACHE_SECONDS (30 s) only while ReauthorizeEvery stays 0; raising either lengthens
+            the time a rotated code keeps working (it was 60 s + 300 s)
           - API Gateway waits at most 10 s for an authorizer; keep Timeout below that
     Properties:
       FunctionName: !Sub ${AWS::StackName}-authorizer
@@ -574,7 +579,7 @@ Resources:
       Environment:
         Variables:
           ACCESS_CODE_PARAMETER_NAME: !Ref AccessCodeParameterName
-          ACCESS_CODE_CACHE_SECONDS: "60"
+          ACCESS_CODE_CACHE_SECONDS: "30"
           LOG_LEVEL: INFO
       Tags:
         project: before-you-buy
@@ -589,7 +594,8 @@ Resources:
           Lambda authorizer. CORS is convenience for the browser, not access control - the authorizer is.
         must:
           - every route keeps the default authorizer; do not add a $default route
-          - AllowedOrigin "*" is temporary - set it to the Amplify origin once known
+          - AllowedOrigin "*" is temporary - a deployment serving a hosted frontend must pass the exact origin;
+            scripts/mcp/02_deploy.py refuses to execute with "*" unless ALLOW_WILDCARD_ORIGIN is set on purpose
           - throttling stays modest - each POST can cost several Bedrock calls
     Properties:
       Name: !Sub ${AWS::StackName}-http-api
@@ -623,7 +629,9 @@ Resources:
             Identity:
               Headers:
                 - Authorization
-              ReauthorizeEvery: 300
+              # 0 = API Gateway does not cache the authorizer's answer: a rotated access code stops working as soon as
+              # the function's own cache (ACCESS_CODE_CACHE_SECONDS) expires. Cost: one authorizer invocation per request.
+              ReauthorizeEvery: 0
       Tags:
         project: before-you-buy
 
