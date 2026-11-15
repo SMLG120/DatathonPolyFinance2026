@@ -2,8 +2,9 @@
 
 What the model does and does not do
 -----------------------------------
-The model is an *extractor*. It answers with one structured object (the ``submit_interpretation`` tool, or the
-same object as JSON text) that only
+The model is an *extractor*. After optional read-only lookups (``find_companies``, ``describe_sector``; see
+``Interpreter``) it answers with one structured object (the ``submit_interpretation`` tool, or the same object as
+JSON text) that only
 
 * marks spans of the investor's text (``words``), and
 * picks codes from closed lists: objective kind, rule type, clarification topic, unsupported reason, controversy
@@ -47,6 +48,7 @@ called: this module cannot produce a verdict.
 
 from __future__ import annotations
 
+import difflib
 import json
 import re
 import uuid
@@ -57,7 +59,30 @@ from byb_contracts.constants import CONTROVERSY_NATURES, INTERPRET_TIMEOUT_SECON
 from byb_contracts.templates import scope_description
 
 from backend.agents.bedrock_client import FAILURE_DEADLINE_EXCEEDED, ModelCallError
-from backend.agents.prompts import INTERPRETER_PROMPT_VERSION, INTERPRETER_SYSTEM_PROMPT, INTERPRETER_TOOL_NAME, build_interpreter_message
+from backend.agents.prompts import (
+    DESCRIBE_SECTOR_TOOL_NAME,
+    FIND_COMPANIES_TOOL_NAME,
+    INTERPRETER_LOOKUP_DONE_NOTE,
+    INTERPRETER_PROMPT_VERSION,
+    INTERPRETER_SYSTEM_PROMPT,
+    INTERPRETER_TOOL_NAME,
+    build_interpreter_message,
+)
+from backend.agents.schema import validate as schema_errors
+from backend.agents.themes import (
+    AVOID_CUE_RE,
+    COMPANY_ALIASES,
+    CUE_WINDOW,
+    ONLY_CUE_RE,
+    POLARITIES,
+    PREFER_CUE_RE,
+    THEME_CODES,
+    THEME_TERM_RE,
+    THEMES,
+    TRAILING_NOUN_RE,
+    sector_mentions,
+    sectors_written_in,
+)
 from backend.common import log
 from backend.common.clock import to_iso
 
@@ -66,7 +91,11 @@ MAX_COMPANY_CANDIDATES = 40
 MAX_SECTOR_LABELS = 120
 DEFAULT_NATURES = ("REGULATORY_FINDING", "COURT_RULING", "SETTLEMENT")
 
-TOPICS = ("EXCLUSION_DEFINITION", "DIVERSIFICATION", "LOSS_LIMIT")
+TOPICS = ("EXCLUSION_DEFINITION", "DIVERSIFICATION", "LOSS_LIMIT", "THEME", "SECTOR_FOCUS")
+MAX_FOCUS_SECTORS = 4  # sectors one "only ..." request may keep
+MAX_FOCUS_RULES = 14  # exclusions one "only ..." request may draft (one per other sector label)
+MAX_LOOKUP_MATCHES = 5
+MAX_LOOKUPS_PER_ROUND = 6
 _NUMBER_NEEDED = "NUMBER_NEEDED"  # raised by the server only
 
 _NO_FORECAST = "This tool checks a proposed purchase against rules you confirmed. "
@@ -86,6 +115,12 @@ UNSUPPORTED_REASONS: dict[str, tuple[str, str]] = {
     "INSTRUCTION": ("INSTRUCTION_IGNORED", "This reads as an instruction to the system. It was treated as text and not acted on."),
 }
 _CLARIFICATION_SUFFIX = " Stored rules stay as they are until you confirm a change."
+_SECTOR_NOT_MATCHED = ("UNSUPPORTED_DEFINITION", "These words could not be matched to a sector label the funds report, so no rule was drafted. "
+                       "Name the sector as it appears in the data: {labels}.")
+# Unsupported codes a model may wrongly give to "only tech stocks"; the server re-reads such words as a sector focus.
+_FOCUS_MISFILED = ("SECTOR_LIMIT", "NOT_MEASURABLE", "NO_SOURCED_DEFINITION")
+_FOCUS_TOO_WIDE = ("UNSUPPORTED_DEFINITION", "Keeping only these sectors would need more exclusion rules than one request can draft. "
+                   "Name the sectors to leave out instead.")
 
 _THRESHOLD_KIND = {"max_issuer_exposure": "max_fraction", "min_issuer_exposure": "min_fraction", "exclusion": "max_fraction",
                    "controversy_exclusion": "max_fraction", "scenario_loss_budget": "max_loss_fraction"}
@@ -163,8 +198,9 @@ class _Reference:
         names: dict[str, set[str]] = {}
         tickers: dict[str, set[str]] = {}
         display: dict[str, str] = {}
+        sector_of: dict[str, str] = {}
 
-        def add(issuer_id: Any, name: Any, instrument_id: Any) -> None:
+        def add(issuer_id: Any, name: Any, instrument_id: Any, sector: Any) -> None:
             if not isinstance(issuer_id, str) or not issuer_id:
                 return
             phrases = names.setdefault(issuer_id, set())
@@ -176,21 +212,34 @@ class _Reference:
                     phrases.add(cleaned)
             if isinstance(instrument_id, str) and instrument_id:
                 tickers.setdefault(issuer_id, set()).update({instrument_id, instrument_id.split(".")[0]})
+            if isinstance(sector, str) and sector:
+                sector_of.setdefault(issuer_id, sector)
 
         for instrument in snapshot.registry.values():
             if instrument.get("is_fund"):
                 continue
-            add(instrument.get("issuer_id"), instrument.get("name"), instrument.get("instrument_id"))
-            if instrument.get("equity_scope") and isinstance(instrument.get("sector"), str) and instrument["sector"]:
-                sectors.add(instrument["sector"])
+            equity_sector = instrument.get("sector") if instrument.get("equity_scope") else None
+            add(instrument.get("issuer_id"), instrument.get("name"), instrument.get("instrument_id"), equity_sector)
+            if isinstance(equity_sector, str) and equity_sector:
+                sectors.add(equity_sector)
         for fund in (snapshot.holdings.get("funds") or {}).values():
             for row in fund.get("holdings") or []:
-                add(row.get("issuer_id"), row.get("name"), row.get("instrument_id"))
+                add(row.get("issuer_id"), row.get("name"), row.get("instrument_id"), row.get("sector"))
                 if isinstance(row.get("sector"), str) and row["sector"]:
                     sectors.add(row["sector"])
 
+        # Common names ("Google" for Alphabet): an alias resolves only to a company whose cleaned name is in the data.
+        by_name: dict[str, set[str]] = {}
+        for issuer_id, phrases in names.items():
+            for phrase in phrases:
+                by_name.setdefault(phrase, set()).add(issuer_id)
+        for alias, target in COMPANY_ALIASES.items():
+            for issuer_id in by_name.get(target, ()):
+                names[issuer_id].add(_normalize(alias))
+
         self.sectors = sorted(sectors)[:MAX_SECTOR_LABELS]
         self.display = display
+        self.sector_of = sector_of
         self._phrases: dict[str, set[str]] = {}
         first_words: dict[str, set[str]] = {}
         for issuer_id, phrases in names.items():
@@ -221,6 +270,31 @@ class _Reference:
             found.update(self._tickers.get(symbol, ()))
             found.update(self._tickers.get(symbol.rstrip(".-"), ()))
         return sorted(found)[:MAX_COMPANY_CANDIDATES]
+
+    def find(self, words: str) -> list[str]:
+        """Issuer ids for words the investor wrote, for the agent's lookup tool: exact matches first, then close spellings
+        ("Microsft") and name prefixes ("Royal"). Deterministic: the server matches, the model only chose the words."""
+        exact = self.companies_in(words)
+        if exact:
+            return exact[:MAX_LOOKUP_MATCHES]
+        wanted = _normalize(words)
+        if len(wanted) < 3:
+            return []
+        found: list[str] = []
+        close = difflib.get_close_matches(wanted, list(self._phrases), n=MAX_LOOKUP_MATCHES, cutoff=0.82)
+        prefixed = [phrase for phrase in sorted(self._phrases) if len(wanted) >= 4 and phrase.startswith(wanted + " ")]
+        for phrase in close + prefixed:
+            for issuer_id in sorted(self._phrases[phrase]):
+                if issuer_id not in found:
+                    found.append(issuer_id)
+        return found[:MAX_LOOKUP_MATCHES]
+
+    def describe(self, issuer_id: str) -> dict[str, Any]:
+        return {"issuer_id": issuer_id, "name": self.display.get(issuer_id, issuer_id), "sector": self.sector_of.get(issuer_id)}
+
+    def sector_members(self, sector: str, limit: int = 8) -> list[str]:
+        """Names of companies the data labels with ``sector`` (examples for the agent, not a definition)."""
+        return sorted(self.display.get(i, i) for i, label in self.sector_of.items() if label == sector)[:limit]
 
 
 # --------------------------------------------------------------------------
@@ -254,17 +328,43 @@ def tool_config(sectors: list[str], companies: list[str]) -> dict[str, Any]:
                     "objective": objective}}},
             "ambiguous": {"type": "array", "maxItems": MAX_ITEMS, "items": {
                 "type": "object", "required": ["words", "topic"], "additionalProperties": False,
-                "properties": {"words": words, "topic": {"type": "string", "enum": list(TOPICS)}, "sector": sector, "objective": objective}}},
+                "properties": {"words": words, "topic": {"type": "string", "enum": list(TOPICS)}, "sector": sector,
+                               "theme": {"type": ["string", "null"], "enum": [*THEME_CODES, None],
+                                         "description": "For topic THEME: which values-based wish the words express."},
+                               "polarity": {"type": ["string", "null"], "enum": [*POLARITIES, None],
+                                            "description": "For topic THEME: ONLY (only/exclusively), AVOID (avoid/exclude) or PREFER."},
+                               "sectors": {"type": "array", "maxItems": MAX_FOCUS_SECTORS, "items": {"type": "string", "enum": sectors} if sectors else {"type": "string"},
+                                           "description": "For topic SECTOR_FOCUS: the sector labels the investor wants to keep."},
+                               "objective": objective}}},
             "unsupported": {"type": "array", "maxItems": MAX_ITEMS, "items": {
                 "type": "object", "required": ["words", "reason"], "additionalProperties": False,
                 "properties": {"words": words, "reason": {"type": "string", "enum": list(UNSUPPORTED_REASONS)}}}},
         },
     }
-    return {"tools": [{"toolSpec": {
-        "name": INTERPRETER_TOOL_NAME,
-        "description": "Submit the marked parts of the investor's text. Codes only: nothing written here is shown to anyone.",
-        "inputSchema": {"json": schema},
-    }}]}
+    return {"tools": [
+        {"toolSpec": {
+            "name": INTERPRETER_TOOL_NAME,
+            "description": "Submit the marked parts of the investor's text. Codes only: nothing written here is shown to anyone.",
+            "inputSchema": {"json": schema},
+        }},
+        {"toolSpec": {
+            "name": FIND_COMPANIES_TOOL_NAME,
+            "description": "Look up which companies in the data snapshot the investor's words refer to (common names, misspellings, "
+                           "partial names). Use it only for a company the investor wrote that is not in reference_data.companies.",
+            "inputSchema": {"json": FIND_COMPANIES_SCHEMA},
+        }},
+        {"toolSpec": {
+            "name": DESCRIBE_SECTOR_TOOL_NAME,
+            "description": "List example companies the data labels with one sector, to check which sector label the investor's words mean.",
+            "inputSchema": {"json": {"type": "object", "required": ["sector"], "additionalProperties": False,
+                                     "properties": {"sector": {"type": "string", "enum": sectors} if sectors else {"type": "string"}}}},
+        }},
+    ]}
+
+
+FIND_COMPANIES_SCHEMA = {"type": "object", "required": ["words"], "additionalProperties": False,
+                         "properties": {"words": {"type": "string", "minLength": 2, "maxLength": 80,
+                                                  "description": "The company as the investor wrote it, copied from their text."}}}
 
 
 # --------------------------------------------------------------------------
@@ -413,6 +513,20 @@ _KEEP_QUALITATIVE = ("keep-qualitative", "Keep it as a qualitative preference on
                      "Nothing will be checked numerically for it; it stays visible as context.")
 _NAMED_COMPANIES = ("named-companies", "Specific companies that I name",
                     "Supported once you name them: type the companies in a new sentence and a named-company exclusion will be drafted.")
+_NAMED_SECTORS = ("named-sectors", "Sector labels that I name",
+                  "Supported once you name them: write, for example, 'avoid Energy' or 'only Utilities and Health Care' and the exclusions will be drafted.")
+_CONTROVERSY_OPTION = ("recorded-controversies", "Companies with a recorded controversy",
+                       "Leaves out companies with a regulatory finding, court ruling or settlement in the controversy registry, which holds "
+                       "environmental enforcement records. A company the registry has not researched is reported as unknown, never as clean.")
+# theme -> (option id, label, description) of the definition the data cannot support
+_THEME_UNSUPPORTED = {
+    "ENVIRONMENTAL": ("green-classification", "Only companies rated or classified as environmentally friendly",
+                      "Not supported: we hold no sourced environmental rating, carbon or green-revenue data, so this cannot be checked honestly."),
+    "ESG": ("esg-score", "Companies with a good ESG score or rating",
+            "Not supported: we hold no sourced ESG scores or ratings, so this cannot be checked honestly."),
+    "SOCIAL": ("social-classification", "Companies classified by their social or labour practices",
+               "Not supported: we hold no sourced classification of social or labour practices, so this cannot be checked honestly."),
+}
 
 
 class _Builder:
@@ -432,6 +546,8 @@ class _Builder:
         # Spans of the catalog terms ("oil", "fossil fuels") in the request text. The server's own question about
         # them always wins: nothing the model says about an overlapping span is used.
         self._catalog_spans: list[tuple[int, int]] = [match.span() for match in _CATALOG_RE.finditer(text)]
+        # Spans the model gave a code to (rule, question or unsupported). The theme safety net only fills gaps.
+        self._covered: list[tuple[int, int]] = []
 
     def _in_catalog(self, span: tuple[int, int]) -> bool:
         return any(span[0] < end and start < span[1] for start, end in self._catalog_spans)
@@ -468,13 +584,41 @@ class _Builder:
 
     # -- questions
 
+    def _covers(self, span: tuple[int, int]) -> bool:
+        return any(span[0] < end and start < span[1] for start, end in self._covered)
+
+    def _sector_exclusion(self, sector: str, words: str, objective_id: str | None) -> dict[str, Any]:
+        return draft_rule(self._rule_id("exclusion"), "exclusion", {"definition": {"kind": "fund_reported_sector", "sector": sector}}, words, objective_id)
+
     def ask(self, topic: str, words: str, objective_id: str | None, *, sector: str | None = None,
-            pending: tuple[str, dict[str, Any]] | None = None) -> None:
+            pending: tuple[str, dict[str, Any]] | None = None, theme: str | None = None, polarity: str | None = None) -> None:
         if (topic, words) in self._asked:
             return
         self._asked.add((topic, words))
         quoted = f"'{words}'"
-        if topic == "EXCLUSION_DEFINITION":
+        if topic == "THEME":
+            theme = theme or "ESG"
+            noun = THEMES[theme][0]
+            options = []
+            if theme == "ENVIRONMENTAL" and "Energy" in self.reference.sectors:
+                options.append(_option(
+                    "energy-sector-label", "Leave out holdings labelled Energy in what the funds report",
+                    "The closest definition the data can check: oil, gas and pipeline companies as labelled by each fund issuer. "
+                    "It does not show that the other holdings are environmentally friendly.",
+                    rule=self._sector_exclusion("Energy", words, objective_id)))
+            options.append(_option(*_CONTROVERSY_OPTION, rule=draft_rule(
+                self._rule_id("controversy_exclusion"), "controversy_exclusion",
+                {"criteria": {"natures": list(DEFAULT_NATURES), "event_date_from": None}}, words, objective_id)))
+            options.append(_option(*_NAMED_SECTORS))
+            options.append(_option(*_NAMED_COMPANIES))
+            options.append(_option(*_THEME_UNSUPPORTED[theme], False))
+            options.append(_option(*_KEEP_QUALITATIVE))
+            if polarity == "ONLY":
+                question = (f"What should {quoted} mean as a rule you can check? The data holds no list of {noun} holdings, "
+                            "so it can only be checked by leaving out what you do not want.")
+            else:
+                question = f"What should {quoted} mean as a rule you can check? We hold no sourced {noun} rating, so only the definitions below can be checked."
+        elif topic == "EXCLUSION_DEFINITION":
             oil = _OIL_RE.search(words) is not None
             if oil:
                 # For oil the offered label is never the model's choice: Energy when the snapshot has it, else none.
@@ -546,15 +690,115 @@ class _Builder:
             words, span = self._words(item.get("words"), "ambiguous")
             topic = _code(item.get("topic"), TOPICS, "topic")
             sector = self._sector(item.get("sector")) if topic == "EXCLUSION_DEFINITION" else None
+            theme = _code(item.get("theme") or "ESG", THEME_CODES, "theme") if topic == "THEME" else None
+            polarity = _code(item.get("polarity") or "PREFER", POLARITIES, "polarity") if topic == "THEME" else None
+            focus = self._focus_sectors(item.get("sectors")) if topic == "SECTOR_FOCUS" else []
+            self._covered.append(span)
             if self._in_catalog(span):
                 continue  # the catalog's own exclusion-definition question already covers these words
-            self.ask(topic, words, self._objective_id(item.get("objective"), span), sector=sector)
+            objective_id = self._objective_id(item.get("objective"), span)
+            if topic == "SECTOR_FOCUS":
+                self.add_focus(words, focus, objective_id)
+                continue
+            self.ask(topic, words, objective_id, sector=sector, theme=theme, polarity=polarity)
+
+    def _focus_sectors(self, value: Any) -> list[str]:
+        if not isinstance(value, list) or not value:
+            raise _Rejected("sector_focus_without_sectors")
+        return sorted({self._sector(label) or "" for label in value[:MAX_FOCUS_SECTORS]} - {""})
+
+    def add_focus(self, words: str, focus: list[str], objective_id: str | None) -> None:
+        """'Only tech stocks': one exclusion per other sector label, drafted without a number. Which sectors are kept is
+        not left to the model: each must be written in the investor's words (the label, or an everyday word for it)."""
+        written = sectors_written_in(words, self.reference.sectors)
+        suffix = _CLARIFICATION_SUFFIX if self.clarification_mode else ""
+        if not focus or not set(focus) <= written:
+            reason = _SECTOR_NOT_MATCHED[1].format(labels=", ".join(self.reference.sectors) or "none")
+            self.unsupported.append({"words": words, "code": _SECTOR_NOT_MATCHED[0], "reason": reason + suffix})
+            return
+        others = [label for label in self.reference.sectors if label not in focus]
+        if len(others) > MAX_FOCUS_RULES:
+            self.unsupported.append({"words": words, "code": _FOCUS_TOO_WIDE[0], "reason": _FOCUS_TOO_WIDE[1] + suffix})
+            return
+        drafted = {(r["rule_type"], json.dumps(r["parameters"], sort_keys=True)) for r in self.rules}
+        for label in others:
+            rule = self._sector_exclusion(label, words, objective_id)
+            if ("exclusion", json.dumps(rule["parameters"], sort_keys=True)) not in drafted:
+                self.rules.append(rule)
+
+    def focus_in(self, span: tuple[int, int]) -> tuple[tuple[int, int], list[str]] | None:
+        """'Only tech stocks', read from the request text alone: an only-cue followed, in the same sentence, by sector
+        labels or everyday words for them, with no number in the sentence (a stated share per sector is a sector limit,
+        which is unsupported) and no theme word ("only green energy" is a theme, not the Energy label).
+        Returns the span from the cue to the last sector word, and the sectors kept."""
+        sentence = _sentence_of(self.text, *span)
+        if sentence is None:
+            return None
+        sentence_text = self.text[sentence[0]:sentence[1]]
+        if _NUMBERISH_RE.search(sentence_text) or negated(ONLY_CUE_RE.sub(" ", sentence_text)):
+            return None
+        window_start = max(sentence[0], span[0] - CUE_WINDOW)
+        cues = [m for m in ONLY_CUE_RE.finditer(self.text, window_start, span[1])]
+        if not cues:
+            return None
+        cue = cues[0]
+        limit = min(max(span[1], cue.end()), sentence[1])  # sector words after the cue, inside the words and the sentence
+        mentions = [m for m in sector_mentions(self.text, self.reference.sectors) if cue.end() <= m[0] and m[1] <= limit]
+        if not mentions:
+            return None
+        end = max(m[1] for m in mentions)
+        trailing = TRAILING_NOUN_RE.match(self.text, end)
+        end = trailing.end() if trailing is not None else end
+        found = (cue.start(), end)
+        if self._in_catalog(found) or any(p.search(self.text, found[0], found[1]) for p in THEME_TERM_RE.values()):
+            return None
+        return found, sorted({m[2] for m in mentions})
+
+    def scan_focus(self) -> None:
+        """Safety net for a sector focus the model gave no code to: the server drafts it from the words alone."""
+        for cue in ONLY_CUE_RE.finditer(self.text):
+            sentence = _sentence_of(self.text, *cue.span())
+            if sentence is None or self._covers(cue.span()):
+                continue
+            result = self.focus_in((cue.start(), sentence[1]))
+            if result is None or self._covers(result[0]):
+                continue
+            span, sectors = result
+            self._covered.append(span)
+            self.add_focus(self.text[span[0]:span[1]], sectors, self._objective_id(None, span))
+
+    def scan_themes(self) -> None:
+        """Safety net: a theme word the model gave no code to, written right after an 'only', 'avoid' or 'prefer' cue,
+        still gets the theme question ("I want only environmental investments"). It can only add a question."""
+        for theme, pattern in THEME_TERM_RE.items():
+            for match in pattern.finditer(self.text):
+                if self._covers(match.span()) or self._in_catalog(match.span()):
+                    continue
+                sentence = _sentence_of(self.text, *match.span()) or match.span()
+                window_start = max(sentence[0], match.start() - CUE_WINDOW)
+                before = self.text[window_start:match.start()]
+                cue = None
+                for polarity, cue_re in (("ONLY", ONLY_CUE_RE), ("AVOID", AVOID_CUE_RE), ("PREFER", PREFER_CUE_RE)):
+                    found = list(cue_re.finditer(before))
+                    if found:
+                        cue = (polarity, window_start + found[-1].start())
+                        break
+                if cue is None:
+                    continue
+                end = match.end()
+                trailing = TRAILING_NOUN_RE.match(self.text, end)
+                if trailing is not None:
+                    end = trailing.end()
+                span = (cue[1], end)
+                self._covered.append(span)
+                self.ask("THEME", self.text[span[0]:span[1]], self._objective_id(None, span), theme=theme, polarity=cue[0])
 
     def add_rules(self, items: list[dict[str, Any]]) -> None:
         asked_exclusions = [c["about_words"] for c in self.clarifications if any(o["option_id"] == "named-companies" for o in c["options"])]
         for item in items:
             words, span = self._words(item.get("words"), "rule")
             rule_type = _code(item.get("rule_type"), RULE_TYPES, "rule_type")
+            self._covered.append(span)
             objective_id = self._objective_id(item.get("objective"), span)
             if rule_type == "max_issuer_exposure":
                 parameters: dict[str, Any] = {"issuer_scope": "any" if item.get("issuer_id") in (None, "") else self._company(item.get("issuer_id"))}
@@ -627,8 +871,16 @@ class _Builder:
     def add_unsupported(self, items: list[dict[str, Any]]) -> None:
         seen: set[tuple[str, str]] = set()
         for item in items:
-            words, _ = self._words(item.get("words"), "unsupported")
-            code, reason = UNSUPPORTED_REASONS[_code(item.get("reason"), UNSUPPORTED_REASONS, "unsupported_reason")]
+            words, span = self._words(item.get("words"), "unsupported")
+            self._covered.append(span)
+            reason_code = _code(item.get("reason"), UNSUPPORTED_REASONS, "unsupported_reason")
+            if reason_code in _FOCUS_MISFILED:
+                focus = self.focus_in(span)
+                if focus is not None:  # "only tech stocks" filed as a sector limit: it is a focus the rules can check
+                    self._covered.append(focus[0])
+                    self.add_focus(self.text[focus[0][0]:focus[0][1]], focus[1], self._objective_id(None, focus[0]))
+                    continue
+            code, reason = UNSUPPORTED_REASONS[reason_code]
             if (words, code) in seen:
                 continue
             seen.add((words, code))
@@ -645,6 +897,8 @@ def build_interpretation(extraction: dict[str, Any], *, text: str, persona_id: s
     builder.add_ambiguous(lists["ambiguous"])
     builder.add_rules(lists["rules"])
     builder.add_unsupported(lists["unsupported"])
+    builder.scan_focus()  # last two: only fill what the model left without a code
+    builder.scan_themes()
     return {
         "schema_version": SCHEMA_VERSION, "interpretation_id": interpretation_id, "persona_id": persona_id, "created_at": created_at,
         "model_id": model_id, "original_words": text, "objectives": builder.objectives, "proposed_rules": builder.rules,
@@ -658,10 +912,18 @@ def build_interpretation(extraction: dict[str, Any], *, text: str, persona_id: s
 
 
 class Interpreter:
-    """``model`` is a ``BedrockConverse`` (or anything with its ``converse`` signature and ``model_id``)."""
+    """``model`` is a ``BedrockConverse`` (or anything with its ``converse`` signature and ``model_id``).
+
+    The interpreter is a small bounded agent. In one attempt the model may first call read-only lookup tools
+    (``find_companies``, ``describe_sector``) that the server answers from the data snapshot, then submits its
+    extraction with ``submit_interpretation``. Bounds: ``max_outputs`` submissions (an unusable one starts one fresh
+    attempt with a retry note), ``max_lookup_rounds`` lookup turns in total, at most ``MAX_LOOKUPS_PER_ROUND`` tool
+    calls per turn, and a model call is started only when ``call_budget_seconds`` remain before the deadline.
+    """
 
     def __init__(self, model: Any, clock: Any, *, new_id: Callable[[], str] | None = None, max_tokens: int = 2048,
-                 budget_seconds: float = float(INTERPRET_TIMEOUT_SECONDS), call_budget_seconds: float = 13.0, max_outputs: int = 2) -> None:
+                 budget_seconds: float = float(INTERPRET_TIMEOUT_SECONDS), call_budget_seconds: float = 13.0, max_outputs: int = 2,
+                 max_lookup_rounds: int = 2) -> None:
         self._model = model
         self._clock = clock
         self._new_id = new_id or (lambda: uuid.uuid4().hex)
@@ -669,6 +931,7 @@ class Interpreter:
         self._budget = budget_seconds
         self._call_budget = call_budget_seconds  # the longest one model call can take (connect + read timeout)
         self._max_outputs = max_outputs
+        self._max_lookup_rounds = max_lookup_rounds
         self._references: dict[str, _Reference] = {}
 
     def _reference(self, snapshot: Any) -> _Reference:
@@ -678,52 +941,117 @@ class Interpreter:
             reference = self._references[snapshot.snapshot_id] = _Reference(snapshot)
         return reference
 
+    @staticmethod
+    def _reference_data(reference: _Reference, companies: list[str]) -> dict[str, Any]:
+        return {"sector_labels": reference.sectors,
+                "companies": [{"issuer_id": issuer_id, "name": reference.display.get(issuer_id, issuer_id)} for issuer_id in companies]}
+
+    def _lookup(self, use: dict[str, Any], text: str, reference: _Reference, found: list[str], allowed: bool) -> dict[str, Any]:
+        """Run one lookup tool call. The answer is data from the snapshot; ids it returns become usable in the submission."""
+        tool_use_id = use.get("toolUseId")
+
+        def error(code: str) -> dict[str, Any]:
+            return {"toolResult": {"toolUseId": tool_use_id, "status": "error", "content": [{"text": f"Lookup not completed ({code})."}]}}
+
+        if not allowed:
+            return error("no_lookups_left_submit_now")
+        arguments = use.get("input")
+        if use.get("name") == FIND_COMPANIES_TOOL_NAME:
+            if not isinstance(arguments, dict) or schema_errors(arguments, FIND_COMPANIES_SCHEMA):
+                return error("invalid_arguments")
+            try:
+                start, end = _span(text, arguments["words"], "lookup")
+            except _Rejected:
+                return error("words_not_in_the_investors_text")
+            matches = reference.find(text[start:end])
+            for issuer_id in matches:
+                if issuer_id not in found:
+                    found.append(issuer_id)
+            result: dict[str, Any] = {"matches": [reference.describe(issuer_id) for issuer_id in matches]}
+        else:
+            sector = arguments.get("sector") if isinstance(arguments, dict) else None
+            if not isinstance(sector, str) or sector not in reference.sectors:
+                return error("unknown_sector")
+            result = {"sector": sector, "example_companies": reference.sector_members(sector)}
+        return {"toolResult": {"toolUseId": tool_use_id, "status": "success", "content": [{"json": result}]}}
+
     def interpret(self, *, text: str, persona_id: str, snapshot: Any, started: float | None = None, clarification_mode: bool = False) -> dict[str, Any]:
         started = self._clock.time() if started is None else started
         deadline = started + self._budget
         reference = self._reference(snapshot)
         companies = reference.companies_in(text)
-        tools = tool_config(reference.sectors, companies)
-        reference_data = {"sector_labels": reference.sectors,
-                          "companies": [{"issuer_id": issuer_id, "name": reference.display.get(issuer_id, issuer_id)} for issuer_id in companies]}
+        found: list[str] = []  # companies the lookup tool resolved from the investor's words
         interpretation_id = f"int-{self._new_id()[:12]}"
         rejected = None
+        calls = 0
+        lookup_rounds = 0
+        lookup_tools = {FIND_COMPANIES_TOOL_NAME, DESCRIBE_SECTOR_TOOL_NAME}
         for attempt in range(1, self._max_outputs + 1):
-            if deadline - self._clock.time() < self._call_budget:
-                if rejected is None:
-                    self._done("timeout", interpretation_id, text, attempt - 1)
+            allowed = sorted(set(companies) | set(found))[:MAX_COMPANY_CANDIDATES]
+            messages: list[dict[str, Any]] = [{"role": "user", "content": [
+                {"text": build_interpreter_message(text, self._reference_data(reference, allowed), retry=attempt > 1)}]}]
+            while True:
+                if deadline - self._clock.time() < self._call_budget:
+                    if rejected is None:
+                        self._done("timeout", interpretation_id, text, calls, lookup_rounds=lookup_rounds)
+                        raise InterpreterTimeout()
+                    break  # an answer was received and rejected; there is no time for the retry
+                allowed = sorted(set(companies) | set(found))[:MAX_COMPANY_CANDIDATES]
+                try:
+                    calls += 1
+                    response, record = self._model.converse(system=INTERPRETER_SYSTEM_PROMPT, messages=messages,
+                                                            tool_config=tool_config(reference.sectors, allowed),
+                                                            max_tokens=self._max_tokens, deadline=deadline)
+                except ModelCallError as error:
+                    out_of_time = error.code == FAILURE_DEADLINE_EXCEEDED or deadline - self._clock.time() < self._call_budget
+                    self._done("timeout" if out_of_time else "model_error", interpretation_id, text, calls, aws_error=error.aws_error)
+                    if out_of_time:
+                        raise InterpreterTimeout() from error
+                    raise InterpreterFailed("model_error") from error
+                if self._clock.time() > deadline:
+                    self._done("timeout", interpretation_id, text, calls)
                     raise InterpreterTimeout()
-                break  # an answer was received and rejected; there is no time for the retry
-            message = build_interpreter_message(text, reference_data, retry=attempt > 1)
-            try:
-                response, record = self._model.converse(system=INTERPRETER_SYSTEM_PROMPT, messages=[{"role": "user", "content": [{"text": message}]}],
-                                                        tool_config=tools, max_tokens=self._max_tokens, deadline=deadline)
-            except ModelCallError as error:
-                out_of_time = error.code == FAILURE_DEADLINE_EXCEEDED or deadline - self._clock.time() < self._call_budget
-                self._done("timeout" if out_of_time else "model_error", interpretation_id, text, attempt, aws_error=error.aws_error)
-                if out_of_time:
-                    raise InterpreterTimeout() from error
-                raise InterpreterFailed("model_error") from error
-            if self._clock.time() > deadline:
-                self._done("timeout", interpretation_id, text, attempt)
-                raise InterpreterTimeout()
-            try:
-                draft = build_interpretation(
-                    _extraction(response), text=text, persona_id=persona_id, reference=reference, companies=companies,
-                    interpretation_id=interpretation_id, created_at=to_iso(self._clock.time()), model_id=getattr(self._model, "model_id", None),
-                    clarification_mode=clarification_mode)
-                if interpretation_errors(draft):
-                    raise _Rejected("draft_fails_contract_validation")
-            except _Rejected as error:
-                rejected = error.reason
-                log.warning("interpreter_output_rejected", interpretation_id=interpretation_id, attempt=attempt, reason=rejected,
-                            stop_reason=record.get("stop_reason"), usage=record.get("usage"))
-                continue
-            self._done("ok", interpretation_id, text, attempt, usage=record.get("usage"), wall_ms=record.get("wall_ms"),
-                       objectives=len(draft["objectives"]), proposed_rules=len(draft["proposed_rules"]),
-                       clarifications=len(draft["clarifications"]), unsupported=len(draft["unsupported"]))
-            return draft
-        self._done("rejected", interpretation_id, text, self._max_outputs, reason=rejected)
+                message = (response.get("output") or {}).get("message") or {}
+                content = [block for block in (message.get("content") or []) if isinstance(block, dict)]
+                uses = [block["toolUse"] for block in content if isinstance(block.get("toolUse"), dict)]
+                submitted = any(use.get("name") == INTERPRETER_TOOL_NAME for use in uses)
+                if uses and not submitted and response.get("stopReason") == "tool_use":
+                    if any(use.get("name") not in lookup_tools for use in uses) or len(uses) > MAX_LOOKUPS_PER_ROUND:
+                        rejected = "unknown_tool_or_too_many_lookups"
+                        log.warning("interpreter_output_rejected", interpretation_id=interpretation_id, attempt=attempt, reason=rejected)
+                        break
+                    lookup_rounds += 1
+                    if lookup_rounds > self._max_lookup_rounds + 1:
+                        rejected = "lookup_rounds_exceeded"  # it was told to submit and asked again
+                        log.warning("interpreter_output_rejected", interpretation_id=interpretation_id, attempt=attempt, reason=rejected)
+                        break
+                    more = lookup_rounds <= self._max_lookup_rounds
+                    results = [self._lookup(use, text, reference, found, more) for use in uses]
+                    if not more:
+                        results.append({"text": INTERPRETER_LOOKUP_DONE_NOTE})
+                    messages += [{"role": "assistant", "content": content}, {"role": "user", "content": results}]
+                    log.info("interpreter_lookup", interpretation_id=interpretation_id, round=lookup_rounds, calls=len(uses), answered=more)
+                    continue
+                try:
+                    draft = build_interpretation(
+                        _extraction(response), text=text, persona_id=persona_id, reference=reference,
+                        companies=sorted(set(companies) | set(found)), interpretation_id=interpretation_id,
+                        created_at=to_iso(self._clock.time()), model_id=getattr(self._model, "model_id", None),
+                        clarification_mode=clarification_mode)
+                    if interpretation_errors(draft):
+                        raise _Rejected("draft_fails_contract_validation")
+                except _Rejected as error:
+                    rejected = error.reason
+                    log.warning("interpreter_output_rejected", interpretation_id=interpretation_id, attempt=attempt, reason=rejected,
+                                stop_reason=record.get("stop_reason"), usage=record.get("usage"))
+                    break
+                self._done("ok", interpretation_id, text, calls, usage=record.get("usage"), wall_ms=record.get("wall_ms"),
+                           lookup_rounds=lookup_rounds, objectives=len(draft["objectives"]), proposed_rules=len(draft["proposed_rules"]),
+                           clarifications=len(draft["clarifications"]), unsupported=len(draft["unsupported"]))
+                return draft
+            if deadline - self._clock.time() < self._call_budget:
+                break
+        self._done("rejected", interpretation_id, text, calls, reason=rejected)
         raise InterpreterFailed(rejected or "rejected")
 
     @staticmethod

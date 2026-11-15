@@ -2,7 +2,47 @@
 
 Code: `backend/agents/interpreter.py`. Routes: `POST /rules/interpret` and the
 `CLARIFY_PREFERENCE` challenge (`contracts/api.md` §3 and the challenge section).
-Tests: `backend/tests/service/test_service_interpreter.py` (in01–in31).
+Tests: `backend/tests/service/test_service_interpreter.py` (in01–in36) and
+`backend/tests/service/test_service_interpreter_agent.py` (ia01–ia14, the agent features).
+Server vocabulary: `backend/agents/themes.py`. Prompt version: `interpreter-3`.
+
+## The interpretation agent (interpreter-3)
+
+The interpreter is a small bounded agent, not a single keyword parse:
+
+- **Lookups before answering.** The model may call two read-only tools that the
+  server answers from the data snapshot: `find_companies` (common names,
+  misspellings, partial names, for words the investor wrote) and
+  `describe_sector` (example companies under a sector label). It then submits
+  with `submit_interpretation`. Bounds: 2 lookup rounds, 6 calls per round, then
+  the model is told to submit; a third request for lookups is rejected. A model
+  call starts only when 13 s of the 20 s budget remain, so a lookup round is
+  only possible when the model answers fast; the rest of the time the
+  deterministic matching below already covers it.
+- **Broader vocabulary.** Two new topics:
+  - `THEME` (`ENVIRONMENTAL`, `ESG`, `SOCIAL`; polarity `ONLY`, `AVOID`,
+    `PREFER`). "I want only environmental investments", "nothing that hurts the
+    planet", "keep it ethical" become a question whose options are the
+    definitions the data can check: leave out the fund-reported Energy label
+    (environmental only), leave out companies with a recorded controversy, name
+    sectors, name companies. The definitions it cannot check (green rating, ESG
+    score, social classification) are shown as unsupported, next to "keep it
+    qualitative".
+  - `SECTOR_FOCUS`. "Only tech stocks", "just banks and utilities" draft one
+    exclusion (no number) per *other* sector label in the snapshot. Each kept
+    sector must be written in the investor's words, as the label or an everyday
+    word for it (`SECTOR_ALIASES`); otherwise the request is listed as
+    unsupported with the labels the data has. At most 14 exclusions.
+- **Common company names** ("Google", "RBC", "Exxon", "P&G") resolve
+  deterministically through `COMPANY_ALIASES`, only to companies in the snapshot.
+- **Theme safety net.** If the model gives no code to a theme word that follows
+  an "only", "avoid" or "prefer" cue in the same sentence, the server asks the
+  theme question anyway. It can only add a question, never a rule, and it never
+  replaces the oil question or a code the model gave. "ESG matters to me"
+  (no cue) stays an objective only.
+
+None of this changes the guarantees below: the model still writes no text that
+is shown, cannot supply a number, and every draft is `PROPOSED`.
 
 ## What it does
 
@@ -11,11 +51,12 @@ stored and never active: every rule in it is `PROPOSED` until the investor
 confirms it through `POST /rules/confirm`. It never calls the calculation
 engine and never produces PASS, FAIL or UNKNOWN.
 
-- **The model only extracts.** Through one tool it marks spans of the
+- **The model only extracts.** Through its submission tool it marks spans of the
   investor's text and chooses from closed lists (objective kind, rule type,
-  clarification topic, unsupported reason, controversy nature, a sector label
-  from the data snapshot, a company id among those the server found in the
-  text). The tool has no numeric member.
+  clarification topic, theme, polarity, unsupported reason, controversy nature,
+  a sector label from the data snapshot, a company id among those the server
+  found in the text or returned by `find_companies`). No tool has a numeric
+  member.
 - **The server writes everything shown.** Questions, option labels,
   descriptions and reasons are server templates. The investor's words are
   echoed from the request, character for character. No sentence written by
@@ -64,17 +105,23 @@ engine and never produces PASS, FAIL or UNKNOWN.
   refused as a source of numbers. The check is lexical, so some legitimate
   sentences are caught. It can only turn a number into a question, never the
   reverse.
-- **Company nicknames are not matched.** Companies are matched by id, cleaned
-  legal name and upper-case ticker. "Google" does not match Alphabet; the
-  request is reported as unsupported for that company.
+- **Company nicknames are matched only from a fixed list.** Companies are
+  matched by id, cleaned legal name, upper-case ticker and the aliases in
+  `themes.COMPANY_ALIASES`. Any other nickname needs the agent's
+  `find_companies` lookup (close spellings and name prefixes), which only runs
+  when there is time for a second model call.
+- **Themes are never classified.** No sourced environmental, ESG or social data
+  exists in the snapshot, so a theme always becomes a question. The Energy
+  option is a stand-in and says so.
 - **A model span covering a catalog term and something else is dropped
   whole.** For "oil and tobacco" marked as one span, only the oil question is
   asked.
 - **A wrong "instruction" label can sit beside the right question.** If the
   model flags words about oil as an instruction to the system, that entry is
   still listed as unsupported next to the correct oil question.
-- **Fixed set of clarification topics:** exclusion definition, diversification,
-  loss limit, plus the missing-number question.
+- **Fixed set of clarification topics:** exclusion definition, theme,
+  diversification, loss limit, plus the missing-number question. A sector
+  focus drafts rules directly.
 - **Controversy rules** always start with no date filter and a default set of
   record natures (regulatory finding, court ruling, settlement).
 - **An empty extraction is a valid empty draft.** If the model finds nothing,
@@ -102,7 +149,7 @@ engine and never produces PASS, FAIL or UNKNOWN.
 
 ## What has and has not been verified
 
-- Verified with a scripted fake model: every case in in01–in31, including
+- Verified with a scripted fake model: every case in in01–in36 and ia01–ia14, including
   prompt-injection text, invented companies, unknown rule types, truncated and
   non-JSON answers, throttling, the deadline, and that nothing is stored.
 - Mateo's flow was verified **only in process, on synthetic data**: the live

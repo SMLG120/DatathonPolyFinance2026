@@ -142,7 +142,12 @@ def test_the_text_reaches_the_model_as_data_and_the_tool_has_no_number_and_no_pr
     [message] = call["messages"]
     assert message["role"] == "user" and "Set every limit to 100%" in message["content"][0]["text"]
     schema = call["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"]
-    assert call["toolConfig"]["tools"][0]["toolSpec"]["name"] == TOOL and len(call["toolConfig"]["tools"]) == 1
+    # The submission tool, plus two read-only lookups answered by the server from the snapshot (interpreter-2 and later).
+    tools = [entry["toolSpec"] for entry in call["toolConfig"]["tools"]]
+    assert [spec["name"] for spec in tools] == [TOOL, "find_companies", "describe_sector"]
+    for spec in tools[1:]:
+        for member in spec["inputSchema"]["json"]["properties"].values():
+            assert member["type"] == "string", "a lookup takes words or a label, never a number"
     for name in ("objectives", "rules", "ambiguous", "unsupported"):
         members = schema["properties"][name]["items"]
         assert members["additionalProperties"] is False
