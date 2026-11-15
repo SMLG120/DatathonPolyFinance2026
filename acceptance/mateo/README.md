@@ -28,7 +28,7 @@ From the repository root (no network, no AWS, no model):
 Tests parametrised `[real]` are skipped when `data/processed/{holdings,instruments,market_data}.json` are
 absent (they are git-ignored). `test_real_data_outcome_is_reported` prints Mateo's real-data outcome.
 The `xfail(strict=True)` test is the open finding; `--runxfail -k L1` shows it failing.
-Expected: 254 passed, 1 xfailed (engine `byb-engine-1.0.8`, base `84bd638`).
+Expected: 276 passed, 1 xfailed (engine `byb-engine-1.0.8`, base `0c5adf1`).
 
 ## Live check (after deployment)
 
@@ -100,7 +100,7 @@ The in-process run uses the real handler, worker and authorizer code, and nothin
    against the 150 s job deadline. Here the test delivers the event itself, and time is a fake clock.
 5. **Any model**: Bedrock access and latency; whether the real model calls `submit_interpretation` at all and
    what it extracts from Mateo's sentence (spans that are in the text, the codes it picks; for "oil" the
-   server's catalog now decides, see I1 and observations O8 to O10); how often the one retry is needed and whether two calls fit the 20 s budget; which
+   server's catalog now decides, see I1 and observations O8 and O10); how often the one retry is needed and whether two calls fit the 20 s budget; which
    evidence the investigator highlights; `agent.mode` (`MODEL` here means the fake Bedrock answered).
    Every model answer in this suite is a script. Run `live_check.py --require-interpreter` first.
 6. **The deployed data**: that the uploaded snapshot is the local `data/processed` (`--compare-local` answers

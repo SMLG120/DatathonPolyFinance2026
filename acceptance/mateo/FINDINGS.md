@@ -10,6 +10,10 @@ frozen documents (`docs/LEAD_DECISIONS.md`, `docs/BUILD_BRIEF.md`, `contracts/SE
 - Third pass: base `4814500` (rule interpreter `backend/agents/interpreter.py`, template-only explanations,
   api.md section 6 rule 2 amended). Same engine and data.
 - Fourth pass: base `84bd638` (interpreter fix `563bb62` for I1).
+- Fifth pass: base `0c5adf1` (interpreter commit `07a2ad6` for O9 and O10). The interpreter is frozen after it.
+  Mateo's sentence and workflow are unchanged by it: the careful-model answer still differs from the frozen
+  fixture in exactly the members of section F, and `--require-interpreter --compare-local` still ends
+  `PASS (24 checks, 0 warnings, 11 requests sent)` with the same numbers, byte-identical to the local engine.
 
 Nothing outside `acceptance/mateo/` was edited. Each open finding keeps a test marked `xfail(strict=True)` whose
 reason starts with the finding id, so the suite stays green while the defect stays visible; when the defect
@@ -139,10 +143,10 @@ behaviour more strictly, not less. None was a regression.
   Utilities: one Energy question for `fossil fuels` and one for `oil` every time, and the investor's own 10%
   cap in the other sentence is still quoted and `PROPOSED`.
 - **Evidence** (`test_mateo_interpreter_inprocess.py`, no marker):
-  `test_I1_a_wrong_code_from_the_model_does_not_change_the_oil_question` (8 inputs) and
+  `test_I1_a_wrong_code_from_the_model_does_not_change_the_oil_question` (10 inputs since the fifth pass) and
   `test_I1_each_catalog_term_gets_its_own_energy_question_whatever_the_model_flags` (5 inputs). They assert the
   option list, the draft and the absence of any other sector, not only `mateo_oil_clarification_problems`.
-- **Limits that remain** are observations O8 to O10 below; none concerns Mateo's sentence or D7.
+- **Limits that remain:** observation O8 and the rest of O10 below; none concerns Mateo's sentence or D7.
 
 ## Second pass: `live_check.py` against the real handlers, in process
 
@@ -180,7 +184,7 @@ these runs is the fake Bedrock returning an empty explanation, not a model.
 
 ## Third pass: Mateo's words through the real interpreter, in process
 
-`test_mateo_interpreter_inprocess.py` (62 tests since the fourth pass; in the third pass 52, 3 of them the I1 strict xfails). The model is a script on the
+`test_mateo_interpreter_inprocess.py` (84 tests since the fifth pass; in the third pass 52, 3 of them the I1 strict xfails). The model is a script on the
 fake Bedrock; everything else is A2's code. For every answer the test checks that no object was stored, no
 worker was started, no model-written text is in the body, and that the body passes
 `byb_contracts.api_body_errors` / `interpretation_errors` and `live_check.interpretation_problems`.
@@ -289,13 +293,28 @@ not do: key on literal fixture ids, assume draft ids are unique across answers, 
   "oil and tobacco" or an exclusion rule on the whole clause yields the two Energy questions and nothing about
   tobacco; tobacco is asked about only when the model marks it on its own span. The investor loses a question,
   never gains a rule. Pinned by `test_I1_each_catalog_term_gets_its_own_energy_question_whatever_the_model_flags`.
-- **O9. "petroleum" and a bare "fossil" are not catalog terms.** The catalog scan covers `oil` and
-  `fossil fuel(s)`. For "Petroleum is out." the Energy label is forced when the model asks the
-  exclusion-definition question, but a wrong topic from the model stands (loss-limit question about
-  "Petroleum") and an omission yields no question. Outside Mateo's sentence; pinned by
-  `test_O9_petroleum_is_not_a_catalog_term_only_its_sector_is_forced`.
-- **O10. Only clarifications and exclusion rules overlapping "oil" are dropped.** If the model marks
-  "avoid oil" as a `max_issuer_exposure` rule, the answer carries, next to the correct oil question, a
-  company-cap draft whose `original_words` is "avoid oil" (threshold null, `PROPOSED`, inactive). If it marks
-  "avoid oil" as `INSTRUCTION`, `unsupported[]` tells Mateo his wish "reads as an instruction to the system".
-  Both are wrong labels shown next to the right question; neither sets a number or activates anything.
+- **O9. Resolved by `07a2ad6`.** Was: "petroleum" and a bare "fossil" were not catalog terms (a wrong topic
+  stood, an omission gave no question). Now `oil`, `petroleum`, `fossil` and `fossil fuel(s)` are all catalog
+  terms: for five sentences ("Petroleum is out.", "No fossil energy for me.", upper and mixed case,
+  "oil-related" / "fossil-fuel" / repeated "Oil", "fossil fuels" next to "fossil fuel") and four model
+  behaviours (silent, wrong topic, wrong sector, a loss-budget or cap rule on the term) the answer is exactly
+  one Energy question per distinct term, in text order, and nothing else
+  (`test_O9_every_catalog_term_gets_the_energy_question_whatever_the_model_does`, 20 cases). Words that merely
+  contain the letters do **not** trigger it: soil, foil, boiler, turmoil, oilseed, Oilers, toil, fossils,
+  fossilized, petroleums give no oil question, and a model item on "turmoil" or "own a boiler" is kept, not
+  dropped as if it were about oil (`test_words_that_merely_contain_oil_or_fossil_trigger_no_oil_question`).
+  Consequence worth knowing: the plural "fossils" and "oils" are not asked about.
+- **O10. Half resolved by `07a2ad6`, half a documented limit.**
+  - Resolved: a model rule other than `controversy_exclusion` whose span overlaps a catalog term is dropped.
+    "avoid oil" as a company cap, as a loss budget, or a cap on Mateo's whole clause: no such draft appears;
+    every draft in the answer is an `exclusion` (inside the question) or a `controversy_exclusion`. The item
+    is validated first: an unknown company in it still gives 502 after the retry
+    (`test_a_rule_on_the_oil_words_is_validated_before_it_is_dropped`).
+  - What the pins assert now (`test_I1_a_wrong_code_from_the_model_does_not_change_the_oil_question`, for each
+    of the 10 inputs): exactly one clarification, the Energy question about `oil`; `proposed_rules` is exactly
+    the controversy draft (with the model's span, which may include the oil words; empty when the model marked
+    none); no draft of another rule type; `unsupported` is empty except in the two cases below.
+  - Remaining limit, pinned: an `unsupported` entry the model put on the oil words is kept next to the right
+    question. `("oil", UNSUPPORTED_DEFINITION)` is accurate. `("avoid oil", INSTRUCTION_IGNORED)` tells Mateo
+    his wish "reads as an instruction to the system": a wrong label, shown beside the correct question, that
+    sets nothing and activates nothing.

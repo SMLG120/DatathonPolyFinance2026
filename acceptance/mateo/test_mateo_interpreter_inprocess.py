@@ -199,6 +199,9 @@ MISLABELLED.update({
     "inside-the-controversy-rule": changed(ambiguous=[], rules=[{"words": "avoid oil and companies involved in significant controversies",
                                                                  "rule_type": "controversy_exclusion"}]),
     "as-a-company-cap": changed(ambiguous=[], rules=EXTRACTION["rules"] + [{"words": "avoid oil", "rule_type": "max_issuer_exposure", "issuer_id": None}]),
+    "as-a-loss-budget": changed(ambiguous=[], rules=EXTRACTION["rules"] + [{"words": "avoid oil", "rule_type": "scenario_loss_budget"}]),
+    "as-a-cap-on-the-whole-clause": changed(ambiguous=[], rules=[{"words": "I want to avoid oil and companies involved in significant controversies",
+                                                                  "rule_type": "max_issuer_exposure", "issuer_id": None}]),
     "two-wrong-questions": changed(ambiguous=[{"words": "oil", "topic": "DIVERSIFICATION"}, {"words": "avoid oil", "topic": "EXCLUSION_DEFINITION", "sector": "Financials"}]),
 })
 
@@ -234,11 +237,28 @@ def test_I1_a_wrong_code_from_the_model_does_not_change_the_oil_question(name):
     sectors = [r["parameters"]["definition"].get("sector") for r in drafts(draft) if r["rule_type"] == "exclusion"]
     assert sectors == ["Energy"], f"another sector label is offered for oil: {sectors}"
     assert all(rule["threshold"] is None for rule in drafts(draft))
-    if name in ("another-sector", "another-topic", "another-topic-on-the-clause", "two-wrong-questions"):
-        # the model's own question is dropped, nothing else is lost
-        assert len(draft["clarifications"]) == 1
-        assert [(r["rule_type"], r["original_words"]) for r in draft["proposed_rules"]] == [
-            ("controversy_exclusion", "companies involved in significant controversies")]
+    # The model's own question or rule on the oil words is dropped (07a2ad6: any rule other than a
+    # controversy_exclusion whose span overlaps a catalog term), and nothing else is lost.
+    assert len(draft["clarifications"]) == 1
+    rules = [(r["rule_type"], r["original_words"]) for r in draft["proposed_rules"]]
+    if name == "inside-the-controversy-rule":
+        assert rules == [("controversy_exclusion", "avoid oil and companies involved in significant controversies")]
+    elif name == "as-a-cap-on-the-whole-clause":
+        assert rules == []  # the cap covered the oil words; the model marked no controversy rule in this answer
+    else:
+        assert rules == [("controversy_exclusion", "companies involved in significant controversies")]
+    assert {r["rule_type"] for r in drafts(draft)} <= {"exclusion", "controversy_exclusion"}, "a cap or loss-budget draft sits on the oil words"
+    # O10, the documented limit that remains: an `unsupported` entry the model put on the oil words is kept.
+    expected_unsupported = {"marked-unsupported": [("oil", "UNSUPPORTED_DEFINITION")], "marked-as-an-instruction": [("avoid oil", "INSTRUCTION_IGNORED")]}
+    assert [(u["words"], u["code"]) for u in draft["unsupported"]] == expected_unsupported.get(name, [])
+
+
+def test_a_rule_on_the_oil_words_is_validated_before_it_is_dropped():
+    """An unknown company in a rule that would be dropped anyway still rejects the whole answer (502 after the retry)."""
+    answer = tool(changed(ambiguous=[], rules=[{"words": "avoid oil", "rule_type": "min_issuer_exposure", "issuer_id": "NOT_A_COMPANY"}]))
+    transport = backend(answer, answer)
+    response = interpret(transport)
+    assert response.status == 502 and response.body["error"]["code"] == "INTERPRETER_FAILED" and len(interpreter_calls(transport)) == 2
 
 
 OTHER_TERMS = "I want to avoid fossil fuels and oil and tobacco. No more than 10% in any one company."
@@ -275,24 +295,58 @@ def test_I1_each_catalog_term_gets_its_own_energy_question_whatever_the_model_fl
     assert set(by_words) == {"fossil fuels", "oil"} | ({"tobacco"} if name == "tobacco-on-its-own" else set())
 
 
-@pytest.mark.parametrize("extraction, question", [
-    (dict(EMPTY, ambiguous=[{"words": "Petroleum", "topic": "EXCLUSION_DEFINITION", "sector": "Utilities"}]), "energy"),
-    (dict(EMPTY, ambiguous=[{"words": "Petroleum", "topic": "LOSS_LIMIT"}]), "loss"),
-    (EMPTY, None),
-], ids=["wrong-sector", "wrong-topic", "omitted"])
-def test_O9_petroleum_is_not_a_catalog_term_only_its_sector_is_forced(extraction, question):
-    """Not Mateo's sentence and not a D7 requirement: pinned so the limit is known. "oil" and "fossil fuel(s)" are
-    the catalog; for "petroleum" (and a bare "fossil") the server forces the Energy label but not the topic."""
-    response = interpret(backend(tool(extraction)), "Petroleum is out.")
+CATALOG_TEXTS = {
+    "Petroleum is out.": ["Petroleum"],
+    "No fossil energy for me.": ["fossil"],
+    "I dislike PETROLEUM and Fossil things.": ["PETROLEUM", "Fossil"],
+    "Avoid crude oil, oil-related funds and fossil-fuel producers. No Oil.": ["oil", "fossil"],  # one question per distinct term
+    "No fossil fuels and no fossil fuel funds.": ["fossil fuels", "fossil fuel"],
+}
+
+
+def wrong_answers(terms):
+    return {
+        "omitted": EMPTY,
+        "wrong-topic": dict(EMPTY, ambiguous=[{"words": term, "topic": "LOSS_LIMIT"} for term in terms]),
+        "wrong-sector": dict(EMPTY, ambiguous=[{"words": term, "topic": "EXCLUSION_DEFINITION", "sector": "Utilities"} for term in terms]),
+        "as-rules": dict(EMPTY, rules=[{"words": term, "rule_type": rule_type} for term, rule_type in zip(terms, ("scenario_loss_budget", "max_issuer_exposure"))]),
+    }
+
+
+@pytest.mark.parametrize("text", sorted(CATALOG_TEXTS))
+@pytest.mark.parametrize("answer", ["omitted", "wrong-topic", "wrong-sector", "as-rules"])
+def test_O9_every_catalog_term_gets_the_energy_question_whatever_the_model_does(text, answer):
+    """Observation O9, resolved by 07a2ad6: oil, petroleum, fossil and fossil fuel(s) are all catalog terms."""
+    terms = CATALOG_TEXTS[text]
+    response = interpret(backend(tool(wrong_answers(terms)[answer])), text)
     assert response.status == 200
-    clarifications = response.body["clarifications"]
-    if question is None:
-        assert clarifications == []
-    elif question == "energy":
-        assert_energy_question(clarifications[0])
-    else:
-        assert [o["option_id"] for o in clarifications[0]["options"]] == ["replay-loss-budget", "no-loss-guarantee", "keep-qualitative"]
-    assert all(rule["threshold"] is None and rule["status"] == "PROPOSED" for rule in drafts(response.body))
+    draft = response.body
+    assert [c["about_words"] for c in draft["clarifications"]] == terms
+    for clarification in draft["clarifications"]:
+        assert_energy_question(clarification)
+    assert draft["proposed_rules"] == [] and draft["unsupported"] == []
+    assert {r["rule_type"] for r in drafts(draft)} == {"exclusion"}
+
+
+INNOCENT = ("I garden in good soil, wrap food in foil, own a boiler, fear turmoil, like oilseed and the Oilers, toil daily, "
+            "and read about fossils, fossilized ferns and petroleums.")
+
+
+@pytest.mark.parametrize("extraction", [
+    EMPTY,
+    dict(EMPTY, ambiguous=[{"words": "turmoil", "topic": "LOSS_LIMIT"}], rules=[{"words": "own a boiler", "rule_type": "max_issuer_exposure", "issuer_id": None}]),
+], ids=["model-silent", "model-flags-innocent-words"])
+def test_words_that_merely_contain_oil_or_fossil_trigger_no_oil_question(extraction):
+    response = interpret(backend(tool(extraction)), INNOCENT)
+    assert response.status == 200
+    draft = response.body
+    assert not [o for c in draft["clarifications"] for o in c["options"] if o["option_id"] in ("energy-sector-label", "oil-producers", "fossil-fuels")]
+    assert not [r for r in drafts(draft) if r["rule_type"] == "exclusion"]
+    if extraction is EMPTY:
+        assert draft["clarifications"] == [] and draft["proposed_rules"] == []
+    else:  # and the model's items on those words are not dropped as if they were about oil
+        assert [c["about_words"] for c in draft["clarifications"]] == ["turmoil"]
+        assert [(r["rule_type"], r["original_words"], r["threshold"]) for r in draft["proposed_rules"]] == [("max_issuer_exposure", "own a boiler", None)]
 
 
 REJECTED = {
