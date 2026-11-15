@@ -16,7 +16,8 @@ expected value is typed in to make a test pass.
 | `test_live_check.py` | Unit tests of the script's pure parts, and an offline end-to-end run against a fake transport backed by the local engine |
 | `mateo_invariants.py` | The invariants of a `check_result` (SEMANTICS sections 1, 5, 6, 9, 10, 11, 13), restated without `byb_contracts`; shared by the tests and the live script |
 | `mateo_helpers.py` | Loaders, policy builders and the independent look-through (`hand_*`) |
-| `FINDINGS.md` | Failing-input reports (E1 and E2 closed in engine 1.0.8; L1 and B1 open), the 1.0.1 to 1.0.8 comparison, the in-process run, observations |
+| `test_mateo_interpreter_inprocess.py` | Mateo's sentence through the real `POST /rules/interpret` and the `CLARIFY_PREFERENCE` challenge with a scripted model: careful, adversarial (omits oil, Energy rule outright with a threshold, invented number, prose), injection appended to the words; the full workflow with `--require-interpreter --compare-local`; both answers compared with the frozen fixtures |
+| `FINDINGS.md` | Failing-input reports (E1, E2, B1 closed; L1 and I1 open), the 1.0.1 to 1.0.8 comparison, the in-process runs, fixture-against-implementation differences (section F), observations |
 
 ## Run
 
@@ -26,8 +27,8 @@ From the repository root (no network, no AWS, no model):
 
 Tests parametrised `[real]` are skipped when `data/processed/{holdings,instruments,market_data}.json` are
 absent (they are git-ignored). `test_real_data_outcome_is_reported` prints Mateo's real-data outcome.
-The `xfail(strict=True)` tests are the open findings; `--runxfail -k "L1 or B1_an_idempotent"` shows them failing.
-Expected: 190 passed, 2 xfailed (engine `byb-engine-1.0.8`, base `df33dd6`).
+The `xfail(strict=True)` tests are the open findings; `--runxfail -k "L1 or I1_a_wrong_code"` shows them failing.
+Expected: 241 passed, 4 xfailed (engine `byb-engine-1.0.8`, base `4814500`).
 
 ## Live check (after deployment)
 
@@ -80,7 +81,9 @@ bound = in-scope equity weight, `NO_FEASIBLE_PURCHASE` bound by the Energy rule,
    first) on the same data snapshot, and passes no price/FX source labels that would change the document
    (Mateo has no scenario rule, so no price or FX evidence exists either way; a test asserts this).
 
-All nine held against the real handlers in process (`test_live_check_inprocess.py`); the script was not changed.
+All nine held against the real handlers in process (`test_live_check_inprocess.py`, and with a working
+interpreter `test_mateo_interpreter_inprocess.py`); the script was not changed in the second or third pass.
+The live script does not send a `CLARIFY_PREFERENCE` challenge; that route is covered in process only.
 
 ## Unverifiable until a real deployment
 
@@ -95,9 +98,11 @@ The in-process run uses the real handler, worker and authorizer code, and nothin
    requests; here they are A2's fake.
 4. **Lambda asynchronous invocation**: that the worker starts after the 202, its retries on error, its timeout
    against the 150 s job deadline. Here the test delivers the event itself, and time is a fake clock.
-5. **Any model**: Bedrock access, latency, the explanation text and its citations, `agent.mode`
-   (`MODEL` here means the fake Bedrock returned an empty explanation). `POST /rules/interpret` answers 502
-   until an interpreter exists, so Mateo's "oil" clarification has only been checked on fixtures.
+5. **Any model**: Bedrock access and latency; whether the real model calls `submit_interpretation` at all and
+   what it extracts from Mateo's sentence (spans that are in the text, the codes it picks for "oil": finding
+   I1 depends on it); how often the one retry is needed and whether two calls fit the 20 s budget; which
+   evidence the investigator highlights; `agent.mode` (`MODEL` here means the fake Bedrock answered).
+   Every model answer in this suite is a script. Run `live_check.py --require-interpreter` first.
 6. **The deployed data**: that the uploaded snapshot is the local `data/processed` (`--compare-local` answers
    this on the first real run) and that `calculation_version` is `byb-engine-1.0.8`.
 7. **The access code**: the SSM value (16 characters or more) and that nothing logs it.

@@ -6,6 +6,10 @@ No socket, no AWS. The snapshot is built by ``scripts/build_snapshot.py`` from `
 or from a synthetic contract universe. What this cannot show is listed in README.md ("Unverifiable until a real
 deployment"): API Gateway itself (routing, CORS, the 30 s cut, its own 401/403 bodies), IAM, real S3 and Lambda
 asynchronous invocation, real time, and any model.
+
+``bedrock_script`` is the list of Converse responses the one fake model plays, in call order, for the interpreter
+(API) and the investigator (worker) alike; ``None`` repeats an empty investigator answer, which the interpreter
+rejects (502 after its one retry).
 """
 
 from __future__ import annotations
@@ -66,6 +70,10 @@ class InProcessTransport:
     def _route(self, method: str, path: str) -> tuple[Optional[str], dict]:
         if (method, path) in EXACT:
             return f"{method} {path}", {}
+        if method == "POST" and path.startswith("/investigations/") and path.endswith("/challenge"):
+            job_id = path[len("/investigations/"):-len("/challenge")]
+            if job_id and "/" not in job_id:
+                return "POST /investigations/{id}/challenge", {"id": job_id}
         for wanted, prefix, route, parameter in ROUTES:
             rest = path[len(prefix):]
             if method == wanted and path.startswith(prefix) and rest and "/" not in rest:

@@ -2,8 +2,9 @@
 
 API Lambda handler + investigation worker + access-code authorizer (A2's code, unmodified) on A2's in-memory fakes
 for S3, Lambda, Bedrock and SSM, behind the transport seam of the live script (``inprocess_backend.py``). No socket,
-no AWS, no model: the fake Bedrock answers an empty explanation, and ``POST /rules/interpret`` answers 502 because
-no interpreter exists yet.
+no AWS, no model. In this file the fake model always answers the investigator's empty answer, which the rule
+interpreter rejects: ``POST /rules/interpret`` therefore answers 502 after its one retry, the case the live script
+treats as a warning. The runs with a working interpreter are in ``test_mateo_interpreter_inprocess.py``.
 
 The second half probes the backend directly against ``contracts/api.md`` for the cases the happy path never sends.
 """
@@ -110,6 +111,14 @@ def test_a_wrong_access_code_is_exit_2_after_one_request_and_reaches_no_handler(
     assert CODE not in text and "another-code" not in text
 
 
+def worker_model_calls(service):
+    """Model calls made by the investigation worker (the interpreter shares the fake model and has its own prompt)."""
+    from backend.agents.prompts import INTERPRETER_SYSTEM_PROMPT, INVESTIGATOR_SYSTEM_PROMPT
+    systems = [call["system"][0]["text"] for call in service.bedrock.calls]
+    assert set(systems) <= {INTERPRETER_SYSTEM_PROMPT, INVESTIGATOR_SYSTEM_PROMPT}, "a model call with an unknown system prompt"
+    return systems.count(INVESTIGATOR_SYSTEM_PROMPT), systems.count(INTERPRETER_SYSTEM_PROMPT)
+
+
 @needs_real_data
 def test_exactly_one_policy_and_one_job_and_one_worker_run():
     code, lines, transport = run_main()
@@ -117,9 +126,22 @@ def test_exactly_one_policy_and_one_job_and_one_worker_run():
     service = transport.service
     jobs = {path for _method, path, _status in transport.log if path.startswith("/investigations/")}
     assert len(jobs) == 1
-    assert len(service.bedrock.calls) == 1  # one worker ran, whatever the number of deliveries
-    assert all(record["InvocationType"] == "Event" and set(record["Payload"]) == {"job_id"} for record in service.lambda_client.invocations)
-    assert {record["Payload"]["job_id"] for record in service.lambda_client.invocations} == {next(iter(jobs)).rsplit("/", 1)[1]}
+    job_id = next(iter(jobs)).rsplit("/", 1)[1]
+    # one policy version and one job were stored
+    assert [key for key in service.s3.keys() if key.startswith("policies/")] == [key for key in service.s3.keys() if key.endswith("/v1.json") and "pol-mateo-" in key]
+    assert len([key for key in service.s3.keys() if key.startswith("policies/")]) == 1
+    assert {key.split("/")[1].split(".")[0] for key in service.s3.keys() if "inv-" in key} == {job_id}
+    # one worker ran: one investigator model call, whatever the number of deliveries; the interpreter's two calls
+    # (the answer and its one retry, both rejected: 502) are not worker runs
+    assert worker_model_calls(service) == (1, 2)
+    assert transport.delivered == len(service.lambda_client.invocations) >= 1
+    assert all(record["InvocationType"] == "Event" and record["Payload"] == {"job_id": job_id} for record in service.lambda_client.invocations)
+
+
+@needs_real_data
+def test_skip_interpret_makes_no_interpreter_model_call():
+    _code, _lines, transport = run_main("--skip-interpret")
+    assert worker_model_calls(transport.service) == (1, 0)
 
 
 @needs_real_data
@@ -230,15 +252,24 @@ def test_confirming_on_a_stale_version_is_409(backend):
     error_of(transport.send(stale), 409, "POLICY_VERSION_CONFLICT")
 
 
-@pytest.mark.xfail(strict=True, reason="B1: replaying POST /investigations while the job is QUEUED invokes the worker Lambda a second time "
-                                       "(api.md section 6 server rule 2: 'no second job and no second worker are created')")
-def test_B1_an_idempotent_replay_of_a_queued_job_invokes_no_second_worker(backend):
+def test_B1_an_idempotent_replay_creates_no_second_job_and_may_redispatch_only_while_queued(backend):
+    """api.md section 6 server rule 2 as amended: same id, no second job; a still-QUEUED job may be dispatched again."""
     transport, _scenario, policy, purchase = backend
     request = lc.investigation_request(policy["policy_id"], policy["version"], purchase, KEY)
     first, second = transport.send(request), transport.send(request)
     assert (first.status, second.status) == (202, 202) and first.body["id"] == second.body["id"]
     assert second.body["status"] == "QUEUED"
-    assert len(transport.service.lambda_client.invocations) == 1
+    service = transport.service
+    job_keys = [key for key in service.s3.keys() if "inv-" in key]
+    assert {key.split("/")[1].split(".")[0] for key in job_keys} == {first.body["id"]}, "a second job was stored"
+    assert 1 <= len(service.lambda_client.invocations) <= 2
+    assert all(record["Payload"] == {"job_id": first.body["id"]} for record in service.lambda_client.invocations)
+    # once the job is no longer QUEUED a replay dispatches nothing
+    transport.deliver_worker_events()
+    dispatched = len(service.lambda_client.invocations)
+    third = transport.send(request)
+    assert third.status == 202 and third.body["id"] == first.body["id"] and third.body["status"] == "SUCCEEDED"
+    assert len(service.lambda_client.invocations) == dispatched
 
 
 def test_B1_the_second_delivery_is_a_no_op_one_model_call_one_terminal_state(backend):
@@ -248,7 +279,11 @@ def test_B1_the_second_delivery_is_a_no_op_one_model_call_one_terminal_state(bac
     path = transport.send(request).body["poll"]["path"]
     transport.send(request)
     transport.deliver_worker_events()
-    assert transport.delivered == 2 and len(transport.service.bedrock.calls) == 1
-    job = transport.send(lc.poll_request(path)).body
-    assert job["status"] == "SUCCEEDED"
-    assert lc.immutable_problems(job, transport.send(lc.poll_request(path)).body) == []
+    assert transport.delivered == 2 and worker_model_calls(transport.service) == (1, 0)
+    first = transport.send(lc.poll_request(path))
+    assert first.body["status"] == "SUCCEEDED" and first.body["result"] is not None
+    # a third, late delivery for the terminal job: no model call, no state change, the same bytes
+    stored = dict(transport.service.s3.objects)
+    transport.service.worker.handle({"job_id": first.body["id"]}, ib.fakes.FakeContext("worker-late"))
+    assert worker_model_calls(transport.service) == (1, 0) and transport.service.s3.objects == stored
+    assert transport.send(lc.poll_request(path)).text == first.text
