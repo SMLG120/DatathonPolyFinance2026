@@ -18,10 +18,11 @@ STACK = "before-you-buy"
 ARTIFACTS_BUCKET = f"byb-artifacts-{ACCOUNT}-{REGION}"
 CODE_KEY = "lambda/byb-backend-5cf91f80c5c1a2ce.zip"
 TEMPLATE_KEY = "templates/template-e076af541c8b13f5.yaml"
-# DataSnapshotId is required on the first deploy of the milestone-5 template (it has no default):
+# DataSnapshotId and AllowedOrigin have no default: both are required on a first deploy (an update keeps the stack's values).
 # {"DataSnapshotId": "snap-YYYY-MM-DD-<12 hex>", "AllowedOrigin": "https://main.<app-id>.amplifyapp.com"}
 PARAMETER_OVERRIDES = {}
-# CORS: the template default AllowedOrigin "*" must not reach a deployment that serves a hosted frontend. With this
+# CORS: AllowedOrigin "*" (typed here, or still on a stack deployed from an older template) must not reach a
+# deployment that serves a hosted frontend. With this
 # False, a change set whose effective AllowedOrigin is "*" is created and shown, but never executed. Set it to True
 # only for a deployment that is deliberately open to any origin (local development against the API), and set it back.
 ALLOW_WILDCARD_ORIGIN = False

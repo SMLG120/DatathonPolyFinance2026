@@ -6,7 +6,7 @@ of ``contracts/api.md`` (schema_version 1.0.0):
     GET  /portfolios/{persona_id}          fictional scenario, registry entries, purchasable instruments
     POST /rules/interpret                  model-backed extraction -> PROPOSED drafts and questions; nothing stored
     POST /rules/confirm                    explicit confirmation -> new immutable policy version
-    POST /check                            deterministic engine run; draft_rules -> labelled preview
+    POST /check                            deterministic engine run; draft_rules -> labelled preview; 5 s budget measured
     POST /investigations                   store QUEUED, invoke the worker, 202 once accepted
     GET  /investigations/{id}              the job in any state
     POST /investigations/{id}/challenge    CORRECT_FACT / CLARIFY_PREFERENCE / CHANGE_RULE
@@ -34,6 +34,7 @@ from typing import Any, Callable
 
 from botocore.exceptions import BotoCoreError, ClientError
 from byb_contracts import SCHEMA_VERSION, ContractError, schema_errors
+from byb_contracts.constants import CHECK_TIMEOUT_SECONDS
 
 from backend import engine
 from backend.agents.interpreter import Interpreter, InterpreterFailed, InterpreterTimeout
@@ -73,6 +74,8 @@ _VALIDATION_MESSAGE = "The request body does not match the contract."
 _DISPATCH_FAILED_MESSAGE = "The investigation could not be started. Nothing was run. Retry with a new idempotency key."
 _DEADLINE_MESSAGE = "The investigation did not finish before its deadline. Nothing more will be run for it."
 _CONFLICT_MESSAGE = "The policy has a newer version than the one this confirmation was based on. Reload it and confirm again."
+_CHECK_BUDGET_MESSAGE = (f"The check did not finish within its {CHECK_TIMEOUT_SECONDS} second budget, so no result is returned. "
+                         "Nothing was stored. Send the request again.")
 _INTERPRETER_UNAVAILABLE = "The interpreter is not available in this build. Your text was kept; the scenario rules can still be confirmed without it."
 _INTERPRETER_FAILED = "The interpreter could not produce a valid draft. Nothing was changed. Try again, or enter the rule with the form."
 _INTERPRETER_TIMEOUT = "The interpreter did not answer in time. Nothing was changed. Try again, or enter the rule with the form."
@@ -325,13 +328,29 @@ class Api:
         scenario = self._scenario(snapshot, body["persona_id"])
         # In a preview the stored version only supplies the objectives for goal_context; its rules are not read.
         policy = self._policy(body["persona_id"], policy_id, version) if policy_id is not None else None
+        self._within_check_budget(started, "before the calculation")  # reading the data used the budget: do not start
         result = run_engine(
             engine.check_rules, scenario["portfolio"], policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
             snapshot.controversies, draft_rules=drafts, data_sources=snapshot.data_sources or None,
         )
+        elapsed_ms = self._within_check_budget(started, "after the calculation")  # a late result is not returned
         log.info("check_completed", preview=result["preview"], headline=result["summary"]["headline"], data_snapshot_id=snapshot.snapshot_id,
-                 calculation_version=result["calculation_version"], elapsed_ms=int(round((self._clock.time() - started) * 1000)))
+                 calculation_version=result["calculation_version"], elapsed_ms=elapsed_ms)
         return json_response(200, result)
+
+    def _within_check_budget(self, started: float, stage: str) -> int:
+        """The 5 s budget of ``POST /check`` (api.md, Timing), measured on the service clock.
+
+        The engine is a pure synchronous function and is not interrupted: the budget is checked before it starts
+        and when it returns, and an answer that is over budget is replaced by an error. The contract has no error
+        code of its own for this, so it is a 500 ``INTERNAL_ERROR`` whose details say what happened.
+        """
+        elapsed_ms = int(round((self._clock.time() - started) * 1000))
+        if elapsed_ms > CHECK_TIMEOUT_SECONDS * 1000:
+            log.error("check_over_budget", stage=stage, elapsed_ms=elapsed_ms, budget_ms=CHECK_TIMEOUT_SECONDS * 1000)
+            raise ApiError(500, "INTERNAL_ERROR", _CHECK_BUDGET_MESSAGE,
+                           [detail("", f"over the {CHECK_TIMEOUT_SECONDS} s budget {stage} ({elapsed_ms} ms)")])
+        return elapsed_ms
 
     # ------------------------------------------------------- POST /investigations
 

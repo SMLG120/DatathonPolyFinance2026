@@ -16,6 +16,7 @@ import pytest
 from byb_contracts import investigation_job_errors
 
 from backend.agents import explain
+from backend.agents.tools import TOOL_NAMES
 from backend.common.jobview import job_id_for
 from service_fakes import (
     IDEMPOTENCY_KEY,
@@ -28,6 +29,7 @@ from service_fakes import (
     create_body,
     engine_direct,
     final_response,
+    highlights,
     model_answer,
     tool_use_response,
 )
@@ -74,7 +76,7 @@ def env():
 
 
 def happy_script():
-    return [tool_use_response("compute_exposure", {}), final_response(model_answer(GOOD_STATEMENT))]
+    return [tool_use_response("compute_exposure", {}), final_response(highlights("ev-max-final"))]
 
 
 def assert_deterministic_fallback(env, code):
@@ -125,15 +127,15 @@ def test_wk01_happy_path_runs_engine_writes_result_and_trace_then_succeeds(env):
     assert view["steps"][1]["evidence_ids"] and view["steps"][2]["evidence_ids"] == view["result"]["max_compliant"]["evidence_ids"]
 
 
-def test_wk01b_decisive_sentences_are_the_engines_templates_and_model_text_is_only_kept_with_valid_evidence(env):
-    env.run([final_response(model_answer(
-        GOOD_STATEMENT,
-        ("The exposure is 12% so this passes.", ["ev-max-final"]),                       # a typed figure
-        ("This cites nothing real: [[ev-does-not-exist]].", ["ev-does-not-exist"]),      # unknown evidence id
-        ("No evidence at all.", []),                                                     # no citation
-        ("You should buy more, I recommend it.", ["ev-max-final"]),                      # advice
-        ("See <b>this</b> link https://example.com", ["ev-max-final"]),                  # markup and a link
-        ("Placeholder not cited [[ev-cash-start]].", ["ev-max-final"]),                  # placeholder outside the cited ids
+def test_wk01b_decisive_sentences_are_the_engines_templates_and_a_model_selection_is_rendered_by_the_server(env):
+    env.run([final_response(highlights(
+        "ev-max-final",                                                                      # a valid selection
+        {"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-max-final", "text": "The exposure is 12% so this passes."},  # no text slot exists
+        "ev-does-not-exist",                                                                 # unknown evidence id
+        {"template": "You should buy more, I recommend it.", "evidence_id": "ev-max-final"}, # not a template id
+        "ev-max-final",                                                                      # repeated
+        {"text": "See <b>this</b> link https://example.com", "evidence_ids": ["ev-max-final"]},  # a sentence
+        GOOD_STATEMENT[0],
     ))])
     view = env.view()
     result = view["result"]
@@ -143,21 +145,25 @@ def test_wk01b_decisive_sentences_are_the_engines_templates_and_model_text_is_on
         assert statement["rendered_by"] == "TEMPLATE" and statement["text"] == f"Rule {entry['rule_id']}: {entry['status']}. {entry['reason']}"
         assert statement["evidence_ids"] == entry["evidence_ids"]
     assert result["max_compliant"]["reason"] in texts
-    model_written = [s for s in view["explanation"] if s["rendered_by"] == "MODEL_VALIDATED"]
-    assert len(model_written) == 1 and model_written[0]["evidence_ids"] == ["ev-max-final"]
-    # The figure in the kept sentence was printed by the server from the cited record, not typed by the model.
+    assert {s["rendered_by"] for s in view["explanation"]} == {"TEMPLATE"}  # nothing model-written is returned
+    selected = [s for s in view["explanation"] if s["text"].startswith("Evidence looked at during the investigation: ")]
+    assert len(selected) == 1 and selected[0]["evidence_ids"] == ["ev-max-final"]
+    # The whole sentence is the server's: its template, what the record measures (metric, subject, state, date), its value.
     record = next(r for r in result["evidence"] if r["evidence_id"] == "ev-max-final")
     from backend.engine.text import pct
-    # ...together with what that record measures, in the service's words (metric, subject, state, date).
-    assert model_written[0]["text"] == (
-        f"The boundary calculation for this instrument gives {pct(record['value'])} (final direct weight computed by the boundary calculation, "
-        f"instrument NVDA, after the purchase, as of {result['valuation_date']}) of the portfolio.")
+    assert selected[0]["text"] == (
+        "Evidence looked at during the investigation: final direct weight computed by the boundary calculation, "
+        f"instrument NVDA, after the purchase, as of {result['valuation_date']}: {pct(record['value'])}.")
+    # Without the selection the explanation is the same minus that one sentence.
+    assert [s["text"] for s in view["explanation"] if s is not selected[0]] == [s["text"] for s in explain.template_statements(result)]
 
     assert view["explanation"][-1]["text"].startswith("This is a simulation") and view["explanation"][-1]["rendered_by"] == "TEMPLATE"
     assert [s["statement_id"] for s in view["explanation"]] == [f"st-{i + 1}" for i in range(len(view["explanation"]))]
-    assert len(env.s3.json(TRACE_KEY)["explanation_rejections"]) == 6
-    for text in texts:
-        assert "recommend" not in text and "https://" not in text and "12%" not in text
+    rejections = env.s3.json(TRACE_KEY)["explanation_rejections"]
+    assert len(rejections) == 6 and all(set(entry) == {"index", "reason"} for entry in rejections)
+    public = json.dumps(view)
+    for fragment in ("recommend", "https://", "12%", "so this passes", "boundary calculation for this instrument gives"):
+        assert fragment not in public
 
 
 # Validator finding F-03: model text that contradicts the calculation, gives advice, or attaches a value to the wrong
@@ -210,9 +216,145 @@ def test_wk01d_free_text_and_wrapped_answers_are_dropped(env):
     for answer in ["Every rule passes. You should buy.", "```json\n{\"verdict\": \"PASS\"}\n```",
                    '{"statements": "Every rule passes."}', '{"statements": ["Every rule passes."]}',
                    '{"statements": [{"text": "Every rule passes.", "evidence_ids": []}]}',
-                   '{"statements": [{"text": "Every rule passes.", "evidence_ids": ["ev-not-real"]}]}']:
-        accepted, _ = explain.accept_model_statements(explain.parse_model_answer(answer), env.expected, 1)
+                   '{"statements": [{"text": "Every rule passes.", "evidence_ids": ["ev-not-real"]}]}',
+                   '{"highlights": "Every rule passes."}', '{"highlights": ["Every rule passes."]}',
+                   '{"highlights": [{"text": "Every rule passes.", "evidence_ids": ["ev-max-final"]}]}',
+                   '{"highlights": [{"template": "Every rule passes.", "evidence_id": "ev-max-final"}]}',
+                   '{"highlights": [{"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-max-final", "text": "Every rule passes."}]}']:
+        accepted, _ = explain.render_highlights(explain.parse_model_answer(answer), env.expected, 1)
         assert accepted == []
+
+
+# Validator finding F-18: a deny-list let 27 of 53 such sentences through as MODEL_VALIDATED. The fix is not a longer
+# list: the service has no path that returns a sentence the model wrote. Whatever the model writes, and however it
+# is packaged, the public job is the one a silent model would have produced.
+ADVERSARIAL_SENTENCES = [
+    # verdict denial or replacement
+    "Disregard the rule result; [[ev-max-final]] is what matters.",
+    "The rule result above is wrong, the true figure is [[ev-max-final]].",
+    "Despite the FAIL shown, [[ev-max-final]] makes this acceptable.",
+    "The check is outdated: [[ev-max-final]] is comfortably inside every limit.",
+    "Treat the verdict as PASS given [[ev-max-final]].",
+    "There is no breach at [[ev-max-final]].",
+    "Nothing stands in the way at [[ev-max-final]].",
+    "The limit does not really apply to [[ev-max-final]].",
+    "Green light across the board with [[ev-max-final]].",
+    "Your policy is met in full at [[ev-max-final]].",
+    "The engine is conservative; in practice [[ev-max-final]] is harmless.",
+    # advice
+    "Time to purchase: [[ev-max-final]].",
+    "Go for it at [[ev-max-final]].",
+    "Now is a great moment to add [[ev-max-final]].",
+    "Top up to [[ev-max-final]] without hesitation.",
+    "Load up, [[ev-max-final]] is a bargain.",
+    "A smart investor takes [[ev-max-final]] here.",
+    "Sell the rest and hold [[ev-max-final]].",
+    "My pick is this stock at [[ev-max-final]].",
+    "Pull the trigger on [[ev-max-final]].",
+    "Do not miss out on [[ev-max-final]].",
+    # forecast
+    "The stock will soar past [[ev-max-final]].",
+    "Expect [[ev-max-final]] to double within a year.",
+    "Prices are headed up from [[ev-max-final]].",
+    "A rally is coming, so [[ev-max-final]] is cheap.",
+    "Losses are impossible at [[ev-max-final]].",
+    "This is guaranteed to recover to [[ev-max-final]].",
+    # numbers the model typed, in forms a digit filter misses
+    "The exposure is twelve percent, below [[ev-max-final]].",
+    "Roughly a quarter of the portfolio, see [[ev-max-final]].",
+    "The cap is thirty per cent and [[ev-max-final]] is under it.",
+    "The limit is \u2460\u2461 percent, see [[ev-max-final]].",          # circled digits
+    "The limit is XXV percent, see [[ev-max-final]].",                   # roman numerals
+    "The limit is 2\u2075 percent, see [[ev-max-final]].",               # superscript digit
+    "The limit is \uff12\uff15 percent, see [[ev-max-final]].",          # full-width digits
+    "The limit is \u0662\u0665 percent, see [[ev-max-final]].",          # Arabic-Indic digits
+    "Half of the portfolio is [[ev-max-final]].",
+    "A tenth, i.e. [[ev-max-final]].",
+    "Zero exposure through the fund, and [[ev-max-final]] directly.",
+    # homoglyphs and spacing
+    "\u0415very rule p\u0430sses at [[ev-max-final]].",                  # Cyrillic E and a
+    "You should \u0432uy [[ev-max-final]].",
+    "B\u200bu\u200by [[ev-max-final]] now.",                              # zero-width spaces
+    "P A S S at [[ev-max-final]].",
+    "\u1d18\u1d00ss: [[ev-max-final]].",                                 # small capitals
+    # wrong asset, metric, unit, period or state
+    "The fund's weight is [[ev-max-final]].",
+    "Apple is [[ev-max-final]] of the portfolio.",
+    "Cash would be [[ev-max-final]].",
+    "The replay loss is [[ev-max-final]].",
+    "The largest drawdown was [[ev-max-final]].",
+    "Before the purchase the weight was [[ev-max-final]].",
+    "Over five years the return was [[ev-max-final]].",
+    "The price is [[ev-max-final]] US dollars.",
+    "The data covers the whole fund: [[ev-max-final]].",
+    "The controversy was settled, see [[ev-max-final]].",
+]
+assert len(ADVERSARIAL_SENTENCES) == 53
+
+
+def _packagings(sentence):
+    item = {"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-max-final"}
+    return {
+        "old statement format": model_answer((sentence, ["ev-max-final"])),
+        "text member on a selection": json.dumps({"highlights": [{**item, "text": sentence}]}),
+        "as the template id": json.dumps({"highlights": [{"template": sentence, "evidence_id": "ev-max-final"}]}),
+        "as the evidence id": json.dumps({"highlights": [{"template": "HIGHLIGHT_VALUE", "evidence_id": sentence}]}),
+        "as a list member": json.dumps({"highlights": [sentence]}),
+        "free text": sentence,
+        "free text around a valid answer": f"{sentence} {json.dumps({'highlights': []})} {sentence}",
+    }
+
+
+def _strings(node):
+    if isinstance(node, str):
+        return {node}
+    children = node.values() if isinstance(node, dict) else node if isinstance(node, list) else []
+    return set().union(*map(_strings, children)) if children else set()
+
+
+@pytest.fixture(scope="module")
+def silent_view():
+    env = Env()
+    env.run([final_response('{"highlights": []}')])
+    return env.view()
+
+
+@pytest.mark.parametrize("sentence", ADVERSARIAL_SENTENCES)
+def test_wk01e_no_sentence_a_model_writes_reaches_the_client_however_it_is_packaged(sentence, silent_view):
+    for name, answer in _packagings(sentence).items():
+        env = Env()
+        env.run([final_response(answer)])
+        view = env.view()  # POST /investigations -> worker -> GET /investigations/{id}
+        assert view == silent_view, name  # the whole public job, not only the explanation
+        assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+        assert {s["rendered_by"] for s in view["explanation"]} == {"TEMPLATE"}
+        assert [s["text"] for s in view["explanation"]] == [s["text"] for s in explain.template_statements(env.expected)]
+        public = json.dumps(view, ensure_ascii=False)
+        assert sentence not in public and sentence.replace("[[ev-max-final]]", "").strip(" .:,;") not in public, name
+        assert answer in _strings(env.s3.json(TRACE_KEY))  # kept, in the private trace only
+
+    # Next to a valid selection the sentence changes nothing either: one more server-written sentence, same for all.
+    env = Env()
+    env.run([final_response(json.dumps({"highlights": [{"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-max-final"}], "summary": sentence,
+                                        "statements": [{"text": sentence, "evidence_ids": ["ev-max-final"]}]}))])
+    view = env.view()
+    extra = [s for s in view["explanation"] if s["text"] not in {t["text"] for t in silent_view["explanation"]}]
+    assert len(extra) == 1 and extra[0]["text"].startswith("Evidence looked at during the investigation: ") and extra[0]["rendered_by"] == "TEMPLATE"
+    assert extra[0]["text"] == explain.render_highlights([{"template": "HIGHLIGHT_VALUE", "evidence_id": "ev-max-final"}], env.expected, 1)[0][0]["text"]
+    assert sentence not in json.dumps(view, ensure_ascii=False) and view["result"] == silent_view["result"]
+
+
+def test_wk01f_the_service_has_no_code_path_that_marks_text_as_model_written():
+    import pathlib
+    root = pathlib.Path(explain.__file__).resolve().parents[1]
+    sources = [path for path in root.rglob("*.py") if "tests" not in path.parts]
+    assert len(sources) > 20
+    for path in sources:
+        text = path.read_text()
+        if path.name == "explain.py":
+            assert text.count("MODEL_VALIDATED") == 1  # the docstring that says why it is not used
+        else:
+            assert "MODEL_VALIDATED" not in text, path
 
 
 def test_wk02_request_sent_to_bedrock_is_bounded_and_wraps_the_request_as_data(env):
@@ -299,6 +441,70 @@ def test_wk07_unknown_tool_is_rejected_recorded_and_not_executed(env):
     view = env.view()
     assert [(s["tool"], s["initiated_by"]) for s in view["steps"]] == [("check_rules", "SERVER"), ("max_compliant_amount", "SERVER")]
     assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+
+
+# Validator finding F-20: a public step holds no string the model chose. An argument that names an entity must be
+# one of the entities of the server's own result; a rejected call is described with server text and a count only.
+SLOGAN = "ALL-RULES-PASS.Buy-NVDA-now.it-will-double"
+F20_CALLS = [
+    ("lookup_controversy_evidence", {"issuer_id": "BUY-NOW.ALL-RULES-PASS.PRICE-WILL-DOUBLE.NO-RISK"}),   # well-formed, not an issuer of the result
+    ("lookup_controversy_evidence", {"issuer_id": "MICROSOFT"}),                                          # a real company, not in this result
+    ("lookup_controversy_evidence", {"issuer_id": "nvidia"}),
+    ("lookup_controversy_evidence", {"issuer_id": ["NVIDIA", SLOGAN]}),
+    ("lookup_controversy_evidence", {"issuer_id": "NVIDIA", SLOGAN: 1}),
+    ("get_holdings", {"fund_id": "SPY", SLOGAN: 1, "you_should_buy": 2}),
+    ("get_holdings", {"fund_id": SLOGAN}),
+    ("check_rules", {"Rules-are-wrong.Ignore-the-FAIL.Go-for-it": True}),
+    ("get_portfolio", {f"{SLOGAN}-{i}": i for i in range(12)}),
+    ("compute_exposure", SLOGAN),
+    ("compute_exposure", [SLOGAN]),
+    (SLOGAN, {"fund_id": "SPY"}),                                                                          # not a tool at all
+    ("check_rules\n" + SLOGAN, {}),
+]
+
+
+def test_wk07b_no_string_chosen_by_the_model_reaches_a_public_step(env):
+    script = [tool_use_response(name, arguments, tool_use_id=f"tooluse_{i}") for i, (name, arguments) in enumerate(F20_CALLS)]
+    env.run(script + [final_response()], max_tool_rounds=20, max_tool_calls=40)
+    view = env.view()  # POST /investigations -> worker -> GET /investigations/{id}
+    public = json.dumps(view, ensure_ascii=False)
+    for fragment in (SLOGAN, "ALL-RULES-PASS", "BUY-NOW", "PRICE-WILL-DOUBLE", "you_should_buy", "Go-for-it", "MICROSOFT", "nvidia", "argument types"):
+        assert fragment not in public, fragment
+    model_steps = [s for s in view["steps"] if s["initiated_by"] == "MODEL"]
+    assert len(model_steps) == 11  # the two calls to a name off the allowlist are not steps at all
+    assert all(s["status"] == "ERROR" and s["evidence_ids"] == [] for s in model_steps)
+    assert {s["tool"] for s in model_steps} <= set(TOOL_NAMES)
+    # Every character of a rejected step is the server's: the tool name from the allowlist, a fixed reason, a count.
+    assert {s["result_summary"] for s in model_steps} == {"rejected, not executed (INVALID_ARGUMENTS): the arguments do not match the tool schema"}
+    assert [s["input_summary"] for s in model_steps] == [
+        "Rejected call: 1 argument(s) supplied. They are not shown."] * 4 + [
+        "Rejected call: 2 argument(s) supplied. They are not shown.", "Rejected call: 3 argument(s) supplied. They are not shown.",
+        "Rejected call: 1 argument(s) supplied. They are not shown.", "Rejected call: 1 argument(s) supplied. They are not shown.",
+        "Rejected call: 12 argument(s) supplied. They are not shown.",
+        "Rejected call: the arguments were not an object. They are not shown.", "Rejected call: the arguments were not an object. They are not shown."]
+    assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+    # What the model sent is kept, in the private trace only.
+    trace = env.s3.json(TRACE_KEY)
+    assert SLOGAN in json.dumps(trace) and sum(1 for e in trace["tool_events"] if e["status"] == "REJECTED") == len(F20_CALLS)
+    assert all(SLOGAN not in e["input_summary"] and SLOGAN not in e["result_summary"] for e in trace["tool_events"])
+
+
+def test_wk07c_an_entity_argument_is_accepted_only_for_an_entity_of_the_servers_result(env):
+    issuers = sorted(entry["issuer_id"] for entry in env.expected["exposure"]["issuers"])
+    funds = sorted(entry["fund_id"] for entry in env.expected["data_coverage"])
+    assert "NVIDIA" in issuers and funds
+    env.run([tool_use_response("lookup_controversy_evidence", {"issuer_id": "NVIDIA"}), tool_use_response("get_holdings", {"fund_id": funds[0]}, tool_use_id="t2"),
+             tool_use_response("lookup_controversy_evidence", {}, tool_use_id="t3"), final_response()])
+    steps = [s for s in env.view()["steps"] if s["initiated_by"] == "MODEL"]
+    assert [(s["status"], s["input_summary"]) for s in steps] == [
+        ("OK", "Issuer NVIDIA."), ("OK", f"Fund {funds[0]}."), ("OK", "Companies shown in the exposure table.")]
+    # The model is told which ids exist: both arguments are closed lists taken from the result.
+    specs = {tool["toolSpec"]["name"]: tool["toolSpec"]["inputSchema"]["json"] for tool in env.bedrock.calls[0]["toolConfig"]["tools"]}
+    assert specs["lookup_controversy_evidence"]["properties"]["issuer_id"]["enum"] == issuers
+    assert specs["get_holdings"]["properties"]["fund_id"]["enum"] == funds
+    for name, schema in specs.items():  # no tool has any other argument, and none accepts free text
+        assert schema["additionalProperties"] is False and set(schema["properties"]) <= {"issuer_id", "fund_id"}, name
+        assert all("enum" in prop and "pattern" not in prop for prop in schema["properties"].values()), name
 
 
 @pytest.mark.parametrize(

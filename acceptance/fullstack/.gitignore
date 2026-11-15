@@ -1,0 +1,5 @@
+.site/
+.run/
+.run-build.log
+test-results/
+playwright-report/

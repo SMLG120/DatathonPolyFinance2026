@@ -181,18 +181,26 @@ def _deploy_functions():
 
 def test_tp10_a_wildcard_cors_origin_is_never_deployed_by_default():
     source, effective_parameter, origin_refusal = _deploy_functions()
-    # The parameter and its "*" default stay (local development), and the template says what a hosted deployment must do.
+    # Validator finding F-08: the parameter has no default, so no deployment gets "*" without someone typing it.
     parameter = TEMPLATE.split("  AllowedOrigin:\n", 1)[1].split("  AccessCodeParameterName:", 1)[0]
-    assert 'Default: "*"' in parameter and "exact origin" in parameter
+    assert "Default:" not in parameter and "exact origin" in parameter
+    pattern = re.compile(re.search(r"AllowedPattern: (\S+)", parameter).group(1).replace("\\\\", "\\"))
+    for good in ("https://main.d1example.amplifyapp.com", "http://localhost:5173", "http://127.0.0.1:5173", "*"):
+        assert pattern.fullmatch(good), good
+    for bad in ("", "https://*.amplifyapp.com", "https://a.example/", "https://a.example/path", "http://example.org", "null", "* ", "https://a.example,https://b.example"):
+        assert not pattern.fullmatch(bad), bad
     assert re.search(r"^ALLOW_WILDCARD_ORIGIN = False$", source, re.M) and re.search(r"^EXECUTE = False$", source, re.M)
     assert 'if EXECUTE and report["cors_refusal"]:' in source  # checked before ExecuteChangeSet
     assert source.index('if EXECUTE and report["cors_refusal"]:') < source.index('"ExecuteChangeSet"')
 
-    template_parameters = [{"ParameterKey": "AllowedOrigin", "DefaultValue": "*"}, {"ParameterKey": "DataSnapshotId"}]
+    template_parameters = [{"ParameterKey": "AllowedOrigin"}, {"ParameterKey": "DataSnapshotId"}]
+    older_template = [{"ParameterKey": "AllowedOrigin", "DefaultValue": "*"}, {"ParameterKey": "DataSnapshotId"}]
     deployed = [{"ParameterKey": "AllowedOrigin", "ParameterValue": "*"}]
     origin = "https://main.d1example.amplifyapp.com"
-    # first deploy with the default, update keeping the deployed "*", explicit "*": all refused unless allowed on purpose
-    for value in (effective_parameter("AllowedOrigin", {}, None, template_parameters),
+    # a first deploy that does not state the origin has no value at all, and that is refused too
+    assert effective_parameter("AllowedOrigin", {}, None, template_parameters) is None and origin_refusal(None, True)
+    # an older template's default, an update keeping the deployed "*", explicit "*": all refused unless allowed on purpose
+    for value in (effective_parameter("AllowedOrigin", {}, None, older_template),
                   effective_parameter("AllowedOrigin", {}, deployed, template_parameters),
                   effective_parameter("AllowedOrigin", {"AllowedOrigin": "*"}, deployed, template_parameters)):
         assert value == "*" and "NOT EXECUTED" in origin_refusal(value, False) and origin_refusal(value, True) is None

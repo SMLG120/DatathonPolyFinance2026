@@ -1,27 +1,19 @@
 """Explanation statements (``investigation_job.schema.json#/$defs/statement``).
 
-Decisive sentences are TEMPLATE statements: the engine's own ``reason`` strings with the evidence
-ids the engine attached to them. They are always present and never depend on the model.
+No sentence written by the model is ever returned to the client.
 
-The model may add context statements. One is kept (``MODEL_VALIDATED``) only when it passes every
-check of ``accept_model_statements``; otherwise it is dropped - never returned, never flagged and
-shown - and the rejection goes to the trace:
+* Decisive sentences are the engine's own ``reason`` strings with the evidence ids the engine
+  attached to them (``template_statements``). They never depend on the model.
+* The model can only SELECT: its final answer is ``{"highlights": [{"template": "<id>",
+  "evidence_id": "<id>"}]}``. ``template`` is one of the closed set ``HIGHLIGHT_TEMPLATES`` and
+  ``evidence_id`` must be a record of the engine result. There is no text slot. An item with any
+  other member, an unknown template, an unknown evidence id, or a record the template cannot print
+  is dropped. The server then writes the sentence itself, from the record alone: what the record
+  measures (metric, subject, portfolio state, period) and its value.
 
-* it is a claim about evidence: it holds at least one ``[[evidence_id]]`` placeholder, every
-  placeholder is among the ids it cites, and every cited id exists in ``result.evidence``;
-* the model never types a figure (a statement with any other digit is rejected), and the server
-  prints, in place of each placeholder, the record's value TOGETHER WITH what the record measures:
-  metric, subject, portfolio state and period come from the record, not from the model's words.
-  A value can therefore not be passed off as another metric, asset, unit or period
-  (BUILD_BRIEF section 6: explanations are not validated by searching for a matching number);
-* it names no instrument, fund or company other than the subjects of the records it cites;
-* it uses no unit or period word of its own (currency, shares, days, months, years...);
-* it states no verdict, comparison with a limit, reassurance, forecast or advice: those words are
-  refused whatever the rest says, because verdicts are the engine's (``VERDICT_RE``, ``ADVICE_RE``);
-* plain text only, bounded length and count, no markup, no links.
-
-This is a filter on wording, not a proof of meaning. What it guarantees is narrower and checkable:
-no model-typed number, no value without its server-printed description, no verdict vocabulary.
+Such a sentence is ``rendered_by: TEMPLATE``: the contract defines TEMPLATE as deterministic text
+and MODEL_VALIDATED as model-written text, and this text is not model-written. Raw model output is
+kept only in the private trace (``traces/<id>.json``).
 """
 
 from __future__ import annotations
@@ -32,36 +24,13 @@ from typing import Any
 
 from backend.engine.text import num, pct
 
-MAX_MODEL_STATEMENTS = 3
-MAX_STATEMENT_CHARS = 400  # of model text; the server-printed descriptions come on top
 DISCLOSURE = "This is a simulation on a fictional portfolio. It is not advice, and no trade is made."
 
-_PLACEHOLDER_RE = re.compile(r"\[\[([A-Za-z0-9][A-Za-z0-9._:-]{0,127})\]\]")
-_FORBIDDEN_RE = re.compile(r"[<>`\[\]{}\\\x00-\x1f\x7f]|https?:|www\.", re.IGNORECASE)
-ADVICE_RE = re.compile(
-    r"\b(recommend\w*|advis\w*|suggest\w*|should|ought|must|need to|better to|worth\w*|attractive|opportunit\w*|"
-    r"buy|buying|sell|selling|hold|holding on|invest|go ahead|proceed|guarantee\w*|certain(ly)?|definitely|"
-    r"will (rise|fall|go|outperform|underperform|recover|drop|grow)|expect\w*|forecast\w*|predict\w*|likely|unlikely|price target)\b",
-    re.IGNORECASE)
-# Verdicts, comparisons with a limit and reassurance belong to the engine's template statements.
-VERDICT_RE = re.compile(
-    r"\b(pass(es|ed|ing)?|fail(s|ed|ing|ure|ures)?|breach\w*|violat\w*|compl(y|ies|ied|iant|iance)|non-?compliant|conform\w*|"
-    r"allow\w*|permit\w*|acceptable|accept(s|ed)?|approv\w*|reject\w*|satisf\w*|meet(s|ing)?|met|respect(s|ed)?|"
-    r"safe\w*|risk-?free|risky|danger\w*|fine|ok|okay|good|bad|great|excellent|problem\w*|issue|issues|worr\w*|concern\w*|alarm\w*|"
-    r"within|inside|exceed\w*|below|above|under|over|beyond|less|more|fewer|lower than|higher than|greater|smaller|"
-    r"too (much|high|low|little|large|small)|enough|no rule|every rule|all rules|each rule|any rule|unknown|zero|none|nothing|no exposure)\b",
-    re.IGNORECASE)
-_UNIT_WORDS = {
-    "price": re.compile(r"\b(shares?|units?|days?|bps|basis points?)\b", re.IGNORECASE),
-    "fx_rate": re.compile(r"\b(shares?|units?|days?|bps|basis points?|dollars?)\b", re.IGNORECASE),
-    "days": re.compile(r"[$€£]|\b(dollars?|usd|cad|eur|shares?|units?|bps|basis points?|per ?cent|percent\w*)\b", re.IGNORECASE),
-    "count": re.compile(r"[$€£]|\b(dollars?|usd|cad|eur|days?|bps|basis points?|per ?cent|percent\w*)\b", re.IGNORECASE),
-    "fraction": re.compile(r"[$€£]|\b(dollars?|usd|cad|eur|shares?|units?|days?|bps|basis points?)\b", re.IGNORECASE),
-}
-_PERIOD_RE = re.compile(
-    r"\b(today|yesterday|tomorrow|currently|now|recent\w*|last|next|this (year|month|week|quarter)|years?|months?|weeks?|quarters?|annual\w*|"
-    r"january|february|march|april|june|july|august|september|october|november|december)\b", re.IGNORECASE)
-_ALLOWED_CAPITALS = {"I", "CAD", "USD", "ETF", "FX"}
+MAX_HIGHLIGHTS = 3
+HIGHLIGHT_VALUE = "HIGHLIGHT_VALUE"
+# template id -> sentence. The only slots are filled by the server from one evidence record.
+HIGHLIGHT_TEMPLATES = {HIGHLIGHT_VALUE: "Evidence looked at during the investigation: {description}: {value}."}
+_ITEM_KEYS = {"template", "evidence_id"}
 
 METRIC_PHRASES = {
     "position_weight": "direct weight",
@@ -138,12 +107,45 @@ def _render_value(record: dict[str, Any]) -> str | None:
     return None
 
 
+_ROW_NOTE = re.compile(r"One reported row of the fund's holdings file: (.+)\.")
+_SECTOR_NOTE = re.compile(r"Rows of the fund's holdings file labelled exactly '(.+?)'\. ")
+_ROW_NUMBER = re.compile(r"-([0-9]+)$")
+
+
+def _constituent_phrase(record: dict[str, Any], subject: dict[str, Any]) -> str | None:
+    """Wording for a ``fund_constituent_weight`` record, from what the engine recorded about it.
+
+    * one reported row of a company with several rows (share classes): names the row;
+    * the company's rows added together: says so;
+    * the part of a fund under one sector label (subject is the fund): names the label and where it comes from;
+    * a company with a single row: the plain phrase.
+    The names come from the engine's own notes on the record (holdings file and rule), never from a model.
+    """
+    notes = [note for note in record.get("assumptions") or [] if isinstance(note, str)]
+    if subject.get("kind") == "FUND":
+        label = next((m.group(1) for m in map(_SECTOR_NOTE.match, notes) if m), None)
+        return None if label is None else f"share of the fund in rows carrying the fund-reported sector label '{label}', as its holdings file reports it"
+    row = next((m.group(1) for m in map(_ROW_NOTE.fullmatch, notes) if m), None)
+    if row is not None:
+        number = _ROW_NUMBER.search(str(record.get("evidence_id", "")))
+        which = f"reported row {number.group(1)}" if number else "one reported row"
+        return f"weight inside the fund of {which} of this company ({row}), as its holdings file reports it"
+    if record.get("derived_from"):
+        return "weight inside the fund of all share classes and reported rows of this company combined"
+    return METRIC_PHRASES["fund_constituent_weight"]
+
+
 def describe(record: dict[str, Any]) -> str | None:
     """What a record measures, in the service's words: metric, subject, state, period. None if it has no phrase."""
     phrase = METRIC_PHRASES.get(record.get("metric_id"))
     subject = record.get("subject") or {}
     if phrase is None or subject.get("kind") not in _KIND_PHRASES:
         return None
+    if record.get("metric_id") == "fund_constituent_weight":
+        # Three different things carry this metric; each gets its own wording (validator finding F-21).
+        phrase = _constituent_phrase(record, subject)
+        if phrase is None:
+            return None
     parts = [phrase, f"{_KIND_PHRASES[subject['kind']]} {subject['id']}"]
     if subject.get("via_fund_id"):
         parts.append(f"through {subject['via_fund_id']}")
@@ -159,38 +161,8 @@ def describe(record: dict[str, Any]) -> str | None:
     return ", ".join(parts)
 
 
-def _render_cited(record: dict[str, Any]) -> str | None:
-    """The value with its own description: what replaces a placeholder."""
-    value, description = _render_value(record), describe(record)
-    return None if value is None or description is None else f"{value} ({description})"
-
-
-def known_subjects(result: dict[str, Any], extra_ids: Any = ()) -> dict[str, str]:
-    """casefolded word -> subject id, for every instrument, fund and company the result or the data snapshot knows."""
-    ids: set[str] = {i for i in extra_ids if isinstance(i, str) and i}
-    for record in result.get("evidence", []):
-        subject = record.get("subject") or {}
-        if subject.get("kind") in ("INSTRUMENT", "ISSUER", "FUND"):
-            ids.add(subject["id"])
-        if subject.get("via_fund_id"):
-            ids.add(subject["via_fund_id"])
-    request = result.get("purchase_request") or {}
-    if isinstance(request.get("instrument_id"), str):
-        ids.add(request["instrument_id"])
-    for fund in result.get("data_coverage") or []:
-        ids.add(fund["fund_id"])
-    words: dict[str, str] = {}
-    for subject_id in ids:
-        # Case-insensitive only for words of five letters or more: a short ticker such as CASH or META is also an
-        # ordinary word, and is caught in capitals by the all-capitals net of _foreign_names.
-        for word in (subject_id, re.split(r"[_.\s-]+", subject_id)[0]):  # "EXXON_MOBIL" is also written "Exxon"
-            if len(word) >= 5:
-                words.setdefault(word.casefold(), subject_id)
-    return words
-
-
 def parse_model_answer(text: str) -> list[Any]:
-    """The model's final text must be one JSON object ``{"statements": [...]}``. Anything else yields nothing."""
+    """The model's final text must be one JSON object ``{"highlights": [...]}``. Anything else yields nothing."""
     start, end = text.find("{"), text.rfind("}")
     if start < 0 or end <= start:
         return []
@@ -198,101 +170,36 @@ def parse_model_answer(text: str) -> list[Any]:
         document = json.loads(text[start:end + 1])
     except (ValueError, RecursionError):
         return []
-    statements = document.get("statements") if isinstance(document, dict) else None
-    return statements if isinstance(statements, list) else []
+    highlights = document.get("highlights") if isinstance(document, dict) else None
+    return highlights if isinstance(highlights, list) else []
 
 
-def _foreign_names(outside: str, subjects: dict[str, str], about: set[str]) -> bool:
-    """True when the text names an instrument, fund or company that the cited records are not about.
-
-    Three nets, from precise to coarse: a word that is a known id or the first word of one; any all-capitals
-    token (a ticker); any capitalised word that does not start a sentence (a proper noun).
-    """
-    allowed = {word for subject in about for word in (subject.casefold(), re.split(r"[_.\s-]+", subject)[0].casefold())}
-    sentence_start = True
-    for token in re.findall(r"[A-Za-z0-9][A-Za-z0-9_.&'-]*|[.!?;:]", outside):
-        if token in ".!?;:":
-            sentence_start = True
-            continue
-        word = token.rstrip(".'").casefold()
-        starts, sentence_start = sentence_start, False
-        if word in allowed:
-            continue
-        if word in subjects:
-            return True
-        letters = re.sub(r"[^A-Za-z]", "", token)
-        if len(letters) >= 2 and letters.isupper() and token.rstrip(".") not in _ALLOWED_CAPITALS:
-            return True
-        if not starts and token[0].isupper() and token not in _ALLOWED_CAPITALS:
-            return True
-    return False
-
-
-def accept_model_statements(candidates: list[Any], result: dict[str, Any], first_index: int,
-                            known_ids: Any = ()) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """(accepted statements, rejections for the trace). A rejected statement is not returned anywhere else.
-
-    ``known_ids``: instrument, fund and issuer ids of the data snapshot, so that a company the result does not
-    mention is still recognised as "another company".
-    """
+def render_highlights(candidates: list[Any], result: dict[str, Any], first_index: int) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(server-written statements for the model's valid selections, rejections for the trace)."""
     records = {record["evidence_id"]: record for record in result.get("evidence", [])}
-    subjects = known_subjects(result, known_ids)
     accepted: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
-
-    def reject(index: int, why: str) -> None:
-        rejected.append({"index": index, "reason": why})
-
+    seen: set[str] = set()
     for index, candidate in enumerate(candidates):
-        if len(accepted) >= MAX_MODEL_STATEMENTS:
-            reject(index, "more statements than allowed")
+        if len(accepted) >= MAX_HIGHLIGHTS:
+            rejected.append({"index": index, "reason": "more selections than allowed"})
             continue
-        if not isinstance(candidate, dict) or not isinstance(candidate.get("text"), str) or not isinstance(candidate.get("evidence_ids"), list):
-            reject(index, "not an object with text and evidence_ids")
+        if not isinstance(candidate, dict) or set(candidate) != _ITEM_KEYS:
+            rejected.append({"index": index, "reason": "not exactly a template id and an evidence id"})
             continue
-        ids = candidate["evidence_ids"]
-        if not ids or not all(isinstance(i, str) and i in records for i in ids):
-            reject(index, "cites no evidence, or an evidence id that is not in the result")
+        template, evidence_id = candidate["template"], candidate["evidence_id"]
+        if not isinstance(template, str) or template not in HIGHLIGHT_TEMPLATES:
+            rejected.append({"index": index, "reason": "unknown template id"})
             continue
-        raw = candidate["text"].strip()
-        if len(raw) > MAX_STATEMENT_CHARS:
-            reject(index, "too long")
+        if not isinstance(evidence_id, str) or evidence_id not in records or evidence_id in seen:
+            rejected.append({"index": index, "reason": "unknown or repeated evidence id"})
             continue
-        placeholders = _PLACEHOLDER_RE.findall(raw)
-        if not placeholders:
-            reject(index, "no value from an evidence record: a sentence without one is opinion, not evidence")
+        record = records[evidence_id]
+        value, description = _render_value(record), describe(record)
+        if value is None or description is None:
+            rejected.append({"index": index, "reason": "the template cannot print this kind of record"})
             continue
-        if any(p not in ids for p in placeholders):
-            reject(index, "a placeholder is not among the cited evidence ids")
-            continue
-        outside = _PLACEHOLDER_RE.sub(" ", raw)
-        if re.search(r"\d", outside):
-            reject(index, "a figure was typed instead of cited")
-            continue
-        if _FORBIDDEN_RE.search(outside):
-            reject(index, "markup or a link")
-            continue
-        if ADVICE_RE.search(outside):
-            reject(index, "advice or forecast wording")
-            continue
-        if VERDICT_RE.search(outside):
-            reject(index, "verdict, comparison or reassurance wording: verdicts are the engine's")
-            continue
-        if _PERIOD_RE.search(outside):
-            reject(index, "a period stated in the model's own words")
-            continue
-        cited = [records[i] for i in ids]
-        if any(_UNIT_WORDS[records[p]["unit"]].search(outside) for p in placeholders if records[p]["unit"] in _UNIT_WORDS):
-            reject(index, "a unit that is not the cited record's unit")
-            continue
-        about = {r["subject"]["id"] for r in cited} | {r["subject"]["via_fund_id"] for r in cited if r["subject"].get("via_fund_id")}
-        if _foreign_names(outside, subjects, about):
-            reject(index, "names an instrument, fund or company that no cited record is about")
-            continue
-        values = {p: _render_cited(records[p]) for p in placeholders}
-        if any(v is None for v in values.values()):
-            reject(index, "a placeholder cites a record without a printable number")
-            continue
-        text = " ".join(_PLACEHOLDER_RE.sub(lambda m: values[m.group(1)], raw).split())
-        accepted.append(_statement(first_index + len(accepted), text, ids, "MODEL_VALIDATED"))
+        seen.add(evidence_id)
+        text = HIGHLIGHT_TEMPLATES[template].format(description=description, value=value)
+        accepted.append(_statement(first_index + len(accepted), text, [evidence_id], "TEMPLATE"))
     return accepted, rejected

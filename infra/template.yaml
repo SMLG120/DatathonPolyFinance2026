@@ -43,11 +43,13 @@ Parameters:
     AllowedPattern: ^[a-z0-9-]+\.[A-Za-z0-9.:-]+$
   AllowedOrigin:
     Type: String
-    Default: "*"
     Description: >-
-      CORS allowed origin. The default "*" is for local development against the API only. A deployment that serves a
-      hosted frontend must pass the exact origin (https://<branch>.<app-id>.amplifyapp.com); scripts/mcp/02_deploy.py
-      refuses to execute a change set whose effective value is "*" unless that is explicitly allowed.
+      CORS allowed origin. No default on purpose - every deployment states it. A deployment that serves a hosted
+      frontend passes the exact origin (https://<branch>.<app-id>.amplifyapp.com, no trailing slash). "*" is accepted
+      only when typed explicitly, for local development against the API, and scripts/mcp/02_deploy.py refuses to
+      execute a change set whose effective value is "*" unless that is explicitly allowed.
+    AllowedPattern: ^(\*|https://[A-Za-z0-9.-]+(:[0-9]{1,5})?|http://(localhost|127\.0\.0\.1)(:[0-9]{1,5})?)$
+    ConstraintDescription: an exact origin such as https://main.example.amplifyapp.com (no path, no trailing slash), or "*" typed on purpose
   AccessCodeParameterName:
     Type: String
     Default: /before-you-buy/access-code
@@ -626,7 +628,7 @@ Resources:
           Lambda authorizer. CORS is convenience for the browser, not access control - the authorizer is.
         must:
           - every route keeps the default authorizer; do not add a $default route
-          - AllowedOrigin "*" is temporary - a deployment serving a hosted frontend must pass the exact origin;
+          - AllowedOrigin has no default - a deployment serving a hosted frontend must pass the exact origin;
             scripts/mcp/02_deploy.py refuses to execute with "*" unless ALLOW_WILDCARD_ORIGIN is set on purpose
           - throttling stays modest - each POST can cost several Bedrock calls
     Properties:

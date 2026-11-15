@@ -26,7 +26,7 @@ from service_fakes import (
     engine_data,
     engine_direct,
     final_response,
-    model_answer,
+    highlights,
     scenario,
     tool_use_response,
 )
@@ -40,10 +40,10 @@ CHANGE_RULE = api_fixture("challenge_change_rule")["request_body"]
 
 
 def model_script():
-    """A model that looks at everything, then adds one cited sentence."""
+    """A model that looks at everything, then points at one evidence record."""
     calls = [tool_use_response(name, {}, tool_use_id=f"tool-{i}") for i, name in enumerate(
         ["get_portfolio", "get_policy", "simulate_change", "get_holdings", "compute_exposure", "replay_period"])]
-    return calls + [final_response(model_answer(("Cash after the purchase would be [[ev-cash-after]] of the portfolio.", ["ev-cash-after"])))]
+    return calls + [final_response(highlights("ev-cash-after"))]
 
 
 def challenge(svc, job_id, body, key=None):
@@ -110,7 +110,8 @@ def test_wf01_robert_portfolio_confirm_check_preview_investigation_challenge_rei
     assert first["agent"]["mode"] == "MODEL" and first["policy_version"] == 1 and first["parent_investigation_id"] is None
     tools = [(step["tool"], step["initiated_by"]) for step in first["steps"]]
     assert tools[-2:] == [("check_rules", "SERVER"), ("max_compliant_amount", "SERVER")] and all(name in TOOL_NAMES for name, _ in tools)
-    assert [s["rendered_by"] for s in first["explanation"]].count("MODEL_VALIDATED") == 1
+    assert {s["rendered_by"] for s in first["explanation"]} == {"TEMPLATE"}  # no model-written sentence is ever returned
+    assert [s["evidence_ids"] for s in first["explanation"] if s["text"].startswith("Evidence looked at")] == [["ev-cash-after"]]
     before = snapshot_of(svc)
 
     # 5. Challenge: raise the single-company limit to 30% -> new policy version, fresh investigation.
