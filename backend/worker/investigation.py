@@ -378,7 +378,7 @@ class InvestigationWorker:
         templates = explain.template_statements(result)
         accepted: list[dict[str, Any]] = []
         if fallback is None:
-            accepted, rejected = explain.accept_model_statements(candidates, result, len(templates), known_ids=snapshot.subject_ids())
+            accepted, rejected = explain.render_highlights(candidates, result, len(templates))
             extras["explanation_rejections"] = rejected
         extras["fallback"] = fallback
         agent = {
@@ -395,7 +395,7 @@ class InvestigationWorker:
             if not accepted:
                 raise
             # A model sentence broke the document: drop every model sentence and keep the templates.
-            extras["explanation_rejections"].append({"index": -1, "reason": "the job document was invalid with model statements"})
+            extras["explanation_rejections"].append({"index": -1, "reason": "the job document was invalid with the selected evidence sentences"})
             outcome = self._outcome(job, snapshot, result, _numbered(templates), agent, policy)
             self._validated(job, {"agent": agent, "steps": public}, outcome)
         return outcome, {"agent": agent}

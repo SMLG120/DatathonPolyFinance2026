@@ -164,7 +164,7 @@ def tool_use_response(name: str, arguments: Any, tool_use_id: str = "tooluse_1",
     }
 
 
-def final_response(text: str = '{"statements": []}', stop_reason: str = "end_turn") -> dict[str, Any]:
+def final_response(text: str = '{"highlights": []}', stop_reason: str = "end_turn") -> dict[str, Any]:
     return {
         "output": {"message": {"role": "assistant", "content": [{"text": text}] if text else []}},
         "stopReason": stop_reason,
@@ -411,7 +411,7 @@ class Service:
         return body
 
 
-EMPTY_ANSWER = '{"statements": []}'
+EMPTY_ANSWER = '{"highlights": []}'
 
 
 def engine_data(universe: str | None = "robert_synthetic_universe") -> dict[str, Any]:
@@ -432,4 +432,10 @@ def engine_direct(universe: str | None, persona_id: str, policy: dict[str, Any] 
 
 
 def model_answer(*statements: tuple[str, list[str]]) -> str:
+    """Model-written sentences (the format the service once accepted). The service must return none of them."""
     return json.dumps({"statements": [{"text": text, "evidence_ids": ids} for text, ids in statements]})
+
+
+def highlights(*items: Any) -> str:
+    """The only thing a model can contribute: selections. An evidence id stands for a well-formed item."""
+    return json.dumps({"highlights": [{"template": "HIGHLIGHT_VALUE", "evidence_id": item} if isinstance(item, str) else item for item in items]})
