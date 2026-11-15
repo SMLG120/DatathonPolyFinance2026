@@ -9,6 +9,12 @@ ends solve a linear equation: there is no search of any kind.
 
 The ends are the exact solutions of the inequalities (the comparison tolerance
 EPS is not spent as extra budget); EPS only absorbs floating-point noise.
+
+The reported weight is the closed-form end rounded DOWN to the 9 decimals the
+contract serializes (``floor_to_grid``), never to the nearest: rounding up
+would return a weight above the exact end that passes only through EPS. The
+re-run at that weight therefore also requires every rule to pass and cash to
+suffice without the tolerance (``FLOAT_NOISE`` is all that is allowed).
 """
 
 from __future__ import annotations
@@ -22,6 +28,32 @@ from .core import compute_exposure
 from .text import eq, num, pct
 
 INF = float("inf")
+
+# Serialized precision of a weight, and the floating-point noise allowed around an exact value.
+# FLOAT_NOISE is three orders of magnitude below EPS: it absorbs representation error such as
+# 0.08599999999999999 for an exact 0.086, and is never a budget.
+GRID_DECIMALS = 9
+GRID_STEP = 1e-9
+FLOAT_NOISE = 1e-12
+
+
+def floor_to_grid(value: float) -> float:
+    """The largest 9-decimal number that does not exceed ``value`` (up to FLOAT_NOISE)."""
+    nearest = round(value, GRID_DECIMALS)
+    if nearest > value + FLOAT_NOISE:
+        nearest = round(nearest - GRID_STEP, GRID_DECIMALS)
+    return nearest
+
+
+def _passes_without_tolerance(rerun: dict, expected_rules: int) -> bool:
+    """Every rule PASS and the purchase funded, with no use of the EPS comparison tolerance."""
+    if rerun["execution"]["status"] != "OK" or rerun["feasibility"]["status"] != "FEASIBLE":
+        return False
+    if rerun["feasibility"]["cash_after"] < -FLOAT_NOISE or len(rerun["rule_results"]) != expected_rules:
+        return False
+    # For a PASS the contract's gap is (measured - limit) for a maximum and (limit - measured) for a minimum:
+    # positive means the limit is exceeded and the PASS was granted by EPS alone.
+    return all(entry["status"] == "PASS" and entry["gap"] is not None and entry["gap"] <= FLOAT_NOISE for entry in rerun["rule_results"])
 
 
 def _withheld(reason: str) -> dict:
@@ -142,18 +174,24 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
 
     # SUPPORTED: some funded target more than EPS above w0 where every rule is PASS.
     if not unknown_rules and pass_high > EPS and pass_low <= pass_high + EPS:
-        final = min(1.0, round(start_weight + pass_high, 9))
-        additional = final - start_weight
-        binding = next((r["rule_id"] for r in evaluated if rule_high[r["rule_id"]][1] <= pass_high + EPS), None)
         from .check import check_rules
-        rerun = check_rules(portfolio, policy, {**request, "target_direct_weight": final}, instruments, holdings, market_data,
-                            controversies, draft_rules=draft_rules, data_sources=data_sources, include_max_compliant=False)
-        confirmed = (
-            rerun["execution"]["status"] == "OK"
-            and rerun["feasibility"]["status"] == "FEASIBLE"
-            and len(rerun["rule_results"]) == len(evaluated)
-            and all(entry["status"] == "PASS" for entry in rerun["rule_results"])
-        )
+        exact_end = start_weight + pass_high
+        binding = next((r["rule_id"] for r in evaluated if rule_high[r["rule_id"]][1] <= pass_high + EPS), None)
+        # Rounded down, then verified. One further grid step down is tried if floating-point noise in the
+        # evaluator (not in the closed form) leaves the first candidate above a limit; this is a rounding
+        # guard on a proven-affine boundary, not a search.
+        first = min(1.0, floor_to_grid(exact_end))
+        final, confirmed = first, False
+        for candidate in (first, round(first - GRID_STEP, GRID_DECIMALS)):
+            if candidate - start_weight <= EPS:
+                break
+            rerun = check_rules(portfolio, policy, {**request, "target_direct_weight": candidate}, instruments, holdings, market_data,
+                                controversies, draft_rules=draft_rules, data_sources=data_sources, include_max_compliant=False)
+            if _passes_without_tolerance(rerun, len(evaluated)):
+                final, confirmed = candidate, True
+                break
+        additional = final - start_weight
+        detail["exact_end"] = exact_end
         if not confirmed or additional <= EPS:
             return _withheld("Withheld: the closed-form boundary was not confirmed when the same checks were re-run at that weight."), detail
         ends = []
@@ -171,7 +209,7 @@ def solve_max_compliant(analysis: dict, portfolio, policy, request, instruments,
         detail["formula"] = (
             "upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / "
             "(change of that value per unit of weight bought): " + "; ".join(ends)
-            + f". Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded to 9 decimals {eq(final)}"
+            + f". Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded down to 9 decimals {eq(final)}"
         )
         what = f"the rule {binding} stops passing just above it" if binding else "cash runs out there"
         return {

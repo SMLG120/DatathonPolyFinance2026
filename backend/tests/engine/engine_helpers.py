@@ -10,6 +10,7 @@ from pathlib import Path
 from byb_contracts import compute_content_hash, validate_policy
 
 from backend import engine
+from backend.engine.boundary import floor_to_grid
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "contracts" / "fixtures" / "engine"
@@ -169,4 +170,4 @@ def boundary_from_its_evidence(result: dict, derived_from=None) -> float:
             ends.append(w0 + limit - known - sum(r["value"] for r in extra))
         else:
             raise AssertionError(f"helper does not support {entry['rule_type']}")
-    return min(1.0, round(min(ends), 9))
+    return min(1.0, floor_to_grid(min(ends)))

@@ -22,7 +22,17 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.1`. Change from 1.0.0 (evidence and display text only; no serialized
+`CALCULATION_VERSION` is `byb-engine-1.0.2`.
+
+Change from 1.0.1 (boundary rounding): the maximum compliant final weight is the closed-form end rounded **down** to
+9 decimals (`boundary.floor_to_grid`), not to the nearest. Rounding to the nearest could return a weight up to 5e-10
+above the exact end, which passed the re-run only through the `EPS = 1e-9` comparison tolerance and carried a positive
+`gap`. The re-run now also requires every rule to pass and cash to suffice without that tolerance (1e-12 of
+floating-point noise is all that is allowed). No contract fixture value changed. Regression tests:
+`backend/tests/engine/test_engine_boundary_rounding.py`. `evidence/robert_max_compliant.md` was generated with 1.0.1
+and its numbers are unchanged by this fix (the real-data boundary 0.083924028 was already below the exact end).
+
+Change from 1.0.0 to 1.0.1 (evidence and display text only; no serialized
 number, status or boundary changed):
 
 - `ev-max-final` and `ev-max-added` now list in `derived_from` every record the closed-form boundary uses, for the
