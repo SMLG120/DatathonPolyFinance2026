@@ -34,7 +34,7 @@ def test_tp01_every_contract_route_has_an_event_and_a_handler():
                       "POST /investigations", "GET /investigations/{id}", "POST /investigations/{id}/challenge"}
     api = Api(store=None, policies=None, snapshots=None, lambda_client=None, config=None, clock=None)
     assert set(api._routes) == routes
-    assert "$default" not in block("ApiFunction") and TEMPLATE.count("PayloadFormatVersion: \"2.0\"") == 7
+    assert "$default" not in block("ApiFunction") and len(re.findall(r"^ {12}PayloadFormatVersion: \"2\.0\"$", TEMPLATE, re.M)) == 7
     assert "DefaultAuthorizer: AccessCodeAuthorizer" in block("HttpApi")
 
 
