@@ -388,6 +388,12 @@ class _Builder:
         self.clarifications: list[dict[str, Any]] = []
         self._rule_count = 0
         self._asked: set[tuple[str, str]] = set()
+        # Spans of the catalog terms ("oil", "fossil fuels") in the request text. The server's own question about
+        # them always wins: nothing the model says about an overlapping span is used.
+        self._catalog_spans: list[tuple[int, int]] = [match.span() for match in _CATALOG_RE.finditer(text)]
+
+    def _in_catalog(self, span: tuple[int, int]) -> bool:
+        return any(span[0] < end and start < span[1] for start, end in self._catalog_spans)
 
     # -- helpers
 
@@ -429,8 +435,9 @@ class _Builder:
         quoted = f"'{words}'"
         if topic == "EXCLUSION_DEFINITION":
             oil = _OIL_RE.search(words) is not None
-            if sector is None and oil and "Energy" in self.reference.sectors:
-                sector = "Energy"
+            if oil:
+                # For oil the offered label is never the model's choice: Energy when the snapshot has it, else none.
+                sector = "Energy" if "Energy" in self.reference.sectors else None
             options = []
             if sector is not None:
                 parameters = {"definition": {"kind": "fund_reported_sector", "sector": sector}}
@@ -498,6 +505,8 @@ class _Builder:
             words, span = self._words(item.get("words"), "ambiguous")
             topic = _code(item.get("topic"), TOPICS, "topic")
             sector = self._sector(item.get("sector")) if topic == "EXCLUSION_DEFINITION" else None
+            if self._in_catalog(span):
+                continue  # the catalog's own exclusion-definition question already covers these words
             self.ask(topic, words, self._objective_id(item.get("objective"), span), sector=sector)
 
     def add_rules(self, items: list[dict[str, Any]]) -> None:
@@ -518,7 +527,7 @@ class _Builder:
                 sector = self._sector(item.get("sector"))
                 if issuer_ids and sector is not None:
                     raise _Rejected("exclusion_with_two_definitions")
-                if any(words in asked or asked in words for asked in asked_exclusions):
+                if self._in_catalog(span) or any(words in asked or asked in words for asked in asked_exclusions):
                     continue  # the question about these words is already asked; no exclusion is proposed outright
                 if not issuer_ids:
                     # A sector rule is drafted outright only when the investor wrote that very label. Anything else
@@ -549,11 +558,13 @@ class _Builder:
             self.rules.append(draft_rule(self._rule_id(rule_type), rule_type, parameters, words, objective_id, number))
 
     def scan_catalog(self) -> None:
-        """Words that are ambiguous whatever the model answered: "oil" always gets its question."""
+        """Words that are ambiguous whatever the model answers: "oil" always gets the exclusion-definition question, with Energy."""
+        seen: set[str] = set()
         for match in _CATALOG_RE.finditer(self.text):
             word = match.group(0)
-            if any(word.lower() in clarification["about_words"].lower() for clarification in self.clarifications):
+            if word.lower() in seen:
                 continue
+            seen.add(word.lower())
             self.ask("EXCLUSION_DEFINITION", word, self._objective_id(None, match.span()))
 
     def add_unsupported(self, items: list[dict[str, Any]]) -> None:
@@ -573,9 +584,9 @@ def build_interpretation(extraction: dict[str, Any], *, text: str, persona_id: s
     lists = {name: _items(extraction, name) for name in ("objectives", "rules", "ambiguous", "unsupported")}
     builder = _Builder(text, reference, companies, clarification_mode)
     builder.add_objectives(lists["objectives"])
+    builder.scan_catalog()  # first: the server's catalog wins over anything the model says about the same words
     builder.add_ambiguous(lists["ambiguous"])
     builder.add_rules(lists["rules"])
-    builder.scan_catalog()
     builder.add_unsupported(lists["unsupported"])
     return {
         "schema_version": SCHEMA_VERSION, "interpretation_id": interpretation_id, "persona_id": persona_id, "created_at": created_at,
