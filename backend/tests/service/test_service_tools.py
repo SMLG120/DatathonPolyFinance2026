@@ -114,6 +114,43 @@ def test_tl05_a_model_selection_is_rendered_by_the_server_from_the_record_alone(
     assert explain.parse_model_answer('Here you go: {"highlights": [{"template": "a", "evidence_id": "b"}]} thanks') == [{"template": "a", "evidence_id": "b"}]
 
 
+def test_tl05b_highlight_descriptions_are_unambiguous_for_share_classes_and_category_weights():
+    """Validator finding F-21: rows of one company, their sum, and a sector's share of a fund each say what they are."""
+    row = lambda evidence_id, what, value: {  # noqa: E731 - the shapes backend/engine/check.py records
+        "evidence_id": evidence_id, "metric_id": "fund_constituent_weight", "value": value, "unit": "fraction", "currency": None,
+        "subject": {"kind": "ISSUER", "id": "ALPHABET", "via_fund_id": "SPY", "portfolio_state": None}, "period": {"type": "AS_OF", "date": "2026-11-12"},
+        "assumptions": [f"One reported row of the fund's holdings file: {what}."], "derived_from": []}
+    first, second = row("ev-cwrow-SPY-ALPHABET-1", "GOOGL", 0.0268), row("ev-cwrow-SPY-ALPHABET-2", "GOOG", 0.0214)
+    same_name = row("ev-cwrow-SPY-ALPHABET-3", "GOOG", 0.0001)
+    total = dict(first, evidence_id="ev-cw-SPY-ALPHABET", value=0.0482, assumptions=[], derived_from=["ev-cwrow-SPY-ALPHABET-1", "ev-cwrow-SPY-ALPHABET-2"])
+    single = dict(total, evidence_id="ev-cw-SPY-NVIDIA", value=0.06, derived_from=[], subject=dict(total["subject"], id="NVIDIA"))
+    sector = {"evidence_id": "ev-secw-XIU.TO-mateo-excl-energy-1", "metric_id": "fund_constituent_weight", "value": 0.1666, "unit": "fraction", "currency": None,
+              "subject": {"kind": "FUND", "id": "XIU.TO", "via_fund_id": None, "portfolio_state": None}, "period": {"type": "AS_OF", "date": "2026-11-12"},
+              "assumptions": ["Rows of the fund's holdings file labelled exactly 'Energy'. A sector label is what the fund reports."], "derived_from": []}
+    texts = [explain.describe(record) for record in (first, second, same_name, total, single, sector)]
+    assert len(set(texts)) == 6 and None not in texts
+    assert texts[0] == ("weight inside the fund of reported row 1 of this company (GOOGL), as its holdings file reports it, "
+                        "company ALPHABET, through SPY, as of 2026-11-12")
+    assert "reported row 2 of this company (GOOG)" in texts[1] and "reported row 3 of this company (GOOG)" in texts[2]
+    assert texts[3].startswith("weight inside the fund of all share classes and reported rows of this company combined, company ALPHABET, through SPY")
+    assert texts[4].startswith("weight inside the fund, as its holdings file reports it, company NVIDIA")
+    assert texts[5] == ("share of the fund in rows carrying the fund-reported sector label 'Energy', as its holdings file reports it, "
+                        "fund XIU.TO, as of 2026-11-12")
+    # A fund-level record whose label cannot be read is not printed at all, rather than printed as if it were the whole fund.
+    assert explain.describe(dict(sector, assumptions=[])) is None
+
+    # On the real engine output of both synthetic personas no two records share a description unless they share the value.
+    for context in (mateo_context(),):
+        seen = {}
+        for record in context.result["evidence"]:
+            accepted, _ = explain.render_highlights([{"template": explain.HIGHLIGHT_VALUE, "evidence_id": record["evidence_id"]}], context.result, 1)
+            if accepted:
+                description, value = accepted[0]["text"].rsplit(": ", 1)
+                assert seen.setdefault(description, value) == value, description
+        sector_sentences = [explain.describe(r) for r in context.result["evidence"] if r["evidence_id"].startswith("ev-secw-")]
+        assert sector_sentences and all("fund-reported sector label 'Energy'" in text for text in sector_sentences)
+
+
 def test_tl06_template_statements_cover_every_rule_finding_and_gap():
     result = mateo_context().result
     statements = explain.template_statements(result)
