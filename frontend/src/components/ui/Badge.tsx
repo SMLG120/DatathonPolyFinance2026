@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { CoverageStatus, InvestigationStatus, RuleLifecycleStatus, VerdictStatus } from "@/lib/contracts";
+import type { CoverageStatus, JobStatus, RuleStatus, VerdictStatus } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { ruleStatusLabel } from "@/lib/rules";
 import { coverageText, jobStatusText, statusText } from "@/lib/verdict";
@@ -9,7 +9,6 @@ import {
   ErrorIcon,
   FailIcon,
   HollowCircleIcon,
-  InfoIcon,
   PassIcon,
   SupersededIcon,
   UnknownIcon,
@@ -75,14 +74,14 @@ export function StatusBadge({ status, className, prefix }: { status: VerdictStat
   );
 }
 
-const LIFECYCLE: Record<RuleLifecycleStatus, { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
+const LIFECYCLE: Record<RuleStatus, { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
   PROPOSED: { tone: "neutral", icon: <HollowCircleIcon size={16} />, dashed: true },
   CONFIRMED: { tone: "accent", icon: <CheckIcon size={16} />, dashed: false },
   SUPERSEDED: { tone: "neutral", icon: <SupersededIcon size={16} />, dashed: false },
 };
 
 /** Proposed — inactive / Confirmed — active / Superseded. */
-export function RuleStatusBadge({ status }: { status: RuleLifecycleStatus }) {
+export function RuleStatusBadge({ status }: { status: RuleStatus }) {
   const { tone, icon, dashed } = LIFECYCLE[status];
   return (
     <span data-rule-status={status} className="inline-flex">
@@ -93,7 +92,7 @@ export function RuleStatusBadge({ status }: { status: RuleLifecycleStatus }) {
   );
 }
 
-const JOB: Record<InvestigationStatus, { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
+const JOB: Record<JobStatus, { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
   QUEUED: { tone: "neutral", icon: <ClockIcon size={16} />, dashed: true },
   RUNNING: { tone: "accent", icon: <ClockIcon size={16} />, dashed: true },
   SUCCEEDED: { tone: "accent", icon: <CheckIcon size={16} />, dashed: false },
@@ -101,7 +100,7 @@ const JOB: Record<InvestigationStatus, { tone: BadgeTone; icon: ReactNode; dashe
 };
 
 /** Execution status of a job. Deliberately not a verdict: "Completed" says nothing about the rules. */
-export function JobStatusBadge({ status }: { status: InvestigationStatus }) {
+export function JobStatusBadge({ status }: { status: JobStatus }) {
   const { tone, icon, dashed } = JOB[status];
   return (
     <span data-job-status={status} className="inline-flex">
@@ -112,14 +111,14 @@ export function JobStatusBadge({ status }: { status: InvestigationStatus }) {
   );
 }
 
-const COVERAGE: Record<CoverageStatus | "NOT_APPLICABLE", { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
+const COVERAGE: Record<CoverageStatus, { tone: BadgeTone; icon: ReactNode; dashed: boolean }> = {
   COVERED: { tone: "neutral", icon: <CheckIcon size={16} />, dashed: false },
   PARTIAL: { tone: "unknown", icon: <WarningIcon size={16} />, dashed: true },
   MISSING: { tone: "unknown", icon: <UnknownIcon size={16} />, dashed: true },
-  NOT_APPLICABLE: { tone: "neutral", icon: <InfoIcon size={16} />, dashed: false },
 };
 
-export function CoverageBadge({ status }: { status: CoverageStatus | "NOT_APPLICABLE" }) {
+/** How much of a fund its holdings file reports. Partial and missing are never drawn as complete. */
+export function CoverageBadge({ status }: { status: CoverageStatus }) {
   const { tone, icon, dashed } = COVERAGE[status];
   return (
     <span data-coverage={status} className="inline-flex">

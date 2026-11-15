@@ -32,13 +32,18 @@ export async function expectPersistentLabels(page: Page) {
  * Moves focus to `target` with the Tab key only, the way a keyboard user gets
  * there. Fails if the element cannot be reached.
  */
-export async function tabTo(page: Page, target: Locator, maxPresses = 120) {
+export async function tabTo(page: Page, target: Locator, maxPresses = 120, key: "Tab" | "Shift+Tab" = "Tab") {
   await expect(target).toBeVisible();
   for (let presses = 0; presses < maxPresses; presses += 1) {
     if (await target.evaluate((element) => element === document.activeElement)) return;
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(key);
   }
-  await expect(target, `not reachable with ${maxPresses} presses of Tab`).toBeFocused();
+  await expect(target, `not reachable with ${maxPresses} presses of ${key}`).toBeFocused();
+}
+
+/** The same, backwards: for a control that comes before the one that has focus. */
+export async function tabBackTo(page: Page, target: Locator, maxPresses = 120) {
+  await tabTo(page, target, maxPresses, "Shift+Tab");
 }
 
 /** The element that has keyboard focus shows the focus ring: a solid outline at least 2px thick. */
@@ -57,6 +62,52 @@ export async function expectVisibleFocusRing(target: Locator) {
 export async function tabToAndPress(page: Page, target: Locator, key: "Enter" | "Space" = "Enter") {
   await tabTo(page, target);
   await page.keyboard.press(key);
+}
+
+/**
+ * An error block inside the page content. Next.js adds its own empty
+ * `role="alert"` route announcer to every page, so a bare role query is
+ * ambiguous; the application's alerts all live inside <main>.
+ */
+export function mainAlert(page: Page): Locator {
+  return page.getByRole("main").getByRole("alert");
+}
+
+/** Stage 2 with the pointer: the scenario's rules are offered as proposals; confirm them with their numbers. */
+export async function confirmScenarioRules(page: Page) {
+  await page.getByRole("link", { name: "Continue to Goals & rules" }).click();
+  await expect(page.getByTestId("rule-card").first()).toBeVisible();
+  await page.getByTestId("confirm-rules").click();
+  await expect(page.getByTestId("policy-rule-card").first()).toBeVisible();
+}
+
+/** From the first screen to the report of the scenario's scripted request, with the pointer. */
+export async function openReport(page: Page) {
+  await expect(page.getByTestId("portfolio-table")).toBeVisible();
+  await confirmScenarioRules(page);
+  await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
+  await page.getByTestId("start-investigation").click();
+  await page.getByTestId("see-verdict").click({ timeout: 30_000 });
+  await expect(page.getByTestId("report")).toBeVisible();
+}
+
+/**
+ * Every block of figures on the page carries the visible "Test data" marker.
+ * A marker inside a closed section does not count unless it is on the line
+ * that stays visible.
+ */
+export async function expectTestDataMarkers(page: Page, context: string) {
+  const blocks = page.getByRole("main").locator('[data-figures="true"]');
+  const count = await blocks.count();
+  expect(count, `no block of figures found on: ${context}`).toBeGreaterThan(0);
+  for (let index = 0; index < count; index += 1) {
+    const block = blocks.nth(index);
+    if (!(await block.isVisible())) continue;
+    const name = await block.evaluate((element) => element.id || element.getAttribute("data-testid") || element.tagName.toLowerCase());
+    const tags = block.getByTestId("test-data-tag");
+    const visible = await tags.evaluateAll((elements) => elements.filter((element) => (element as HTMLElement).checkVisibility()).length);
+    expect(visible, `block "${name}" has no visible "Test data" marker on: ${context}`).toBeGreaterThan(0);
+  }
 }
 
 /** WCAG 2.0, 2.1 and 2.2 at levels A and AA, plus axe's best-practice rules (landmarks, heading order, unique names). */

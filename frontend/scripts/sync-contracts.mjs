@@ -6,6 +6,11 @@
  *   ../contracts/typescript/contracts.ts  -> src/generated/contracts/contracts.ts
  *   ../contracts/fixtures/api/*.json      -> src/generated/contracts/fixtures/api/
  *   ../contracts/scenarios/*.json         -> src/generated/contracts/scenarios/
+ *   ../contracts/fixtures/engine/*_synthetic_universe.json
+ *                                         -> src/generated/contracts/fixtures/registries.json
+ *       (only the instrument and source registries of each universe: the
+ *        fixtures client needs instrument names and the one synthetic source,
+ *        not the invented holdings and prices)
  *
  * Every copied TypeScript file gets a "GENERATED — DO NOT EDIT" header, and
  * each copied directory gets a GENERATED_DO_NOT_EDIT.txt listing its sources
@@ -44,6 +49,19 @@ let copied = 0;
 let stale = 0;
 const missing = [];
 
+function writeOrCheck(destination, output) {
+  if (check) {
+    if (!existsSync(destination) || readFileSync(destination, "utf8") !== output) {
+      stale += 1;
+      console.error(`stale or missing: ${relative(destination)}`);
+    }
+    return;
+  }
+  mkdirSync(path.dirname(destination), { recursive: true });
+  writeFileSync(destination, output);
+  copied += 1;
+}
+
 for (const job of JOBS) {
   const files = existsSync(job.from) ? readdirSync(job.from).filter((name) => job.match.test(name)).sort() : [];
   if (files.length === 0) {
@@ -51,21 +69,11 @@ for (const job of JOBS) {
     continue;
   }
   const manifest = [`GENERATED — DO NOT EDIT. Copied by \`npm run sync:contracts\` from ${relative(job.from)}/.`, ""];
-  if (!check) mkdirSync(job.to, { recursive: true });
   for (const name of files) {
     const source = readFileSync(path.join(job.from, name), "utf8");
     const output = job.header ? HEADER(`${relative(job.from)}/${name}`) + source : source;
-    const destination = path.join(job.to, name);
     manifest.push(`${name}  sha256:${sha256(source)}`);
-    if (check) {
-      if (!existsSync(destination) || readFileSync(destination, "utf8") !== output) {
-        stale += 1;
-        console.error(`stale or missing: ${relative(destination)}`);
-      }
-      continue;
-    }
-    writeFileSync(destination, output);
-    copied += 1;
+    writeOrCheck(path.join(job.to, name), output);
   }
   if (!check) {
     // Remove copies whose original is gone, so the frontend never keeps a contract that no longer exists.
@@ -76,17 +84,39 @@ for (const job of JOBS) {
   }
 }
 
-for (const directory of missing) console.warn(`not found yet (nothing copied): ${directory}/`);
+// The instrument and source registries of the synthetic engine universes.
+const engine = path.join(contracts, "fixtures", "engine");
+const universes = existsSync(engine) ? readdirSync(engine).filter((name) => /_synthetic_universe\.json$/.test(name)).sort() : [];
+if (universes.length === 0) {
+  missing.push(`${relative(engine)}/*_synthetic_universe.json`);
+} else {
+  const registries = {
+    generated: "GENERATED — DO NOT EDIT. Extracted by `npm run sync:contracts` from the files listed in `extracted_from`.",
+    extracted_from: [],
+    universes: {},
+  };
+  for (const name of universes) {
+    const source = readFileSync(path.join(engine, name), "utf8");
+    const universe = JSON.parse(source);
+    registries.extracted_from.push(`${relative(path.join(engine, name))}  sha256:${sha256(source)}`);
+    registries.universes[universe.universe_id] = {
+      synthetic: universe.synthetic,
+      synthetic_note: universe.synthetic_note,
+      instruments: universe.instruments.instruments,
+      sources: universe.sources.sources,
+    };
+  }
+  writeOrCheck(path.join(target, "fixtures", "registries.json"), `${JSON.stringify(registries, null, 2)}\n`);
+}
+
+for (const directory of missing) console.warn(`not found yet (nothing copied): ${directory}`);
 
 if (check) {
   if (stale > 0 || missing.length > 0) {
-    console.error(`sync:contracts --check failed: ${stale} stale, ${missing.length} source ${missing.length === 1 ? "directory" : "directories"} empty or missing.`);
+    console.error(`sync:contracts --check failed: ${stale} stale, ${missing.length} ${missing.length === 1 ? "source" : "sources"} empty or missing.`);
     process.exit(1);
   }
   console.log("sync:contracts --check: copies are up to date.");
 } else {
-  console.log(`sync:contracts: ${copied} ${copied === 1 ? "file" : "files"} copied into ${relative(target)}/.`);
-  if (missing.length > 0) {
-    console.log("The interface keeps using its provisional types and fixtures (src/lib/provisional-*.ts) until the contract exists.");
-  }
+  console.log(`sync:contracts: ${copied} ${copied === 1 ? "file" : "files"} written into ${relative(target)}/.`);
 }

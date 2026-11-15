@@ -1,45 +1,36 @@
-import type {
-  CheckResult,
-  CoverageStatus,
-  EvidenceRecord,
-  InvestigationStatus,
-  Policy,
-  Rule,
-  RuleEvaluation,
-  RuleResult,
-  SourceRecord,
-  VerdictStatus,
+import {
+  TERMINAL_JOB_STATUSES,
+  type BindingConstraint,
+  type CheckResult,
+  type CoverageStatus,
+  type EvidenceRecord,
+  type JobStatus,
+  type Policy,
+  type Rule,
+  type RuleResult,
+  type RuleType,
+  type Summary,
+  type UnknownCause,
+  type VerdictStatus,
 } from "@/lib/contracts";
 
 /**
- * Wording and counting for results. The statuses themselves always come from
- * the service; nothing here decides PASS, FAIL or UNKNOWN.
+ * Wording and counting for results. The statuses and the summary always come
+ * from the service; nothing here decides PASS, FAIL or UNKNOWN.
  */
 
 export interface VerdictCounts {
   pass: number;
   fail: number;
   unknown: number;
+  /** `summary.rules_evaluated`: how many confirmed rules the engine evaluated. */
   total: number;
 }
 
-/** The evaluation that describes the request: after the purchase when there is one. */
-export function decisiveEvaluation(ruleResult: RuleResult): RuleEvaluation {
-  return ruleResult.proposed ?? ruleResult.starting;
-}
-
-export function countStatuses(statuses: VerdictStatus[]): VerdictCounts {
-  const counts: VerdictCounts = { pass: 0, fail: 0, unknown: 0, total: statuses.length };
-  for (const status of statuses) {
-    if (status === "PASS") counts.pass += 1;
-    else if (status === "FAIL") counts.fail += 1;
-    else counts.unknown += 1;
-  }
-  return counts;
-}
-
-export function countResult(result: CheckResult, phase: "decisive" | "starting" = "decisive"): VerdictCounts {
-  return countStatuses(result.rule_results.map((r) => (phase === "starting" ? r.starting : decisiveEvaluation(r)).status));
+/** The engine's own counts for the portfolio after the purchase. Nothing is counted here. */
+export function summaryCounts(summary: Summary): VerdictCounts {
+  const { pass, fail, unknown } = summary.counts;
+  return { pass, fail, unknown, total: summary.rules_evaluated };
 }
 
 export type HeadlineTone = "fail" | "unknown" | "pass" | "none";
@@ -53,20 +44,42 @@ export interface VerdictHeadline {
 const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
 
 /**
- * The headline of a result. It can only say the rules are respected when every
- * checked rule passed: a single UNKNOWN makes the headline "not determined",
- * and a FAIL is always stated even when other checks are unknown.
+ * The headline of a result, worded from the engine's summary.
+ *
+ * It says the rules are respected only when the engine's headline is ALL_PASS
+ * and its counts agree: a single UNKNOWN or FAIL in the counts makes that
+ * headline impossible, whatever the `headline` member says.
  */
-export function verdictHeadline(counts: VerdictCounts): VerdictHeadline {
-  const { pass, fail, unknown, total } = counts;
-  if (total === 0) {
-    return {
-      tone: "none",
-      title: "No confirmed rule was checked",
-      detail: "A result needs at least one confirmed rule with a threshold.",
-    };
+export function verdictHeadline(summary: Summary): VerdictHeadline {
+  const { pass, fail, unknown, total } = summaryCounts(summary);
+  switch (summary.headline) {
+    case "EXECUTION_ERROR":
+      return { tone: "none", title: "The check could not be run", detail: "No rule was evaluated, so there is no result to show." };
+    case "INVALID_REQUEST":
+      return { tone: "none", title: "This request cannot be evaluated", detail: "No rule was evaluated, so there is no result to show." };
+    case "NO_RULES_EVALUATED":
+      return { tone: "none", title: "No confirmed rule was checked", detail: "A result needs at least one confirmed rule with a threshold." };
+    case "POLICY_CONFLICT":
+      return {
+        tone: "none",
+        title: "Two confirmed rules cannot both be met",
+        detail: `The rules were still checked one by one: ${fail} not respected, ${unknown} unknown, ${pass} passed.`,
+      };
+    case "HAS_FAIL":
+    case "NO_FAIL_BUT_UNKNOWN":
+    case "ALL_PASS":
+      break;
   }
-  if (fail > 0) {
+  const inconsistent: VerdictHeadline = {
+    tone: "none",
+    title: "The summary of this result is inconsistent",
+    detail: "The counts and the headline sent by the service disagree, so no overall statement is shown.",
+  };
+  if (total === 0) {
+    return { tone: "none", title: "No confirmed rule was checked", detail: "A result needs at least one confirmed rule with a threshold." };
+  }
+  if (summary.headline === "HAS_FAIL") {
+    if (fail === 0) return inconsistent;
     return {
       tone: "fail",
       title: `${fail} of ${total} confirmed ${plural(total, "rule", "rules")} ${plural(fail, "is", "are")} not respected`,
@@ -76,13 +89,16 @@ export function verdictHeadline(counts: VerdictCounts): VerdictHeadline {
           : `${pass} passed and none are unknown.`,
     };
   }
-  if (unknown > 0) {
+  if (summary.headline === "NO_FAIL_BUT_UNKNOWN") {
+    if (fail > 0 || unknown === 0) return inconsistent;
     return {
       tone: "unknown",
       title: `Not determined: ${unknown} of ${total} confirmed ${plural(total, "rule", "rules")} could not be checked`,
       detail: `${pass} passed and none failed, but this is not a pass. Missing data is never treated as zero.`,
     };
   }
+  // ALL_PASS: said only when the engine's counts agree that nothing failed and nothing is unknown.
+  if (fail > 0 || unknown > 0) return inconsistent;
   return {
     tone: "pass",
     title: total === 1 ? "The one confirmed rule is respected" : `All ${total} confirmed rules are respected`,
@@ -96,38 +112,46 @@ export function statusText(status: VerdictStatus): string {
   return STATUS_TEXT[status];
 }
 
-const JOB_STATUS_TEXT: Record<InvestigationStatus, string> = {
+const JOB_STATUS_TEXT: Record<JobStatus, string> = {
   QUEUED: "Queued",
   RUNNING: "Running",
   SUCCEEDED: "Completed",
   FAILED: "Failed",
 };
 
-export function jobStatusText(status: InvestigationStatus): string {
+export function jobStatusText(status: JobStatus): string {
   return JOB_STATUS_TEXT[status];
 }
 
-export function isTerminalJobStatus(status: InvestigationStatus): boolean {
-  return status === "SUCCEEDED" || status === "FAILED";
+export function isTerminalJobStatus(status: JobStatus): boolean {
+  return TERMINAL_JOB_STATUSES.includes(status);
 }
 
-const COVERAGE_TEXT: Record<CoverageStatus | "NOT_APPLICABLE", string> = {
+const COVERAGE_TEXT: Record<CoverageStatus, string> = {
   COVERED: "Complete",
   PARTIAL: "Partial",
   MISSING: "Missing",
-  NOT_APPLICABLE: "Not applicable",
 };
 
-export function coverageText(status: CoverageStatus | "NOT_APPLICABLE"): string {
+export function coverageText(status: CoverageStatus): string {
   return COVERAGE_TEXT[status];
+}
+
+const UNKNOWN_CAUSE_TEXT: Record<UnknownCause, string> = {
+  PARTIAL_HOLDINGS: "a fund's holdings file reports only part of the fund",
+  MISSING_HOLDINGS: "a fund has no holdings file",
+  UNCLASSIFIED_SECTOR: "some holdings carry no sector label",
+  REGISTRY_ABSENCE: "companies without a registry record are not assessed",
+  INSUFFICIENT_HISTORY: "price history is missing for the replayed period",
+};
+
+/** Why part of a measurement is unknown, in words. */
+export function unknownCauseText(cause: UnknownCause): string {
+  return UNKNOWN_CAUSE_TEXT[cause];
 }
 
 export function findEvidence(result: CheckResult, evidenceId: string): EvidenceRecord | undefined {
   return result.evidence.find((record) => record.evidence_id === evidenceId);
-}
-
-export function findSource(result: CheckResult, sourceId: string): SourceRecord | undefined {
-  return result.sources.find((source) => source.source_id === sourceId);
 }
 
 export function findRule(policy: Policy | null | undefined, ruleId: string): Rule | undefined {
@@ -184,4 +208,31 @@ export function pairRuleResults(
     before: diff.before ? (older.rule_results.find((r) => r.rule_id === diff.before?.rule_id) ?? null) : null,
     after: diff.after ? (newer.rule_results.find((r) => r.rule_id === diff.after?.rule_id) ?? null) : null,
   }));
+}
+
+/** What stops a larger purchase: a rule or the cash available. */
+export function bindingConstraintText(constraint: BindingConstraint, ruleLabel: (ruleId: string) => string): string {
+  if (constraint.type === "CASH") return "the cash available";
+  return constraint.rule_id ? `the rule “${ruleLabel(constraint.rule_id)}”` : "a confirmed rule";
+}
+
+/** What the measured quantity of a rule type is called in result rows. */
+export function measuredNoun(ruleType: RuleType): string {
+  switch (ruleType) {
+    case "max_issuer_exposure":
+      return "Largest exposure to one company";
+    case "min_issuer_exposure":
+      return "Exposure to the named company";
+    case "exclusion":
+      return "Share in the excluded holdings";
+    case "controversy_exclusion":
+      return "Share in companies with a matching record";
+    case "scenario_loss_budget":
+      return "Loss over the replayed period";
+  }
+}
+
+/** The display name of a company in a result: the one the exposure rows carry, else its id. */
+export function issuerName(result: CheckResult, issuerId: string): string {
+  return result.exposure?.issuers.find((issuer) => issuer.issuer_id === issuerId)?.name ?? issuerId;
 }

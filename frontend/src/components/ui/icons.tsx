@@ -126,6 +126,15 @@ export function ArrowRightIcon(props: IconProps) {
   );
 }
 
+/** Points right while closed; the stylesheet turns it down when its <details> is open. */
+export function ChevronIcon({ className, ...props }: IconProps) {
+  return (
+    <Svg className={className ? `byb-chevron ${className}` : "byb-chevron"} {...props}>
+      <path d="M7 4l6 6-6 6" {...LINE} strokeWidth={2} />
+    </Svg>
+  );
+}
+
 export function ArrowLeftIcon(props: IconProps) {
   return (
     <Svg {...props}>

@@ -12,9 +12,9 @@
     "start": "node scripts/serve-out.mjs",
     "lint": "eslint",
     "typecheck": "next typegen && tsc --noEmit",
-    "test": "vitest run",
+    "test": "node scripts/sync-contracts.mjs --check && vitest run",
     "test:watch": "vitest",
-    "test:e2e": "next build && playwright test",
+    "test:e2e": "node scripts/build-e2e.mjs && playwright test",
     "test:e2e:install": "playwright install chromium",
     "sync:contracts": "node scripts/sync-contracts.mjs",
     "contrast": "node scripts/contrast-report.mjs"

@@ -1,22 +1,22 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useId, type ReactNode, type Ref } from "react";
 import { Badge, RuleStatusBadge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
-import { CheckIcon } from "@/components/ui/icons";
-import type { Objective, PersonaId, Rule } from "@/lib/contracts";
+import { TestDataTag } from "@/components/ui/TestDataTag";
+import type { Objective, PersonaId, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
-import { percentInputToFraction } from "@/lib/format";
+import { formatDateTime, percentInputToFraction } from "@/lib/format";
 import {
   originDescription,
   originLabel,
+  ruleParametersText,
   ruleStatusDescription,
   ruleTypeLabel,
   thresholdHint,
   thresholdLabel,
+  thresholdSourceText,
   thresholdText,
   validateThreshold,
-  withRuleThreshold,
 } from "@/lib/rules";
 import { DraftPreviewPanel, useDraftPreview } from "./DraftPreview";
 import { ThresholdInput } from "./ThresholdInput";
@@ -45,6 +45,12 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
             {rule.scope_description}
           </dd>
         </div>
+        <div className="sm:col-span-2">
+          <dt className="text-sm font-semibold text-ink-muted">Set to</dt>
+          <dd className="text-ink" data-testid="rule-parameters">
+            {ruleParametersText(rule)}
+          </dd>
+        </div>
         <div>
           <dt className="text-sm font-semibold text-ink-muted">Origin</dt>
           <dd className="text-ink">
@@ -53,7 +59,14 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
         </div>
         <div>
           <dt className="text-sm font-semibold text-ink-muted">Status</dt>
-          <dd className="text-ink">{ruleStatusDescription(rule.status)}</dd>
+          <dd className="text-ink">
+            {ruleStatusDescription(rule.status)}
+            {rule.confirmed_at ? (
+              <span className="mt-0.5 block text-sm text-ink-muted">
+                Confirmed <span className="tabular">{formatDateTime(rule.confirmed_at)}</span>. {thresholdSourceText(rule)}.
+              </span>
+            ) : null}
+          </dd>
         </div>
         {objective ? (
           <div className="sm:col-span-2">
@@ -92,12 +105,24 @@ export interface ProposedRuleCardProps {
   rule: Rule;
   objective: Objective | undefined;
   personaId: PersonaId | null;
+  /** The policy in force, when there is one: a preview tries the draft in its place. */
+  policy: Policy | null;
+  /** The purchase a preview is tried on (the one entered in stage 3), or null. */
+  purchase: PurchaseRequest | null;
   /** The threshold field's text, as a percentage. "" = not set. */
   thresholdText: string;
   onThresholdChange: (text: string) => void;
-  /** Confirms this rule with the threshold in the field. */
-  onConfirm: () => void;
-  confirming: boolean;
+  /** The full rule set a preview evaluates when this rule carries the given draft number. */
+  buildPreviewRules: (threshold: number) => Rule[];
+  /** True once the user tried to confirm: an empty field is then explained. */
+  attempted: boolean;
+  inputRef?: Ref<HTMLInputElement>;
+}
+
+/** Why the text of a threshold field cannot be confirmed yet, or null when it can. */
+export function thresholdProblem(text: string): string | null {
+  const threshold = percentInputToFraction(text);
+  return text.trim() !== "" && threshold === null ? "Enter a number such as 10 or 12.5." : validateThreshold(threshold);
 }
 
 /**
@@ -105,23 +130,15 @@ export interface ProposedRuleCardProps {
  * it, and it can only be confirmed with a threshold the user can see in the
  * field. A system-proposed rule arrives with an empty field.
  */
-export function ProposedRuleCard({ rule, objective, personaId, thresholdText: text, onThresholdChange, onConfirm, confirming }: ProposedRuleCardProps) {
+export function ProposedRuleCard({ rule, objective, personaId, policy, purchase, thresholdText: text, onThresholdChange, buildPreviewRules, attempted, inputRef }: ProposedRuleCardProps) {
   const headingId = useId();
   const fieldId = useId();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [attempted, setAttempted] = useState(false);
 
-  const threshold = percentInputToFraction(text);
-  const problem = text.trim() !== "" && threshold === null ? "Enter a number such as 10 or 12.5." : validateThreshold(threshold);
-  const canConfirm = problem === null;
+  const problem = thresholdProblem(text);
   // An empty field is not an error until the user tries to confirm it.
   const shownError = problem !== null && (attempted || text.trim() !== "") ? problem : null;
 
-  const { preview, onDraftChange } = useDraftPreview({
-    personaId,
-    purchase: null,
-    buildRules: (draft) => [withRuleThreshold(rule, draft)],
-  });
+  const { preview, onDraftChange } = useDraftPreview({ personaId, policy, purchase, buildRules: buildPreviewRules });
 
   return (
     <li>
@@ -131,14 +148,17 @@ export function ProposedRuleCard({ rule, objective, personaId, thresholdText: te
         data-testid="rule-card"
         data-rule-id={rule.rule_id}
         data-rule-origin={rule.origin}
+        data-figures="true"
       >
-        <RuleHeader rule={rule} headingId={headingId} />
+        <RuleHeader rule={rule} headingId={headingId} aside={<TestDataTag />} />
         <RuleDetails rule={rule} objective={objective} />
 
-        {rule.origin === "SYSTEM_PROPOSED" && text.trim() === "" ? (
+        {text.trim() === "" ? (
           <p className="rounded-md bg-unknown-soft px-3 py-2 text-ink" data-testid="threshold-empty-note">
-            <span className="font-semibold">No threshold has been set.</span> The system proposes the kind of rule, never the number. Enter the value
-            you want before confirming.
+            <span className="font-semibold">No threshold has been set.</span>{" "}
+            {rule.origin === "SYSTEM_PROPOSED"
+              ? "The system proposes the kind of rule, never the number. Enter the value you want before confirming."
+              : "A rule with an empty number is left out of the confirmation and stays proposed."}
           </p>
         ) : null}
 
@@ -155,31 +175,7 @@ export function ProposedRuleCard({ rule, objective, personaId, thresholdText: te
           }}
         />
 
-        <DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} subject="the current portfolio" />
-
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="secondary"
-            softDisabled={!canConfirm}
-            busy={confirming}
-            busyLabel="Confirming…"
-            icon={<CheckIcon />}
-            aria-describedby={headingId}
-            data-testid="confirm-rule"
-            onClick={() => {
-              if (!canConfirm) {
-                // Explain instead of doing nothing: the button stays reachable.
-                setAttempted(true);
-                inputRef.current?.focus();
-                return;
-              }
-              onConfirm();
-            }}
-          >
-            Confirm this rule
-          </Button>
-          <p className="text-sm text-ink-muted">{canConfirm ? "Confirming makes it active in a new policy version." : "Needs a threshold before it can be confirmed."}</p>
-        </div>
+        <DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} purchase={purchase} />
       </article>
     </li>
   );
@@ -195,11 +191,15 @@ export function PolicyRuleCard({ rule, objective, className }: { rule: Rule; obj
         className={cn("space-y-4 rounded-lg border p-4 sm:p-5", rule.status === "CONFIRMED" ? "border-accent bg-surface" : "border-line bg-canvas", className)}
         data-testid="policy-rule-card"
         data-rule-id={rule.rule_id}
+        data-figures="true"
       >
-        <RuleHeader rule={rule} headingId={headingId} />
+        <RuleHeader rule={rule} headingId={headingId} aside={<TestDataTag />} />
         <p>
           <span className="block text-sm font-semibold text-ink-muted">{thresholdLabel(rule.rule_type)}</span>
-          <span className={cn("tabular text-3xl font-bold", rule.status === "CONFIRMED" ? "text-ink" : "text-ink-muted line-through decoration-2")}>
+          <span
+            className={cn("tabular text-3xl font-bold", rule.status === "CONFIRMED" ? "text-ink" : "text-ink-muted line-through decoration-2")}
+            data-testid="policy-rule-threshold"
+          >
             {thresholdText(rule)}
           </span>
           {rule.status === "SUPERSEDED" ? <span className="ml-2 text-sm font-semibold text-ink-muted">no longer in force</span> : null}

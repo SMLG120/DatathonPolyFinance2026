@@ -1,17 +1,18 @@
 import type { Portfolio } from "@/lib/contracts";
 import { formatDate, formatFraction } from "@/lib/format";
-import { portfolioRows, totalWeight } from "@/lib/portfolio";
+import { portfolioRows, type InstrumentRegistry } from "@/lib/portfolio";
 
 /**
- * The holdings of a portfolio as a plain table: name, type and weight.
- * Weights arrive as fractions and are shown as percentages.
+ * The holdings of a portfolio as a plain table: name, type and weight, in the
+ * order the service lists them, then cash. Weights arrive as fractions and are
+ * shown as percentages; nothing is added up here.
  */
-export function PortfolioTable({ portfolio, personaName }: { portfolio: Portfolio; personaName: string }) {
-  const rows = portfolioRows(portfolio);
+export function PortfolioTable({ portfolio, instruments, personaName }: { portfolio: Portfolio; instruments: InstrumentRegistry; personaName: string }) {
+  const rows = portfolioRows(portfolio, instruments);
   return (
     <table className="w-full border-collapse text-left" data-testid="portfolio-table">
       <caption className="pb-3 text-left text-sm text-ink-muted">
-        {personaName}&rsquo;s fictional portfolio. Each weight is a share of the whole portfolio in {portfolio.reporting_currency}, valued on{" "}
+        {personaName}&rsquo;s fictional portfolio. Each weight is a share of the whole portfolio in {portfolio.base_currency}, valued on{" "}
         <span className="tabular">{formatDate(portfolio.valuation_date)}</span>.
       </caption>
       <thead>
@@ -29,7 +30,7 @@ export function PortfolioTable({ portfolio, personaName }: { portfolio: Portfoli
       </thead>
       <tbody>
         {rows.map((row) => (
-          <tr key={row.key} className="border-b border-line">
+          <tr key={row.key} className="border-b border-line" data-testid="portfolio-row">
             <th scope="row" className="py-2.5 pr-3 font-normal">
               <span className="block font-semibold text-ink">{row.name}</span>
               <span className="block text-sm text-ink-muted">
@@ -42,15 +43,6 @@ export function PortfolioTable({ portfolio, personaName }: { portfolio: Portfoli
           </tr>
         ))}
       </tbody>
-      <tfoot>
-        <tr>
-          <th scope="row" className="py-2.5 pr-3 font-semibold text-ink">
-            Total
-          </th>
-          <td className="hidden sm:table-cell" />
-          <td className="tabular py-2.5 text-right text-lg font-bold text-ink">{formatFraction(totalWeight(portfolio))}</td>
-        </tr>
-      </tfoot>
     </table>
   );
 }

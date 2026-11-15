@@ -8,6 +8,7 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { ArrowRightIcon } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
+import type { InvestigationJob } from "@/lib/contracts";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { describePurchase } from "@/lib/portfolio";
 import { isTerminalJobStatus } from "@/lib/verdict";
@@ -16,6 +17,29 @@ import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 
 const LEAD = "Each step below is one the investigation actually completed. Steps appear as the job reports them; nothing is scripted in advance.";
+
+/** The request a job was asked to check: the structured one once resolved, else the user's words. */
+export function describeJobRequest(job: InvestigationJob): string {
+  if (job.resolved_request) return describePurchase(job.resolved_request);
+  if (job.request.instrument_id !== null && job.request.target_direct_weight !== null) return describePurchase(job.request);
+  return `“${job.request.original_words}” (free text, not resolved into a request yet)`;
+}
+
+function HowItIsRun({ job }: { job: InvestigationJob }) {
+  const { agent } = job;
+  return (
+    <>
+      {agent.mode === "MODEL"
+        ? "A model chooses which tool to call next; the final checks are always run by the service. Every number comes from the deterministic engine."
+        : "The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools. Every statement is a template."}
+      <span className="mt-0.5 block text-sm text-ink-muted" data-testid="agent-mode" data-agent-mode={agent.mode}>
+        {agent.mode === "MODEL" ? `Model: ${agent.model_id ?? "not reported"}` : "Deterministic fallback"} · tool rounds:{" "}
+        <span className="tabular">{agent.tool_rounds}</span>
+        {agent.note ? ` · ${agent.note}` : ""}
+      </span>
+    </>
+  );
+}
 
 /** Stage 4: the real steps of the running or finished job. */
 export function InvestigationStage() {
@@ -46,6 +70,7 @@ export function InvestigationStage() {
   const terminal = investigation ? isTerminalJobStatus(investigation.status) : false;
   const waiting = !terminal && isActive && phase === "polling";
   const deadlineSeconds = Math.round(timing.pollDeadlineMs / 1000);
+  const retryRequest = investigation?.resolved_request ?? null;
 
   return (
     <StageFrame stage="investigation" lead={LEAD}>
@@ -53,11 +78,12 @@ export function InvestigationStage() {
         title="Investigation"
         eyebrow={<span className="font-mono text-[0.8125rem]">{id}</span>}
         aside={investigation ? <JobStatusBadge status={investigation.status} /> : undefined}
+        figures={investigation !== null}
       >
         {investigation ? (
           <Facts className="sm:grid-cols-3">
             <Fact label="Request">
-              <span className="tabular">{describePurchase(investigation.purchase)}</span>
+              <span className="tabular">{describeJobRequest(investigation)}</span>
             </Fact>
             <Fact label="Checked against">Confirmed policy — version {investigation.policy_version}</Fact>
             <Fact label="Started">
@@ -70,14 +96,12 @@ export function InvestigationStage() {
             </Fact>
             <Fact label="Last update">
               <span className="tabular">{formatTime(investigation.updated_at)}</span>
+              <span className="block text-sm text-ink-muted">
+                The service stops the job at <span className="tabular">{formatTime(investigation.deadline_at)}</span> at the latest.
+              </span>
             </Fact>
             <Fact label="How it is run">
-              {investigation.agent
-                ? investigation.agent.mode === "MODEL"
-                  ? "A model chooses which tool to call next; every number comes from the deterministic engine."
-                  : "A fixed sequence of tools run by the server; no model is involved."
-                : "Not reported yet"}
-              {investigation.agent?.note ? <span className="block text-sm text-ink-muted">{investigation.agent.note}</span> : null}
+              <HowItIsRun job={investigation} />
             </Fact>
           </Facts>
         ) : (
@@ -86,7 +110,7 @@ export function InvestigationStage() {
       </Panel>
 
       {investigation ? (
-        <Panel title="Steps" description="A completed job means the checks ran. It does not mean the rules are respected: read the verdict.">
+        <Panel title="Steps" figures description="A completed job means the checks ran. It does not mean the rules are respected: read the verdict.">
           {investigation.steps.length === 0 && terminal ? (
             <EmptyBlock title="The job reported no steps" />
           ) : (
@@ -103,27 +127,31 @@ export function InvestigationStage() {
           title={`The investigation is complete: ${investigation.steps.length} ${investigation.steps.length === 1 ? "step" : "steps"} reported`}
           action={
             <Button variant="primary" iconAfter={<ArrowRightIcon />} onClick={() => goToStage("verdict")} data-testid="see-verdict">
-              See the verdict and evidence
+              {investigation.result ? "See the verdict and evidence" : "See what the investigation needs"}
             </Button>
           }
         >
-          <p>Completion says the checks ran, not how they came out.</p>
+          <p>
+            {investigation.result
+              ? "Completion says the checks ran, not how they came out."
+              : "The request was ambiguous, so nothing was checked: the investigation asks a question instead of guessing."}
+          </p>
         </Notice>
       ) : null}
 
       {investigation?.status === "FAILED" ? (
         <ErrorBlock
           title="The investigation failed"
-          message={investigation.error?.message ?? "The job ended without a result and gave no reason."}
-          onRetry={() => void actions.startInvestigation(investigation.purchase)}
+          message={investigation.failure?.message ?? "The job ended without a result and gave no reason."}
+          onRetry={investigation.failure?.retryable !== false && retryRequest ? () => void actions.startInvestigation(retryRequest) : undefined}
           retryLabel="Run the same request again"
         >
-          {investigation.error?.code ? (
+          {investigation.failure?.code ? (
             <p>
-              Error code: <span className="font-mono text-[0.8125rem]">{investigation.error.code}</span>
+              Error code: <span className="font-mono text-[0.8125rem]">{investigation.failure.code}</span>
             </p>
           ) : null}
-          <p>No verdict was produced, so none is shown. The steps above are the ones that completed before the failure.</p>
+          <p>No verdict was produced, so none is shown. The steps above are the ones that ran before the failure.</p>
         </ErrorBlock>
       ) : null}
 

@@ -2,8 +2,9 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import "./globals.css";
 
+// No `title` here on purpose: the application renders the one <title> itself
+// (see PageTitle in components/App.tsx), so that it can name the current stage.
 export const metadata: Metadata = {
-  title: "Before You Buy — fictional simulation",
   description:
     "A fictional simulation that checks a proposed portfolio purchase against rules the investor explicitly confirmed, and shows the evidence. Not financial advice.",
   robots: { index: false, follow: false },

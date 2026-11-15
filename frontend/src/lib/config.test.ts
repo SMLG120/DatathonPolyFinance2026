@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { normalizeBaseUrl, resolveRuntimeConfig } from "./config";
+import { POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@/lib/contracts";
+import { normalizeBaseUrl, resolveRuntimeConfig, SIMULATED_TIMEOUT_DEADLINE_MS, TIMING } from "./config";
+
+describe("timing", () => {
+  it("polls at the interval and until the deadline the contract fixes", () => {
+    expect(TIMING.pollIntervalMs).toBe(POLL_INTERVAL_MS);
+    expect(TIMING.pollDeadlineMs).toBe(POLL_DEADLINE_MS);
+    expect(POLL_INTERVAL_MS).toBe(1500);
+    expect(POLL_DEADLINE_MS).toBe(180000);
+  });
+
+  it("shortens the deadline only for the simulated timeout", () => {
+    expect(SIMULATED_TIMEOUT_DEADLINE_MS).toBeLessThan(POLL_DEADLINE_MS);
+    expect(SIMULATED_TIMEOUT_DEADLINE_MS).toBeGreaterThan(2 * POLL_INTERVAL_MS);
+  });
+});
 
 describe("resolveRuntimeConfig", () => {
   it("runs on fixtures when no API base URL was configured", () => {

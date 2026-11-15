@@ -1,0 +1,5 @@
+GENERATED — DO NOT EDIT. Copied by `npm run sync:contracts` from contracts/scenarios/.
+
+amira.json  sha256:33b69e815cc04178186e0db19ff01c4bd5f4c9e2adce0297f0d1d537d8b3f7dd
+mateo.json  sha256:8062b7525f54574ac81aa194857e8234b7ab6482d979e31d805b879a4b4de253
+robert.json  sha256:d359e196aa6682649b91d17bff9f98e4f81992990df6b5d1f344b167a989fdab

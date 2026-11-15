@@ -1,952 +1,588 @@
-/**
- * FIXTURES CLIENT — A TEST DOUBLE, NOT THE ENGINE.
- *
- * It implements the same `ApiClient` interface as the live client so the whole
- * journey can run with no network. To make threshold previews and the
- * "change a rule" challenge demonstrable it re-applies the D4 comparison
- * (PASS / FAIL / UNKNOWN against a range) to RECORDED placeholder
- * measurements. That logic exists here for test data only:
- *
- *   - it is never used in live mode, where every verdict comes from the
- *     deterministic engine behind the API;
- *   - it only knows the recorded purchase of each persona and refuses others;
- *   - the interface shows "Test data — fixtures" whenever it is in use.
- *
- * PHASE 2: replace the recorded placeholders with the JSON fixtures in
- * `contracts/fixtures/api/` (through `@/lib/fixtures`).
- */
-import type {
-  ChallengeRequest,
-  ChallengeResponse,
-  CheckRequest,
-  CheckResult,
-  ConfirmRulesRequest,
-  CreateInvestigationRequest,
-  EvidenceRecord,
-  ExposureBreakdown,
-  ExposureResult,
-  Feasibility,
-  FractionInterval,
-  InterpretRequest,
-  InterpretResponse,
-  Investigation,
-  InvestigationStep,
-  MaxCompliant,
-  PersonaId,
-  Policy,
-  Portfolio,
-  PurchaseRequest,
-  Rule,
-  RuleEvaluation,
-  RuleResult,
-  ScenarioResult,
-  VerdictStatus,
-} from "@/lib/contracts";
 import type { FixtureSimulation } from "@/lib/config";
 import {
-  FIXTURE_CALCULATION_VERSION,
-  FIXTURE_CLOCK_START,
-  FIXTURE_SCENARIOS,
-  FIXTURE_SOURCES,
-  type FixtureRuleMeasure,
-  type FixtureScenario,
-} from "@/lib/fixtures";
-import { EPS, formatFraction, formatFractionRange, type LimitDirection } from "@/lib/format";
-import { getRuleThreshold, ruleDirection, ruleSummary, ruleTypeLabel, withRuleThreshold } from "@/lib/rules";
-import type { ApiClient, RequestOptions } from "./client";
+  EPS,
+  IDEMPOTENCY_KEY_PATTERN,
+  POLL_INTERVAL_MS,
+  SCHEMA_VERSION,
+  TERMINAL_JOB_STATUSES,
+  type ChallengeRequest,
+  type ChallengeResponse,
+  type CheckRequest,
+  type CheckResult,
+  type ConfirmRequest,
+  type ConfirmResponse,
+  type Id,
+  type Instrument,
+  type InstrumentId,
+  type InterpretRequest,
+  type Interpretation,
+  type InvestigationAccepted,
+  type InvestigationJob,
+  type PersonaId,
+  type Policy,
+  type PortfolioResponse,
+  type ProposedCorrection,
+  type PurchaseRequest,
+  type Rule,
+  type UnresolvedPurchaseRequest,
+} from "@/lib/contracts";
+import { canonical } from "@/lib/canonical";
+import { FIXTURES } from "@/lib/fixtures";
+import { formatFraction } from "@/lib/format";
+import { measureKey } from "@/lib/rules";
+import type { ApiClient, IdempotentRequestOptions, RequestOptions } from "./client";
 import { ApiError } from "./errors";
 
+/**
+ * The fixtures client: a test double for the service that REPLAYS the recorded
+ * bodies in `contracts/fixtures/api` (through `@/lib/fixtures`).
+ *
+ * It contains no calculation and writes no result: every `CheckResult` it
+ * returns is a recorded one. A request is answered only when a recorded
+ * answer exists for it; anything else is refused with a `no_fixture` error
+ * that says what is recorded. Five things are not recordings of the route
+ * they answer and are kept deliberately small:
+ * - GET /portfolio is recorded for Robert only; for Mateo and Amira the answer
+ *   is the contract's scenario file with the registry entries it names, put
+ *   together the way the recorded Robert answer is (nothing is computed);
+ * - a confirmation writes the stored rules the way contracts/SEMANTICS.md §14
+ *   says the server does (status, provenance, new rule id on a change);
+ * - the QUEUED and RUNNING snapshots of a job that has only a final recording
+ *   are the same job cut short (no result, fewer steps);
+ * - a CORRECT_FACT challenge echoes the user's assertion as an UNVERIFIED
+ *   correction, as the route does for any evidence record;
+ * - POST /check on a stored policy version answers with the recorded result
+ *   of the investigation of the same request under the same rules: the same
+ *   deterministic engine output, which is what both routes return.
+ *
+ * Screens show "Test data — fixtures" whenever this client is in use.
+ */
 export interface FixturesClientOptions {
   simulate?: FixtureSimulation | null;
-  /** Artificial delay so loading states are visible. Tests pass 0. */
+  /** Artificial delay of every call, so loading states are visible. */
   latencyMs?: number;
-  /** How many recorded steps each poll reveals. */
-  stepsPerPoll?: number;
 }
 
-interface Job {
-  base: Omit<Investigation, "status" | "steps" | "result" | "error" | "updated_at">;
-  steps: InvestigationStep[];
-  result: CheckResult;
-  polls: number;
+const DEFAULT_LATENCY_MS = 120;
+const CONFIRMED_BY = "demo_user";
+/** Stored policies that are not recordings carry this instead of a real hash. */
+const UNHASHED = `sha256:${"0".repeat(64)}`;
+
+const clone = <T>(value: T): T => structuredClone(value);
+const same = (a: number, b: number) => Math.abs(a - b) <= EPS;
+const normalize = (text: string) => text.trim().replace(/\s+/g, " ").replace(/[.!]+$/, "").toLowerCase();
+
+/** The rules a check evaluates: every rule with a number that is confirmed (or, in a preview, proposed). */
+function evaluatedKeys(rules: Rule[], preview: boolean): string[] {
+  return rules
+    .filter((rule) => rule.threshold !== null && (rule.status === "CONFIRMED" || (preview && rule.status === "PROPOSED")))
+    .map((rule) => `${measureKey(rule)}|${(rule.threshold as number).toFixed(9)}`)
+    .sort();
 }
 
-function tidy(value: number): number {
-  return Math.round(value * 1e10) / 1e10;
+const sameKeys = (a: string[], b: string[]) => a.length === b.length && a.every((key, index) => key === b[index]);
+
+function isResolved(request: PurchaseRequest | UnresolvedPurchaseRequest): request is PurchaseRequest {
+  return request.instrument_id !== null && request.target_direct_weight !== null;
 }
 
-function clone<T>(value: T): T {
-  return structuredClone(value);
+const sameRequest = (a: PurchaseRequest, b: PurchaseRequest) => a.instrument_id === b.instrument_id && same(a.target_direct_weight, b.target_direct_weight);
+
+function noFixture(message: string): never {
+  throw new ApiError("no_fixture", message);
 }
 
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const aborted = () => reject(new ApiError("aborted", "The request was cancelled."));
-    if (signal?.aborted) return aborted();
-    const timer = setTimeout(() => {
-      signal?.removeEventListener("abort", onAbort);
-      resolve();
-    }, ms);
-    const onAbort = () => {
-      clearTimeout(timer);
-      aborted();
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-  });
-}
-
-function notRecorded(message: string): ApiError {
-  return new ApiError("validation", message, { status: 422, code: "FIXTURE_NOT_RECORDED" });
-}
-
-// ---------------------------------------------------------------------------
-// D4 comparison applied to recorded measurements
-// ---------------------------------------------------------------------------
-
-function compare(direction: LimitDirection, interval: FractionInterval | null, limit: number): VerdictStatus {
-  if (!interval) return "UNKNOWN";
-  if (direction === "max") {
-    if (interval.upper <= limit + EPS) return "PASS";
-    if (interval.lower > limit + EPS) return "FAIL";
-    return "UNKNOWN";
-  }
-  if (interval.lower >= limit - EPS) return "PASS";
-  if (interval.upper < limit - EPS) return "FAIL";
-  return "UNKNOWN";
-}
-
-function gapFor(direction: LimitDirection, status: VerdictStatus, interval: FractionInterval | null, limit: number): number | null {
-  if (!interval || status === "UNKNOWN") return null;
-  const decisive =
-    direction === "max"
-      ? status === "FAIL"
-        ? interval.lower
-        : interval.upper
-      : status === "FAIL"
-        ? interval.upper
-        : interval.lower;
-  return tidy(decisive - limit);
-}
-
-function reasonFor(
-  direction: LimitDirection,
-  status: VerdictStatus,
-  label: string,
-  interval: FractionInterval | null,
-  limit: number,
-  noun: string,
-): string {
-  const limitText = formatFraction(limit);
-  if (!interval) return `${label}: no measurement is available, so this cannot be determined.`;
-  const measured = formatFractionRange(interval.lower, interval.upper);
-  if (status === "UNKNOWN") {
-    return `${label}: ${measured}. The ${noun} of ${limitText} falls inside that range, so this cannot be determined.`;
-  }
-  const atLimit = Math.abs((direction === "max" ? interval.upper : interval.lower) - limit) <= EPS;
-  if (status === "PASS") {
-    if (atLimit) return `${label}: ${measured}, exactly at the ${noun} of ${limitText}, which passes.`;
-    return direction === "max"
-      ? `${label}: ${measured}, within the ${noun} of ${limitText}.`
-      : `${label}: ${measured}, at or above the ${noun} of ${limitText}.`;
-  }
-  return direction === "max"
-    ? `${label}: ${measured}, above the ${noun} of ${limitText}.`
-    : `${label}: ${measured}, below the ${noun} of ${limitText}.`;
-}
-
-function makeEvaluation(
-  rule: Rule,
-  label: string,
-  interval: FractionInterval | null,
-  limit: number,
-  evidenceIds: string[],
-  noun: string,
-): RuleEvaluation {
-  const direction = ruleDirection(rule.rule_type);
-  const status = compare(direction, interval, limit);
-  return {
-    status,
-    measured: interval,
-    measured_label: label,
-    limit,
-    gap: gapFor(direction, status, interval, limit),
-    reason: reasonFor(direction, status, label, interval, limit, noun),
-    evidence_ids: evidenceIds,
-  };
-}
-
-function describePaths(b: ExposureBreakdown): string[] {
-  const lines = [`direct weight: ${formatFraction(b.direct)}`];
-  for (const p of b.paths) {
-    lines.push(
-      p.subject_weight_in_fund === null
-        ? `${p.fund_id}: no holdings file; ${formatFraction(p.fund_weight)} of the portfolio counted as possible extra`
-        : `${p.fund_id}: fund weight ${formatFraction(p.fund_weight)} x weight in fund ${formatFraction(p.subject_weight_in_fund)} = ${formatFraction(p.known_exposure, { decimals: 2 })}`,
+    if (signal?.aborted) {
+      reject(new ApiError("aborted", "The request was cancelled."));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        reject(new ApiError("aborted", "The request was cancelled."));
+      },
+      { once: true },
     );
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Recorded material, indexed
+// ---------------------------------------------------------------------------
+
+/** Finished jobs that can answer a new investigation. */
+const RECORDED_RESULTS: InvestigationJob[] = [
+  FIXTURES.jobs.robertSucceeded.response,
+  FIXTURES.jobs.robertAfterChallenge.response,
+  FIXTURES.jobs.mateoSucceeded.response,
+];
+
+/** Stored policies that exist as recordings (they carry the real content hash and timestamps). */
+const RECORDED_POLICIES: Policy[] = [FIXTURES.confirmRobertV1.response.policy, FIXTURES.challenges.changeRule.response.policy as Policy];
+
+const RULE_SLUGS: Record<Rule["rule_type"], (rule: Rule) => string> = {
+  max_issuer_exposure: () => "issuer-cap",
+  min_issuer_exposure: () => "issuer-min",
+  scenario_loss_budget: () => "loss-budget",
+  controversy_exclusion: () => "controversy",
+  exclusion: (rule) =>
+    rule.rule_type === "exclusion" && rule.parameters.definition.kind === "fund_reported_sector"
+      ? `excl-${rule.parameters.definition.sector.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`
+      : "excl-named",
+};
+
+/** Finished checks that can answer POST /check. */
+const RECORDED_CHECKS = [FIXTURES.checkRobertPreview, FIXTURES.checkMateoPreviewUnknown, FIXTURES.checkInvalidRequest];
+
+function requestLabel(request: PurchaseRequest): string {
+  return `${request.instrument_id} at a final direct weight of ${formatFraction(request.target_direct_weight)}`;
+}
+
+function thresholdList(rules: Rule[]): string {
+  return rules
+    .filter((rule) => rule.status === "CONFIRMED" && rule.threshold !== null)
+    .map((rule) => `${RULE_SLUGS[rule.rule_type](rule)} ${formatFraction(rule.threshold)}`)
+    .join(", ");
+}
+
+// ---------------------------------------------------------------------------
+// Portfolios
+// ---------------------------------------------------------------------------
+
+function portfolioResponse(personaId: PersonaId): PortfolioResponse {
+  if (personaId === FIXTURES.portfolioRobert.response.scenario.persona.persona_id) return FIXTURES.portfolioRobert.response;
+  const scenario = FIXTURES.scenarios[personaId];
+  const registry = FIXTURES.registries[`${personaId}_synthetic_universe`];
+  if (!scenario || !registry) {
+    throw new ApiError("not_found", "The test data holds no portfolio for this persona.", { status: 404, code: "NOT_FOUND" });
   }
-  lines.push(`known total (lower bound): ${formatFraction(b.lower, { decimals: 2 })}`);
-  if (b.possible_extra > EPS) lines.push(`upper bound with possible extra: ${formatFraction(b.upper, { decimals: 2 })}`);
-  return lines;
-}
-
-function coverageOf(b: ExposureBreakdown): number | null {
-  const funds = b.paths.reduce((sum, p) => sum + p.fund_weight, 0);
-  if (funds <= EPS) return null;
-  return tidy(b.paths.reduce((sum, p) => sum + p.fund_weight * p.coverage, 0) / funds);
-}
-
-function directWeight(portfolio: Portfolio, instrumentId: string): number {
-  return portfolio.positions.find((p) => p.instrument_id === instrumentId)?.weight ?? 0;
-}
-
-function samePurchase(a: PurchaseRequest | null, b: PurchaseRequest | null): boolean {
-  if (a === null || b === null) return a === b;
-  return a.instrument_id === b.instrument_id && Math.abs(a.target_direct_weight - b.target_direct_weight) <= EPS;
-}
-
-function describePurchase(purchase: PurchaseRequest): string {
-  return `${purchase.instrument_id} at a final direct weight of ${formatFraction(purchase.target_direct_weight)}`;
-}
-
-function evaluateScenario(
-  scenario: FixtureScenario,
-  rules: Rule[],
-  purchase: PurchaseRequest | null,
-  policyVersion: number | null,
-  isDraft: boolean,
-): CheckResult {
-  const portfolio = scenario.portfolio_response.portfolio;
-  const evidence: EvidenceRecord[] = [];
-  const addEvidence = (record: Omit<EvidenceRecord, "calculation_version" | "policy_version">): string => {
-    evidence.push({ ...record, calculation_version: FIXTURE_CALCULATION_VERSION, policy_version: policyVersion });
-    return record.evidence_id;
-  };
-  const phases = purchase ? (["starting", "proposed"] as const) : (["starting"] as const);
-  const subjectOf = (phase: "starting" | "proposed") =>
-    phase === "starting" ? "Starting portfolio" : "Portfolio after the proposed purchase";
-
-  const ruleResults: RuleResult[] = [];
-  const exposures: ExposureResult[] = [];
-  let scenarioResult: ScenarioResult | null = null;
-
-  const evaluable = rules.filter((rule) => rule.status !== "SUPERSEDED" && getRuleThreshold(rule) !== null);
-  for (const rule of evaluable) {
-    const limit = getRuleThreshold(rule) as number;
-
-    if (rule.rule_type === "scenario_loss_budget") {
-      const replay = scenario.replay && scenario.replay.scenario_id === rule.scenario_id ? scenario.replay : null;
-      const evaluations = {} as Record<"starting" | "proposed", RuleEvaluation>;
-      for (const phase of phases) {
-        const label = `Loss over the ${replay?.scenario_label ?? "replayed period"}`;
-        if (!replay) {
-          evaluations[phase] = makeEvaluation(rule, label, null, limit, [], "budget");
-          continue;
-        }
-        const measurement = replay[phase];
-        const returnId = addEvidence({
-          evidence_id: `ev-${rule.rule_id}-${phase}-return`,
-          metric_id: "scenario_terminal_return",
-          label: `Return over the ${replay.scenario_label}`,
-          value: measurement.scenario_terminal_return,
-          unit: "fraction",
-          subject: subjectOf(phase),
-          period_start: replay.period_start,
-          period_end: replay.period_end,
-          source_ids: ["fx-src-scenario", "fx-src-prices"],
-          coverage: null,
-          assumptions: replay.assumptions,
-          calculation_path: [
-            "for each instrument: adjusted price at period end / adjusted price at period start - 1, in CAD",
-            "portfolio return: sum of starting weight x instrument return; cash contributes 0",
-            "loss compared with the budget: minus the portfolio return",
-          ],
-        });
-        addEvidence({
-          evidence_id: `ev-${rule.rule_id}-${phase}-drawdown`,
-          metric_id: "scenario_max_drawdown",
-          label: `Deepest fall during the ${replay.scenario_label} (context only)`,
-          value: measurement.scenario_max_drawdown,
-          unit: "fraction",
-          subject: subjectOf(phase),
-          period_start: replay.period_start,
-          period_end: replay.period_end,
-          source_ids: ["fx-src-scenario", "fx-src-prices"],
-          coverage: null,
-          assumptions: [...replay.assumptions, "Daily values on the union calendar; each instrument's last value is carried forward."],
-          calculation_path: ["largest peak-to-trough fall of the daily portfolio value during the period"],
-        });
-        const loss = tidy(-measurement.scenario_terminal_return);
-        evaluations[phase] = makeEvaluation(rule, label, { lower: loss, upper: loss }, limit, [returnId], "budget");
-      }
-      ruleResults.push({
-        rule_id: rule.rule_id,
-        rule_type: rule.rule_type,
-        starting: evaluations.starting,
-        proposed: purchase ? evaluations.proposed : null,
-      });
-      if (replay) {
-        const decisive = purchase ? evaluations.proposed : evaluations.starting;
-        scenarioResult = {
-          scenario_id: replay.scenario_id,
-          scenario_label: replay.scenario_label,
-          rule_id: rule.rule_id,
-          period_start: replay.period_start,
-          period_end: replay.period_end,
-          starting: replay.starting,
-          proposed: purchase ? replay.proposed : null,
-          budget: limit,
-          status: decisive.status,
-          gap: decisive.gap,
-          assumptions: replay.assumptions,
-          evidence_ids: phases.flatMap((phase) => [
-            `ev-${rule.rule_id}-${phase}-return`,
-            `ev-${rule.rule_id}-${phase}-drawdown`,
-          ]),
-        };
-      }
-      continue;
-    }
-
-    const measure: FixtureRuleMeasure | undefined = scenario.measures[rule.rule_type];
-    const evaluations = {} as Record<"starting" | "proposed", RuleEvaluation>;
-    for (const phase of phases) {
-      if (!measure) {
-        evaluations[phase] = makeEvaluation(rule, ruleTypeLabel(rule.rule_type), null, limit, [], "limit");
-        continue;
-      }
-      const { label, breakdown } = measure[phase];
-      const evidenceId = addEvidence({
-        evidence_id: `ev-${rule.rule_id}-${phase}`,
-        metric_id: rule.rule_type === "max_issuer_exposure" || rule.rule_type === "min_issuer_exposure" ? "issuer_exposure_total" : "set_exposure_total",
-        label,
-        value: breakdown.lower,
-        unit: "fraction",
-        subject: subjectOf(phase),
-        period_start: null,
-        period_end: portfolio.valuation_date,
-        source_ids: measure.source_ids,
-        coverage: coverageOf(breakdown),
-        assumptions: measure.assumptions,
-        calculation_path: [...measure.calculation_path, ...describePaths(breakdown)],
-      });
-      evaluations[phase] = makeEvaluation(
-        rule,
-        label,
-        { lower: breakdown.lower, upper: breakdown.upper },
-        limit,
-        [evidenceId],
-        rule.rule_type === "min_issuer_exposure" ? "minimum" : "limit",
-      );
-    }
-    ruleResults.push({
-      rule_id: rule.rule_id,
-      rule_type: rule.rule_type,
-      starting: evaluations.starting,
-      proposed: purchase ? evaluations.proposed : null,
-    });
-
-    if (measure && rule.rule_type !== "controversy_exclusion") {
-      const chart = measure.chart ?? {
-        subject_label: measure.proposed.label,
-        starting: measure.starting.breakdown,
-        proposed: measure.proposed.breakdown,
-      };
-      const chartIds = phases.map((phase) =>
-        addEvidence({
-          evidence_id: `ev-${rule.rule_id}-chart-${phase}`,
-          metric_id: "exposure_breakdown",
-          label: `Exposure to ${chart.subject_label}`,
-          value: chart[phase].lower,
-          unit: "fraction",
-          subject: subjectOf(phase),
-          period_start: null,
-          period_end: portfolio.valuation_date,
-          source_ids: measure.source_ids,
-          coverage: coverageOf(chart[phase]),
-          assumptions: measure.assumptions,
-          calculation_path: [...measure.calculation_path, ...describePaths(chart[phase])],
-        }),
-      );
-      exposures.push({
-        rule_id: rule.rule_id,
-        subject_label: chart.subject_label,
-        limit,
-        starting: chart.starting,
-        proposed: purchase ? chart.proposed : null,
-        evidence_ids: chartIds,
-      });
-    }
+  // Same construction as the recorded Robert answer: the scenario, plus the
+  // registry entries of its positions and of the instruments it asks to buy.
+  const ids = new Set<InstrumentId>([
+    ...scenario.portfolio.positions.map((position) => position.instrument_id),
+    ...scenario.demo_requests.map((request) => request.purchase_request.instrument_id),
+  ]);
+  const instruments: Record<InstrumentId, Instrument> = {};
+  for (const id of ids) {
+    const instrument = registry.instruments[id];
+    if (instrument) instruments[id] = instrument;
   }
+  return { schema_version: SCHEMA_VERSION, scenario, instruments, purchasable_instrument_ids: [...ids].sort() };
+}
 
-  let feasibility: Feasibility | null = null;
-  if (purchase) {
-    const additional = tidy(purchase.target_direct_weight - directWeight(portfolio, purchase.instrument_id));
-    const cashAfter = tidy(portfolio.cash_weight - additional);
-    feasibility = {
-      status: cashAfter < -EPS ? "INSUFFICIENT_CASH" : "FEASIBLE",
-      funding_path: "CASH",
-      cash_before: portfolio.cash_weight,
-      cash_after: cashAfter,
-      additional_purchase: additional,
-    };
-    addEvidence({
-      evidence_id: "ev-cash-after",
-      metric_id: "cash_after_purchase",
-      label: "Cash after the purchase",
-      value: cashAfter,
-      unit: "fraction",
-      subject: "Portfolio after the proposed purchase",
-      period_start: null,
-      period_end: portfolio.valuation_date,
-      source_ids: ["fx-src-scenario"],
-      coverage: null,
-      assumptions: [
-        "Funded from existing cash only.",
-        "All other positions unchanged.",
-        "Fees and taxes excluded.",
-      ],
-      calculation_path: [
-        "cash after = starting cash - (target direct weight - starting direct weight)",
-        `${formatFraction(portfolio.cash_weight)} - (${formatFraction(purchase.target_direct_weight)} - ${formatFraction(directWeight(portfolio, purchase.instrument_id))}) = ${formatFraction(cashAfter)}`,
-      ],
-    });
-  }
+// ---------------------------------------------------------------------------
+// Jobs
+// ---------------------------------------------------------------------------
 
-  const funds = purchase ? scenario.funds.proposed : scenario.funds.starting;
-  const anyMissing = funds.some((f) => f.status === "MISSING" || f.status === "PARTIAL");
-  const allMissing = funds.filter((f) => f.status !== "NOT_APPLICABLE").every((f) => f.status === "MISSING");
+interface JobRecord {
+  /** Snapshots returned by successive GETs; the last one repeats. */
+  frames: InvestigationJob[];
+  polls: number;
+  corrections: ProposedCorrection[];
+  accepted: InvestigationAccepted;
+}
 
-  const proposedIssuer = ruleResults.find((r) => r.rule_type === "max_issuer_exposure")?.proposed;
-  const goalContext = purchase
-    ? scenario.goal_context.map((context) => ({
-        objective_id: context.objective_id,
-        text: context.text.replace(
-          "{value}",
-          proposedIssuer?.measured ? formatFractionRange(proposedIssuer.measured.lower, proposedIssuer.measured.upper) : "a larger share",
-        ),
-        evidence_ids: proposedIssuer?.evidence_ids ?? [],
-      }))
-    : [];
-
-  const result: CheckResult = {
-    persona_id: scenario.persona_id,
-    policy_version: policyVersion,
-    is_draft_preview: isDraft,
-    valuation_date: portfolio.valuation_date,
-    purchase,
-    feasibility,
-    rule_results: ruleResults,
-    exposures,
-    scenario: scenarioResult,
-    data_coverage: {
-      status: allMissing && funds.length > 0 ? "MISSING" : anyMissing ? "PARTIAL" : "COVERED",
-      funds,
-      notes: scenario.coverage_notes,
-    },
-    policy_consistency: { status: "CONSISTENT", findings: [] },
-    goal_context: goalContext,
-    max_compliant: null,
+/** The same job, cut short: what GET returns before it is finished. */
+function earlierFrames(final: InvestigationJob): InvestigationJob[] {
+  const queued: InvestigationJob = {
+    ...final,
+    status: "QUEUED",
+    updated_at: final.created_at,
+    agent: { ...final.agent, tool_rounds: 0 },
+    steps: [],
+    clarification: null,
+    result: null,
     explanation: [],
-    evidence,
-    sources: FIXTURE_SOURCES,
-    calculation_version: FIXTURE_CALCULATION_VERSION,
+    failure: null,
+    proposed_corrections: [],
   };
-
-  if (purchase && !isDraft) {
-    result.max_compliant = maxCompliant(scenario, evaluable, ruleResults, purchase);
-    if (result.max_compliant.status === "SUPPORTED") {
-      result.evidence.push({
-        evidence_id: "ev-max-compliant",
-        metric_id: "max_compliant_final_weight",
-        label: `Largest final direct weight of ${purchase.instrument_id} that passes every confirmed rule`,
-        value: result.max_compliant.final_direct_weight,
-        unit: "fraction",
-        subject: "Portfolio after a purchase at the boundary",
-        period_start: null,
-        period_end: portfolio.valuation_date,
-        source_ids: ["fx-src-scenario", "fx-src-holdings", "fx-src-prices"],
-        coverage: null,
-        assumptions: ["Funded from existing cash only.", "All other positions unchanged.", "Fees and taxes excluded."],
-        calculation_path: [
-          "for each confirmed rule: the largest final weight at which that rule still passes",
-          "also limited by available cash",
-          "the smallest of these, then the same checks re-run at that weight",
-        ],
-        calculation_version: FIXTURE_CALCULATION_VERSION,
-        policy_version: policyVersion,
-      });
-      result.max_compliant.evidence_ids = ["ev-max-compliant"];
-    }
-  }
-
-  result.explanation = ruleResults.map((r) => {
-    const evaluation = r.proposed ?? r.starting;
-    return { text: evaluation.reason, evidence_ids: evaluation.evidence_ids };
-  });
-  return result;
+  const shown = Math.max(1, Math.ceil(final.steps.length / 2));
+  const steps = final.steps.slice(0, shown).map((step, index) =>
+    index === shown - 1
+      ? { ...step, status: "RUNNING" as const, finished_at: null, result_summary: null, evidence_ids: [] }
+      : { ...step, evidence_ids: [] },
+  );
+  const running: InvestigationJob = { ...queued, status: "RUNNING", updated_at: steps.at(-1)?.started_at ?? final.created_at, steps };
+  return [queued, running];
 }
 
-/**
- * The boundary for the recorded purchase. Only the two rule types with a
- * closed form in the test data are supported; anything else withholds it.
- */
-function maxCompliant(
-  scenario: FixtureScenario,
-  rules: Rule[],
-  ruleResults: RuleResult[],
-  purchase: PurchaseRequest,
-): MaxCompliant {
-  const none = { final_direct_weight: null, additional_purchase: null, binding_rule_ids: [], verified_by_rerun: false, evidence_ids: [] };
-  const labelOf = (ruleId: string) => {
-    const rule = rules.find((r) => r.rule_id === ruleId);
-    return rule ? ruleTypeLabel(rule.rule_type) : ruleId;
-  };
+function framesFor(final: InvestigationJob): InvestigationJob[] {
+  const { robertQueued, robertRunning } = FIXTURES.jobs;
+  if (final.id === robertQueued.response.id && final.id === robertRunning.response.id) {
+    return [robertQueued.response, robertRunning.response, final];
+  }
+  return [...earlierFrames(final), final];
+}
 
-  const startingFail = ruleResults.find((r) => r.starting.status === "FAIL");
-  if (startingFail) {
-    return {
-      ...none,
-      status: "NO_FEASIBLE_PURCHASE",
-      binding_rule_ids: [startingFail.rule_id],
-      reason: `The starting portfolio already breaks the rule “${labelOf(startingFail.rule_id)}”. A purchase paid from existing cash, with every other position unchanged, cannot repair that: it would take a sale, which this funding path does not allow. No purchase is feasible under this funding path.`,
-    };
-  }
-  const unknown = ruleResults.find((r) => r.starting.status === "UNKNOWN" || r.proposed?.status === "UNKNOWN");
-  if (unknown) {
-    return {
-      ...none,
-      status: "WITHHELD",
-      binding_rule_ids: [unknown.rule_id],
-      reason: `The rule “${labelOf(unknown.rule_id)}” cannot be determined with the data available, so a maximum that respects every rule is not shown.`,
-    };
-  }
-
-  const portfolio = scenario.portfolio_response.portfolio;
-  const startingDirect = directWeight(portfolio, purchase.instrument_id);
-  const candidates: { rule_id: string | null; value: number }[] = [
-    { rule_id: null, value: tidy(startingDirect + portfolio.cash_weight) },
-  ];
-  for (const rule of rules) {
-    const limit = getRuleThreshold(rule) as number;
-    if (rule.rule_type === "max_issuer_exposure" && scenario.measures.max_issuer_exposure?.chart) {
-      const chart = scenario.measures.max_issuer_exposure.chart.proposed;
-      candidates.push({ rule_id: rule.rule_id, value: tidy(limit - chart.indirect_known - chart.possible_extra) });
-    } else if (rule.rule_type === "scenario_loss_budget" && scenario.replay) {
-      const slope = scenario.replay.instrument_return;
-      if (slope < 0) {
-        const room = limit + scenario.replay.starting.scenario_terminal_return;
-        candidates.push({ rule_id: rule.rule_id, value: tidy(startingDirect + room / -slope) });
-      }
-    } else {
-      return {
-        ...none,
-        status: "WITHHELD",
-        binding_rule_ids: [rule.rule_id],
-        reason: `Test data holds no boundary calculation for the rule “${ruleTypeLabel(rule.rule_type)}”, so a maximum that respects every rule is not shown.`,
-      };
-    }
-  }
-
-  const boundary = Math.min(...candidates.map((c) => c.value));
-  if (boundary < startingDirect - EPS) {
-    return {
-      ...none,
-      status: "NO_FEASIBLE_PURCHASE",
-      reason: "Respecting every confirmed rule would need a smaller position than the one already held. That takes a sale, which this funding path does not allow. No purchase is feasible under this funding path.",
-    };
-  }
-  const binding = candidates.filter((c) => c.rule_id !== null && Math.abs(c.value - boundary) <= 1e-6).map((c) => c.rule_id as string);
+function acceptedFor(final: InvestigationJob): InvestigationAccepted {
+  const recordedAccepted = [FIXTURES.investigationAccepted.response, FIXTURES.challenges.changeRule.response.investigation];
+  const match = recordedAccepted.find((accepted) => accepted?.id === final.id);
+  if (match) return match;
   return {
-    status: "SUPPORTED",
-    final_direct_weight: boundary,
-    additional_purchase: tidy(boundary - startingDirect),
-    binding_rule_ids: binding,
-    verified_by_rerun: true,
-    reason:
-      binding.length > 0
-        ? `Set by the rule “${labelOf(binding[0] as string)}”. The same checks were re-run at this weight and every confirmed rule passed.`
-        : "Set by the cash available. The same checks were re-run at this weight and every confirmed rule passed.",
-    evidence_ids: [],
+    schema_version: SCHEMA_VERSION,
+    id: final.id,
+    status: "QUEUED",
+    created_at: final.created_at,
+    deadline_at: final.deadline_at,
+    expires_at: final.expires_at,
+    poll: { path: `/investigations/${final.id}`, interval_ms: POLL_INTERVAL_MS },
   };
 }
 
-function buildSteps(scenario: FixtureScenario, policy: Policy, purchase: PurchaseRequest, result: CheckResult, jobIndex: number): InvestigationStep[] {
-  const portfolio = scenario.portfolio_response.portfolio;
-  const active = policy.rules.filter((r) => r.status === "CONFIRMED");
-  const start = Date.parse(FIXTURE_CLOCK_START) + jobIndex * 5 * 60_000;
-  const steps: Omit<InvestigationStep, "seq" | "finished_at" | "started_at" | "status" | "initiated_by">[] = [];
-
-  steps.push({
-    tool: "get_portfolio",
-    input_summary: `persona ${scenario.persona_id}`,
-    result_summary: `${portfolio.positions.length} positions and cash ${formatFraction(portfolio.cash_weight)}; valuation date ${portfolio.valuation_date}`,
-  });
-  steps.push({
-    tool: "get_policy",
-    input_summary: `policy version ${policy.policy_version}`,
-    result_summary: `${active.length} confirmed ${active.length === 1 ? "rule" : "rules"}: ${active.map(ruleSummary).join("; ")}`,
-  });
-  if (result.feasibility) {
-    steps.push({
-      tool: "simulate_change",
-      input_summary: `${describePurchase(purchase)}, funded from existing cash`,
-      result_summary: `additional purchase ${formatFraction(result.feasibility.additional_purchase)} of the portfolio; cash after ${formatFraction(result.feasibility.cash_after)}; ${result.feasibility.status === "FEASIBLE" ? "feasible" : "insufficient cash"}`,
-    });
-  }
-  const lookThrough = result.data_coverage.funds.filter((f) => f.status !== "NOT_APPLICABLE");
-  if (lookThrough.length > 0) {
-    steps.push({
-      tool: "get_holdings",
-      input_summary: lookThrough.map((f) => f.fund_id).join(", "),
-      result_summary: lookThrough
-        .map((f) => (f.status === "MISSING" ? `${f.fund_id}: no holdings file` : `${f.fund_id}: coverage ${formatFraction(f.coverage)}`))
-        .join("; "),
-    });
-  }
-  for (const exposure of result.exposures) {
-    const after = exposure.proposed ?? exposure.starting;
-    steps.push({
-      tool: "compute_exposure",
-      input_summary: `${exposure.subject_label}, portfolio after the purchase`,
-      result_summary:
-        after.possible_extra > EPS
-          ? `known ${formatFraction(after.lower)}; possible range ${formatFractionRange(after.lower, after.upper)}`
-          : `direct ${formatFraction(after.direct)} + through funds ${formatFraction(after.indirect_known)} = ${formatFraction(after.lower)}`,
-    });
-  }
-  const controversy = result.rule_results.find((r) => r.rule_type === "controversy_exclusion");
-  if (controversy) {
-    const evaluation = controversy.proposed ?? controversy.starting;
-    steps.push({
-      tool: "lookup_controversy_evidence",
-      input_summary: "companies held directly and through funds",
-      result_summary: evaluation.measured
-        ? `registry records found for ${formatFraction(evaluation.measured.lower)} of the portfolio; up to ${formatFraction(evaluation.measured.upper)} is in companies the registry does not cover`
-        : "no registry coverage",
-    });
-  }
-  if (result.scenario) {
-    const measurement = result.scenario.proposed ?? result.scenario.starting;
-    steps.push({
-      tool: "replay_period",
-      input_summary: `${result.scenario.scenario_id}, allocation after the purchase`,
-      result_summary: `return over the period ${formatFraction(measurement.scenario_terminal_return, { signed: true })}; deepest fall during the period ${formatFraction(measurement.scenario_max_drawdown, { signed: true })} (context only)`,
-    });
-  }
-  const counts = { PASS: 0, FAIL: 0, UNKNOWN: 0 };
-  for (const r of result.rule_results) counts[(r.proposed ?? r.starting).status] += 1;
-  steps.push({
-    tool: "check_rules",
-    input_summary: `policy version ${policy.policy_version}, portfolio after the purchase`,
-    result_summary: `${result.rule_results.length} ${result.rule_results.length === 1 ? "rule" : "rules"} checked: ${counts.PASS} pass, ${counts.FAIL} fail, ${counts.UNKNOWN} unknown`,
-  });
-  if (result.max_compliant) {
-    const max = result.max_compliant;
-    steps.push({
-      tool: "max_compliant_amount",
-      input_summary: `${purchase.instrument_id}, policy version ${policy.policy_version}`,
-      result_summary:
-        max.status === "SUPPORTED"
-          ? `largest final direct weight ${formatFraction(max.final_direct_weight, { decimals: 2, rounding: "down" })}; re-checked at that weight`
-          : max.status === "WITHHELD"
-            ? "withheld: a rule cannot be determined"
-            : "no purchase is feasible under this funding path",
-    });
-  }
-
-  return steps.map((step, index) => ({
-    ...step,
-    seq: index + 1,
-    status: "OK",
-    initiated_by: "SERVER",
-    started_at: new Date(start + index * 2_000 + 1_000).toISOString().replace(".000Z", "Z"),
-    finished_at: new Date(start + (index + 1) * 2_000).toISOString().replace(".000Z", "Z"),
-  }));
-}
+// ---------------------------------------------------------------------------
+// The client
+// ---------------------------------------------------------------------------
 
 export function createFixturesClient(options: FixturesClientOptions = {}): ApiClient {
-  const latencyMs = options.latencyMs ?? 150;
-  const stepsPerPoll = options.stepsPerPoll ?? 3;
   const simulate = options.simulate ?? null;
+  const latencyMs = options.latencyMs ?? DEFAULT_LATENCY_MS;
 
+  /** Stored policy versions per persona, oldest first. */
   const policies = new Map<PersonaId, Policy[]>();
-  const jobs = new Map<string, Job>();
-  const jobIdByKey = new Map<string, string>();
-  let correctionCount = 0;
-  let objectiveCount = 0;
+  const jobs = new Map<Id, JobRecord>();
+  const jobByKey = new Map<string, Id>();
+  let challengeCount = 0;
 
-  function scenarioFor(personaId: PersonaId): FixtureScenario {
-    const scenario = FIXTURE_SCENARIOS[personaId];
-    if (!scenario) {
-      throw new ApiError("not_found", `Test data holds no portfolio for this persona (${personaId}).`, {
-        status: 404,
-        code: "FIXTURE_NOT_RECORDED",
-      });
+  const wait = (requestOptions?: RequestOptions) => delay(latencyMs, requestOptions?.signal);
+
+  function storedPolicy(personaId: PersonaId, policyId: Id | null, version: number | null): Policy | null {
+    return (policies.get(personaId) ?? []).find((policy) => policy.policy_id === policyId && policy.version === version) ?? null;
+  }
+
+  function register(final: InvestigationJob, frames: InvestigationJob[]): InvestigationAccepted {
+    const accepted = acceptedFor(final);
+    jobs.set(final.id, { frames, polls: 0, corrections: [], accepted });
+    return accepted;
+  }
+
+  function requireKey(requestOptions: IdempotentRequestOptions | undefined): string {
+    const key = requestOptions?.idempotencyKey;
+    if (!key || !IDEMPOTENCY_KEY_PATTERN.test(key)) {
+      throw new ApiError("validation", "The Idempotency-Key header is missing or malformed.", { status: 400, code: "VALIDATION_ERROR" });
     }
-    return scenario;
+    return key;
   }
 
-  function requireRecordedPurchase(scenario: FixtureScenario, purchase: PurchaseRequest | null): void {
-    const recorded = scenario.portfolio_response.scenario_purchase;
-    if (purchase === null || samePurchase(purchase, recorded)) return;
-    throw notRecorded(
-      recorded
-        ? `Test data only holds a recorded result for ${describePurchase(recorded)}. Other requests need the live service.`
-        : "Test data holds no recorded purchase for this persona.",
-    );
-  }
-
-  async function respond<T>(requestOptions: RequestOptions | undefined, produce: () => T): Promise<T> {
-    await delay(latencyMs, requestOptions?.signal);
-    return clone(produce());
-  }
-
-  function createJob(scenario: FixtureScenario, policy: Policy, purchase: PurchaseRequest): string {
-    const index = jobs.size;
-    const id = `fx-inv-${index + 1}`;
-    const result = evaluateScenario(scenario, policy.rules, purchase, policy.policy_version, false);
-    const steps = buildSteps(scenario, policy, purchase, result, index);
-    jobs.set(id, {
-      base: {
-        investigation_id: id,
-        persona_id: scenario.persona_id,
-        policy_version: policy.policy_version,
-        purchase,
-        created_at: new Date(Date.parse(FIXTURE_CLOCK_START) + index * 5 * 60_000).toISOString().replace(".000Z", "Z"),
-        // Honest about what this is: a replay of recorded steps. No model is called in fixtures mode.
-        agent: { mode: "DETERMINISTIC_FALLBACK", note: "Test data: the fixtures client replays a fixed sequence of steps. No model was called." },
-      },
-      steps,
-      result,
-      polls: 0,
-    });
-    return id;
-  }
-
-  function snapshot(job: Job): Investigation {
-    const revealed = job.steps.slice(0, Math.min(job.steps.length, job.polls * stepsPerPoll));
-    const lastTime = revealed.at(-1)?.finished_at ?? job.base.created_at;
-    if (simulate === "poll-timeout") {
-      const stuck = job.steps.slice(0, Math.min(2, revealed.length));
-      return { ...job.base, status: job.polls === 0 ? "QUEUED" : "RUNNING", steps: stuck, result: null, error: null, updated_at: stuck.at(-1)?.finished_at ?? job.base.created_at };
-    }
-    if (simulate === "job-failed" && job.polls >= 2) {
-      const done = job.steps.slice(0, 3);
-      return {
-        ...job.base,
-        status: "FAILED",
-        steps: done,
-        result: null,
-        error: {
-          code: "FIXTURE_SIMULATED_FAILURE",
-          message: "Simulated failure (test data): the investigation worker stopped before it finished. No result was produced.",
-        },
-        updated_at: done.at(-1)?.finished_at ?? job.base.created_at,
-      };
-    }
-    if (job.polls === 0) return { ...job.base, status: "QUEUED", steps: [], result: null, error: null, updated_at: job.base.created_at };
-    const finished = job.polls > Math.ceil(job.steps.length / stepsPerPoll);
+  /** Writes the stored rule for one confirmation (SEMANTICS §14) and gives it a server-side id. */
+  function storeRule(rule: Rule, threshold: number, personaId: PersonaId, existing: Rule[], confirmedAt: string): Rule {
+    const slug = RULE_SLUGS[rule.rule_type](rule);
+    const number = existing.filter((other) => RULE_SLUGS[other.rule_type](other) === slug).length + 1;
+    const unchanged = rule.threshold !== null && same(rule.threshold, threshold);
+    const provenance =
+      rule.origin === "FICTIONAL_SCENARIO" && unchanged
+        ? ({ origin: "FICTIONAL_SCENARIO", threshold_source: "FICTIONAL_SCENARIO", threshold_quote: null } as const)
+        : rule.threshold_source === "USER_WORDS" && unchanged
+          ? ({ origin: "USER_STATED", threshold_source: "USER_WORDS", threshold_quote: rule.threshold_quote } as const)
+          : ({ origin: "USER_STATED", threshold_source: "USER_ENTERED", threshold_quote: null } as const);
     return {
-      ...job.base,
-      status: finished ? "SUCCEEDED" : "RUNNING",
-      steps: revealed,
-      result: finished ? job.result : null,
-      error: null,
-      updated_at: lastTime,
+      ...rule,
+      ...provenance,
+      rule_id: `${personaId}-${slug}-${number}`,
+      threshold,
+      status: "CONFIRMED",
+      confirmed_at: confirmedAt,
+      confirmed_by: CONFIRMED_BY,
+      supersedes_rule_id: null,
+      superseded_by_rule_id: null,
     };
   }
 
-  function latestPolicy(personaId: PersonaId): Policy | null {
-    return policies.get(personaId)?.at(-1) ?? null;
-  }
-
-  function storePolicy(policy: Policy): Policy {
-    policies.set(policy.persona_id, [...(policies.get(policy.persona_id) ?? []), policy]);
-    return policy;
-  }
-
-  function interpret(request: InterpretRequest): InterpretResponse {
-    const scenario = scenarioFor(request.persona_id);
-    if (request.text.trim() === "") {
-      throw new ApiError("validation", "Enter a goal or preference first.", { status: 422, code: "EMPTY_TEXT" });
+  function confirm(body: ConfirmRequest): ConfirmResponse {
+    const versions = body.policy_id === null ? [] : (policies.get(body.persona_id) ?? []);
+    const latest = versions.at(-1) ?? null;
+    if (body.policy_id !== null && (!latest || latest.policy_id !== body.policy_id || latest.version !== body.base_version)) {
+      const conflict = FIXTURES.errors.policyVersionConflict;
+      throw new ApiError("validation", conflict.response.error.message, { status: conflict.status, code: conflict.response.error.code });
     }
-    const response = clone(scenario.interpretation);
-    for (const answer of request.clarification_answers) {
-      const outcome = scenario.clarification_outcomes[answer.option_id];
-      response.clarifications = response.clarifications.filter((c) => c.clarification_id !== answer.clarification_id);
-      if (!outcome) continue;
-      response.proposed_rules.push(...outcome.proposed_rules);
-      response.unsupported.push(...outcome.unsupported);
-    }
-    if (request.text.trim() !== scenario.portfolio_response.scenario_objective_text) {
-      response.notes.push(
-        "Test data returns the recorded interpretation of the scenario sentence. Your edited wording was not interpreted; the live service interprets what you type.",
-      );
-    }
-    return response;
-  }
-
-  function confirm(request: ConfirmRulesRequest): Policy {
-    scenarioFor(request.persona_id);
-    if (request.confirmations.length === 0) {
-      throw new ApiError("validation", "There is no rule to confirm.", { status: 422, code: "NOTHING_TO_CONFIRM" });
-    }
-    for (const { threshold } of request.confirmations) {
-      if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-        throw new ApiError("validation", "A threshold must be between 0% and 100% of the portfolio.", { status: 422, code: "THRESHOLD_OUT_OF_RANGE" });
+    for (const confirmation of body.confirmations) {
+      if (typeof confirmation.threshold !== "number" || !Number.isFinite(confirmation.threshold) || confirmation.threshold < 0 || confirmation.threshold > 1) {
+        throw new ApiError("validation", "A confirmation must carry the number the user accepted, as a fraction between 0 and 1.", {
+          status: 422,
+          code: "INVALID_CONFIRMATION",
+        });
       }
     }
-    const history = policies.get(request.persona_id) ?? [];
-    const base = request.base_policy_version === null ? null : history.find((p) => p.policy_version === request.base_policy_version);
-    if (request.base_policy_version !== null && !base) {
-      throw new ApiError("validation", `Policy version ${request.base_policy_version} does not exist.`, { status: 422, code: "UNKNOWN_POLICY_VERSION" });
+
+    const version = (latest?.version ?? 0) + 1;
+    // Recorded timestamps: version 1 at 15:00, each later version six minutes on.
+    const createdAt = `2026-11-14T15:${String((version - 1) * 6).padStart(2, "0")}:00Z`;
+    const rules: Rule[] = (latest?.rules ?? []).map((rule) =>
+      body.withdraw_rule_ids.includes(rule.rule_id) && rule.status === "CONFIRMED" ? { ...rule, status: "SUPERSEDED" } : { ...rule },
+    );
+    for (const { rule, threshold } of body.confirmations) {
+      const stored = storeRule(rule, threshold, body.persona_id, rules, createdAt);
+      // A confirmed rule that measures the same thing is replaced, and kept in the version as SUPERSEDED.
+      const replaced = rules.find((other) => other.status === "CONFIRMED" && measureKey(other) === measureKey(stored));
+      if (replaced) {
+        replaced.status = "SUPERSEDED";
+        replaced.superseded_by_rule_id = stored.rule_id;
+        stored.supersedes_rule_id = replaced.rule_id;
+      }
+      rules.push(stored);
     }
-    const version = (history.at(-1)?.policy_version ?? 0) + 1;
-    const carried = base ? base.rules.filter((r) => r.status === "CONFIRMED") : [];
-    const replaced = new Set(request.confirmations.map((c) => c.rule.supersedes_rule_id ?? c.rule.rule_id));
-    const confirmed = request.confirmations.map(({ rule, threshold }): Rule => {
-      const previous = carried.find((r) => r.rule_id === (rule.supersedes_rule_id ?? rule.rule_id));
-      return {
-        ...withRuleThreshold(rule, threshold),
-        rule_id: previous ? `${previous.rule_id.replace(/-v\d+$/, "")}-v${version}` : rule.rule_id,
-        supersedes_rule_id: previous ? previous.rule_id : null,
-        status: "CONFIRMED",
-      };
-    });
-    return storePolicy({
-      policy_id: `fx-policy-${request.persona_id}`,
-      policy_version: version,
-      previous_version: base?.policy_version ?? null,
-      persona_id: request.persona_id,
-      created_at: new Date(Date.parse(FIXTURE_CLOCK_START) - 60_000 + version * 1_000).toISOString().replace(".000Z", "Z"),
-      objectives: request.objectives,
-      rules: [
-        ...carried.filter((r) => !replaced.has(r.rule_id)),
-        ...confirmed,
-        ...carried.filter((r) => replaced.has(r.rule_id)).map((r): Rule => ({ ...r, status: "SUPERSEDED" })),
-      ],
-    });
+    // Policy order as recorded: a replacement sits right after the rule it supersedes.
+    const ordered: Rule[] = [];
+    for (const rule of rules) {
+      if (rule.supersedes_rule_id !== null && rules.some((other) => other.rule_id === rule.supersedes_rule_id)) continue;
+      ordered.push(rule);
+      const replacement = rules.find((other) => other.supersedes_rule_id === rule.rule_id);
+      if (replacement) ordered.push(replacement);
+    }
+
+    const written: Policy = {
+      schema_version: SCHEMA_VERSION,
+      policy_id: latest?.policy_id ?? `pol-${body.persona_id}-demo`,
+      persona_id: body.persona_id,
+      version,
+      parent_version: latest?.version ?? null,
+      created_at: createdAt,
+      objectives: body.objectives,
+      rules: ordered,
+      change_note: body.change_note ?? (version === 1 ? "Rules confirmed by the user." : "Rules changed by the user."),
+      content_hash: UNHASHED,
+    };
+    // When the result is a policy that exists as a recording, the recording is returned, hash and all.
+    const state = (policy: Policy) => policy.rules.map((rule) => `${rule.rule_id}|${rule.status}|${rule.threshold}|${rule.origin}`).join(";");
+    const recordedTwin = RECORDED_POLICIES.find(
+      (policy) => policy.persona_id === written.persona_id && policy.version === written.version && state(policy) === state(written),
+    );
+    const policy = recordedTwin ? clone(recordedTwin) : written;
+    policies.set(body.persona_id, [...versions, policy]);
+    return { schema_version: SCHEMA_VERSION, policy: clone(policy) };
   }
 
-  function challenge(investigationId: string, request: ChallengeRequest): ChallengeResponse {
-    const job = jobs.get(investigationId);
-    if (!job) throw new ApiError("not_found", "Test data has no record of this investigation.", { status: 404 });
-    const scenario = scenarioFor(job.base.persona_id);
+  function findRecordedResult(personaId: PersonaId, asked: PurchaseRequest | UnresolvedPurchaseRequest, policy: Policy): InvestigationJob | null {
+    if (!isResolved(asked)) return null;
+    const request = asked;
+    return (
+      RECORDED_RESULTS.find((job) => {
+        if (job.persona_id !== personaId || !job.resolved_request || !job.result) return false;
+        if (!sameRequest(job.resolved_request, request)) return false;
+        const evaluated = job.result.rule_results.map((result) => `${result.rule_id}|${result.limit.toFixed(9)}`).sort();
+        const confirmed = policy.rules
+          .filter((rule) => rule.status === "CONFIRMED" && rule.threshold !== null)
+          .map((rule) => `${rule.rule_id}|${(rule.threshold as number).toFixed(9)}`)
+          .sort();
+        return sameKeys(evaluated, confirmed);
+      }) ?? null
+    );
+  }
 
-    if (request.kind === "CORRECT_FACT") {
-      if (!job.result.evidence.some((e) => e.evidence_id === request.evidence_id)) {
-        throw new ApiError("validation", "That figure is not part of this report.", { status: 422, code: "UNKNOWN_EVIDENCE" });
-      }
-      correctionCount += 1;
-      return {
-        kind: "CORRECT_FACT",
-        correction: {
-          correction_id: `fx-correction-${correctionCount}`,
-          evidence_id: request.evidence_id,
-          proposed_value_text: request.proposed_value_text,
-          reason_text: request.reason_text,
-          status: "UNVERIFIED",
-          provenance: { asserted_by: "USER", asserted_at: new Date().toISOString() },
-          applied_to_calculation: false,
-        },
-      };
-    }
-
-    if (request.kind === "CLARIFY_PREFERENCE") {
-      if (request.text.trim() === "") {
-        throw new ApiError("validation", "Describe the preference first.", { status: 422, code: "EMPTY_TEXT" });
-      }
-      objectiveCount += 1;
-      return {
-        kind: "CLARIFY_PREFERENCE",
-        interpretation: {
-          objectives: [
-            { objective_id: `obj-${job.base.persona_id}-stated-${objectiveCount}`, original_words: request.text.trim(), origin: "USER_STATED" },
-          ],
-          proposed_rules: [],
-          clarifications: [],
-          unsupported: [],
-          notes: [
-            "Test data does not interpret new wording. Your sentence is stored, unchanged, as a qualitative objective. The live service may also answer with proposed rules or a clarification question.",
-          ],
-        },
-      };
-    }
-
-    const policy = (policies.get(job.base.persona_id) ?? []).find((p) => p.policy_version === job.base.policy_version);
-    const rule = policy?.rules.find((r) => r.rule_id === request.rule_id && r.status === "CONFIRMED");
-    if (!policy || !rule) {
-      throw new ApiError("validation", "That rule is not a confirmed rule of the policy this report used.", { status: 422, code: "UNKNOWN_RULE" });
-    }
-    const previousText = formatFraction(getRuleThreshold(rule));
-    const next = confirm({
-      persona_id: job.base.persona_id,
-      base_policy_version: latestPolicy(job.base.persona_id)?.policy_version ?? policy.policy_version,
-      objectives: policy.objectives,
-      confirmations: [
-        {
-          rule: {
-            ...rule,
-            origin: "USER_STATED",
-            original_words: `Change requested by you: ${ruleTypeLabel(rule.rule_type).toLowerCase()} from ${previousText} to ${formatFraction(request.new_threshold)}.`,
-            supersedes_rule_id: rule.rule_id,
-          },
-          threshold: request.new_threshold,
-        },
-      ],
-    });
-    const id = createJob(scenario, next, job.base.purchase);
-    return { kind: "CHANGE_RULE", policy: next, investigation_id: id, status: "QUEUED" };
+  function recordedFor(personaId: PersonaId): string {
+    const available = RECORDED_RESULTS.filter((job) => job.persona_id === personaId && job.resolved_request && job.result).map(
+      (job) =>
+        `${requestLabel(job.resolved_request as PurchaseRequest)} with limits ${(job.result as CheckResult).rule_results
+          .map((result) => formatFraction(result.limit))
+          .join(" and ")}`,
+    );
+    return available.length > 0 ? `Recorded for this persona: ${available.join("; ")}.` : "Nothing is recorded for this persona.";
   }
 
   return {
     mode: "fixtures",
 
-    getPortfolio: (personaId, o) =>
-      respond(o, () => {
-        if (simulate === "portfolio-error") {
-          throw new ApiError("server", "Simulated failure (test data): the portfolio could not be loaded.", { status: 503, code: "FIXTURE_SIMULATED_FAILURE" });
+    async getPortfolio(personaId, requestOptions) {
+      await wait(requestOptions);
+      if (simulate === "portfolio-error") {
+        throw new ApiError("server", "Simulated failure (test data): the portfolio service did not answer. Nothing was loaded.", { status: 503 });
+      }
+      return clone(portfolioResponse(personaId));
+    },
+
+    async interpretRules(body: InterpretRequest, requestOptions) {
+      await wait(requestOptions);
+      const match = Object.values(FIXTURES.interpret).find(
+        (fixture) => fixture.request.persona_id === body.persona_id && normalize(fixture.request.text) === normalize(body.text),
+      );
+      if (!match) {
+        const known = Object.values(FIXTURES.interpret).filter((fixture) => fixture.request.persona_id === body.persona_id);
+        noFixture(
+          known.length > 0
+            ? `The test data holds a recorded interpretation for one sentence of this persona only: "${known[0]?.request.text}" Use that sentence, or confirm the rules the scenario offers.`
+            : "The test data holds no recorded interpretation for this persona. Confirm the rules the scenario offers; your own words need the live service.",
+        );
+      }
+      return clone<Interpretation>(match.response);
+    },
+
+    async confirmRules(body, requestOptions) {
+      await wait(requestOptions);
+      return confirm(body);
+    },
+
+    async check(body: CheckRequest, requestOptions) {
+      await wait(requestOptions);
+      if (simulate === "check-error") {
+        throw new ApiError("server", "Simulated failure (test data): the check service did not answer.", { status: 503 });
+      }
+      const recordedCheck = RECORDED_CHECKS.find((fixture) => {
+        if (fixture.request.persona_id !== body.persona_id || !sameRequest(fixture.request.purchase_request, body.purchase_request)) return false;
+        if (fixture.request.draft_rules === null || body.draft_rules === null) {
+          return fixture.request.draft_rules === null && body.draft_rules === null && fixture.request.policy_version === body.policy_version;
         }
-        return scenarioFor(personaId).portfolio_response;
-      }),
+        return sameKeys(evaluatedKeys(body.draft_rules, true), evaluatedKeys(fixture.request.draft_rules, true));
+      });
+      if (recordedCheck) return clone(recordedCheck.response);
 
-    interpretRules: (request, o) => respond(o, () => interpret(request)),
-
-    confirmRules: (request, o) => respond(o, () => ({ policy: confirm(request) })),
-
-    check: (request: CheckRequest, o) =>
-      respond(o, () => {
-        if (simulate === "check-error") {
-          throw new ApiError("server", "Simulated failure (test data): the preview could not be calculated.", { status: 503, code: "FIXTURE_SIMULATED_FAILURE" });
-        }
-        const scenario = scenarioFor(request.persona_id);
-        requireRecordedPurchase(scenario, request.purchase);
-        return { result: evaluateScenario(scenario, request.rules, request.purchase, null, request.is_draft_preview) };
-      }),
-
-    createInvestigation: (request: CreateInvestigationRequest, o) =>
-      respond(o, () => {
-        const scenario = scenarioFor(request.persona_id);
-        const existing = jobIdByKey.get(request.idempotency_key);
-        if (existing) return { investigation_id: existing, status: snapshot(jobs.get(existing) as Job).status };
-        const policy = (policies.get(request.persona_id) ?? []).find((p) => p.policy_version === request.policy_version);
+      if (body.draft_rules === null) {
+        // A check of a stored policy version: the engine output recorded for the same request under the same rules.
+        const policy = storedPolicy(body.persona_id, body.policy_id, body.policy_version);
         if (!policy) {
-          throw new ApiError("validation", `Policy version ${request.policy_version} does not exist. Confirm at least one rule first.`, { status: 422, code: "UNKNOWN_POLICY_VERSION" });
+          throw new ApiError("not_found", "No stored policy with this id and version.", { status: 404, code: "NOT_FOUND" });
         }
-        requireRecordedPurchase(scenario, request.purchase);
-        const id = createJob(scenario, policy, request.purchase);
-        jobIdByKey.set(request.idempotency_key, id);
-        return { investigation_id: id, status: "QUEUED" as const };
-      }),
+        const finished = findRecordedResult(body.persona_id, body.purchase_request, policy);
+        if (finished?.result) return clone(finished.result);
+        noFixture(
+          `The test data holds no recorded check of ${requestLabel(body.purchase_request)} under these rules (${thresholdList(policy.rules) || "no confirmed rule"}). ${recordedFor(body.persona_id)} Anything else needs the live service.`,
+        );
+      }
 
-    getInvestigation: (investigationId, o) =>
-      respond(o, () => {
-        const job = jobs.get(investigationId);
-        if (!job) throw new ApiError("not_found", "Test data has no record of this investigation.", { status: 404 });
-        job.polls += 1;
-        return snapshot(job);
-      }),
+      const previews = RECORDED_CHECKS.filter((fixture) => fixture.request.persona_id === body.persona_id && fixture.request.draft_rules !== null).map(
+        (fixture) =>
+          `${requestLabel(fixture.request.purchase_request)} with ${(fixture.request.draft_rules ?? [])
+            .filter((rule) => rule.status === "PROPOSED" && rule.threshold !== null)
+            .map((rule) => `a draft ${RULE_SLUGS[rule.rule_type](rule) === "issuer-cap" ? "single-company limit" : "threshold"} of ${formatFraction(rule.threshold)}`)
+            .join(" and ")}`,
+      );
+      noFixture(
+        previews.length > 0
+          ? `The test data holds one recorded preview for this persona: ${previews.join("; ")}. Other draft values need the live service.`
+          : "The test data holds no recorded preview for this persona. Draft values need the live service.",
+      );
+    },
 
-    challengeInvestigation: (investigationId, request, o) => respond(o, () => challenge(investigationId, request)),
+    async createInvestigation(body, requestOptions) {
+      await wait(requestOptions);
+      const key = requireKey(requestOptions);
+      const knownId = jobByKey.get(key);
+      const known = knownId ? jobs.get(knownId) : undefined;
+      if (known) return clone(known.accepted);
+
+      if (simulate === "job-failed") {
+        const failed = FIXTURES.jobs.failed.response;
+        const accepted = register(failed, [...earlierFrames({ ...failed, failure: null }), failed]);
+        jobByKey.set(key, failed.id);
+        return clone(accepted);
+      }
+
+      const policy = storedPolicy(body.persona_id, body.policy_id, body.policy_version);
+      if (!policy) {
+        throw new ApiError("not_found", "No stored policy with this id and version.", { status: 404, code: "NOT_FOUND" });
+      }
+      const final = findRecordedResult(body.persona_id, body.request, policy);
+      if (!final) {
+        const asked = isResolved(body.request) ? requestLabel(body.request) : "a request in free text";
+        noFixture(
+          `The test data holds no recorded investigation for ${asked} under these rules (${thresholdList(policy.rules) || "no confirmed rule"}). ${recordedFor(body.persona_id)} Anything else needs the live service.`,
+        );
+      }
+      // A job that never finishes: the first two snapshots, and then the second one for ever.
+      const frames = simulate === "poll-timeout" ? earlierFrames(final) : framesFor(final);
+      const accepted = register(final, frames);
+      jobByKey.set(key, final.id);
+      return clone(accepted);
+    },
+
+    async getInvestigation(investigationId, requestOptions) {
+      await wait(requestOptions);
+      const record = jobs.get(investigationId);
+      if (!record) {
+        const missing = FIXTURES.errors.notFound;
+        throw new ApiError("not_found", missing.response.error.message, { status: missing.status, code: missing.response.error.code });
+      }
+      const frame = record.frames[Math.min(record.polls, record.frames.length - 1)] as InvestigationJob;
+      record.polls += 1;
+      const job = clone(frame);
+      if (TERMINAL_JOB_STATUSES.includes(job.status)) job.proposed_corrections = [...job.proposed_corrections, ...clone(record.corrections)];
+      return job;
+    },
+
+    async challengeInvestigation(investigationId, body: ChallengeRequest, requestOptions) {
+      await wait(requestOptions);
+      const record = jobs.get(investigationId);
+      const final = record?.frames.at(-1);
+      if (!record || !final) {
+        const missing = FIXTURES.errors.notFound;
+        throw new ApiError("not_found", missing.response.error.message, { status: missing.status, code: missing.response.error.code });
+      }
+      if (final.status !== "SUCCEEDED" || record.polls < record.frames.length) {
+        throw new ApiError("validation", "This investigation has not finished, so it cannot be challenged yet.", { status: 409, code: "INVESTIGATION_NOT_FINISHED" });
+      }
+
+      const matches = (fixture: { request: ChallengeRequest; response: ChallengeResponse }) =>
+        fixture.response.challenge.investigation_id === investigationId && fixture.request.type === body.type;
+
+      if (body.type === "CORRECT_FACT") {
+        const fixture = FIXTURES.challenges.correctFact;
+        const evidence = final.result?.evidence.find((item) => item.evidence_id === body.payload.evidence_id);
+        if (!evidence) {
+          throw new ApiError("validation", "This evidence record is not part of the investigation.", { status: 422, code: "UNSUPPORTED_CHALLENGE" });
+        }
+        let response: ChallengeResponse;
+        if (matches(fixture) && canonical(fixture.request.payload) === canonical(body.payload) && record.corrections.length === 0) {
+          response = clone(fixture.response);
+        } else {
+          challengeCount += 1;
+          const number = String(challengeCount + 100).padStart(4, "0");
+          const at = final.updated_at;
+          response = {
+            schema_version: SCHEMA_VERSION,
+            challenge: { challenge_id: `ch-${final.persona_id}-${number}`, investigation_id: investigationId, type: "CORRECT_FACT", payload: clone(body.payload), created_at: at },
+            proposed_correction: {
+              correction_id: `corr-${final.persona_id}-${number}`,
+              challenge_id: `ch-${final.persona_id}-${number}`,
+              investigation_id: investigationId,
+              evidence_id: evidence.evidence_id,
+              original_value: evidence.value,
+              original_unit: evidence.unit,
+              asserted_value: body.payload.asserted_value,
+              asserted_unit: body.payload.asserted_unit,
+              provenance: { asserted_by: "USER", asserted_at: at, user_note: body.payload.user_note, user_source: body.payload.user_source },
+              status: "UNVERIFIED",
+              applied_to_calculation: false,
+            },
+            interpretation: null,
+            policy: null,
+            investigation: null,
+          };
+        }
+        if (response.proposed_correction) record.corrections.push(clone(response.proposed_correction));
+        return response;
+      }
+
+      if (body.type === "CLARIFY_PREFERENCE") {
+        const fixture = FIXTURES.challenges.clarifyPreference;
+        const recordedText = fixture.request.type === "CLARIFY_PREFERENCE" ? fixture.request.payload.text : "";
+        if (matches(fixture) && normalize(recordedText) === normalize(body.payload.text)) return clone(fixture.response);
+        noFixture(
+          matches(fixture)
+            ? `The test data holds one recorded clarification for this investigation: "${recordedText}" Other wording needs the live service.`
+            : "The test data holds no recorded clarification for this investigation. It needs the live service.",
+        );
+      }
+
+      const fixture = FIXTURES.challenges.changeRule;
+      const recordedChange = fixture.request.type === "CHANGE_RULE" ? fixture.request.payload : null;
+      const child = FIXTURES.jobs.robertAfterChallenge.response;
+      if (matches(fixture) && recordedChange && fixture.response.policy && recordedChange.rule_id === body.payload.rule_id && same(recordedChange.new_threshold, body.payload.new_threshold)) {
+        requireKey(requestOptions);
+        const personaId = fixture.response.policy.persona_id;
+        const versions = policies.get(personaId) ?? [];
+        if (!versions.some((policy) => policy.version === fixture.response.policy?.version)) {
+          policies.set(personaId, [...versions, clone(fixture.response.policy)]);
+        }
+        if (!jobs.has(child.id)) register(child, framesFor(child));
+        return clone(fixture.response);
+      }
+      noFixture(
+        matches(fixture) && recordedChange
+          ? `The test data holds one recorded rule change for this investigation: ${recordedChange.rule_id} to ${formatFraction(recordedChange.new_threshold, { decimals: 0 })}. Other changes need the live service.`
+          : "The test data holds no recorded rule change for this investigation. It needs the live service.",
+      );
+    },
   };
 }

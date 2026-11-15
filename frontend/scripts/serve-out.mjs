@@ -6,16 +6,26 @@
  * stands in for the static host (S3 + CloudFront in the deployed setup). It is
  * used by `npm start` and by the Playwright tests. Standard library only.
  *
- *   node scripts/serve-out.mjs [--port 4173]
+ *   node scripts/serve-out.mjs [--port 4173] [--dir out]
+ *
+ * `--dir` names a folder inside `frontend/` (the tests serve `out-live/`, a
+ * second build made with an API address).
  */
 import { createServer } from "node:http";
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "out");
+const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 const args = process.argv.slice(2);
+const dirFlag = args.indexOf("--dir");
+const dirName = dirFlag >= 0 ? (args[dirFlag + 1] ?? "") : "out";
+const root = path.resolve(projectRoot, dirName);
+if (dirName === "" || !root.startsWith(projectRoot + path.sep)) {
+  console.error("serve-out: --dir must name a folder inside the frontend directory");
+  process.exit(1);
+}
 const portFlag = args.indexOf("--port");
 const port = Number(portFlag >= 0 ? args[portFlag + 1] : (process.env.PORT ?? 4173));
 if (!Number.isInteger(port) || port <= 0) {
@@ -84,7 +94,7 @@ const server = createServer(async (request, response) => {
 });
 
 if (!(await isFile(path.join(root, "index.html")))) {
-  console.error("serve-out: out/index.html not found. Run `npm run build` first.");
+  console.error(`serve-out: ${dirName}/index.html not found. Run \`npm run build\` first (or \`npm run test:e2e\`, which builds both folders).`);
   process.exit(1);
 }
 

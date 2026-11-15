@@ -1,88 +1,150 @@
 "use client";
 
+import { useId } from "react";
 import { EvidenceButton } from "@/components/evidence/EvidenceProvider";
-import { StatusBadge } from "@/components/ui/Badge";
+import { UnknownBlock } from "@/components/ui/AsyncStates";
 import { Notice } from "@/components/ui/Notice";
-import type { CheckResult, ScenarioMeasurement, ScenarioResult } from "@/lib/contracts";
-import { formatDate, formatFraction, formatGap, UNKNOWN_TEXT } from "@/lib/format";
+import { cn } from "@/lib/cn";
+import type { CheckResult, InstrumentReturn, ScenarioMeasures, ScenarioResult } from "@/lib/contracts";
+import { formatDate, formatReturn } from "@/lib/format";
 
-const SCENARIO_NOTES: Record<string, string> = {
-  replay_2022: "Replay of an assumed allocation through 2022 — not a forecast",
-};
+const NOT_COMPUTED = "Not computed";
 
-/** The label every scenario figure carries. */
-export function scenarioNote(scenario: Pick<ScenarioResult, "scenario_id" | "period_start" | "period_end">): string {
+function ageText(days: number | null): string {
+  if (days === null) return "";
+  return days === 0 ? " (same day)" : ` (${days} ${days === 1 ? "day" : "days"} earlier)`;
+}
+
+function MeasureRow({ label, hint, values, testId }: { label: string; hint?: string; values: string[]; testId: string }) {
   return (
-    SCENARIO_NOTES[scenario.scenario_id] ??
-    `Replay of an assumed allocation from ${formatDate(scenario.period_start)} to ${formatDate(scenario.period_end)} — not a forecast`
+    <tr className="border-b border-line" data-testid={testId}>
+      <th scope="row" className="py-2 pr-3 font-semibold text-ink">
+        {label}
+        {hint ? <span className="block text-sm font-normal text-ink-muted">{hint}</span> : null}
+      </th>
+      {values.map((value, index) => (
+        <td key={index} className="tabular py-2 pl-3 text-right text-lg font-semibold text-ink">
+          {value}
+        </td>
+      ))}
+    </tr>
   );
 }
 
-/** A terminal return worded as a loss: -0.178 -> "17.8% loss"; a gain is said to be no loss. */
-export function lossText(terminalReturn: number | null): string {
-  if (terminalReturn === null || !Number.isFinite(terminalReturn)) return UNKNOWN_TEXT;
-  if (terminalReturn < 0) return `${formatFraction(-terminalReturn)} loss`;
-  return `No loss (${formatFraction(terminalReturn, { signed: true })})`;
+/** One date a price or an exchange rate was taken from, kept on one line, with how much older it is than the date that was wanted. */
+function UsedDate({ date, ageDays }: { date: string; ageDays: number | null }) {
+  return (
+    <>
+      <span className="whitespace-nowrap">{formatDate(date)}</span>
+      {ageText(ageDays)}
+    </>
+  );
 }
 
-function measurementCells(measurement: ScenarioMeasurement | null) {
+/** On a phone a row is a small grid: the instrument and its return on one line, the dates on the full width below. From the sm width up it is a table row again. */
+const RETURNS_ROW = "grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 sm:table-row";
+
+/**
+ * Return and dates used, per instrument. Three columns from the sm width up.
+ * On a phone three columns leave the dates a few words per line, so each row
+ * is laid out as a grid instead and nothing has to scroll sideways. A browser
+ * may stop treating a table as one when its layout is changed, so the table
+ * roles are written out and the caption is tied to it by id.
+ */
+function InstrumentReturns({ rows }: { rows: InstrumentReturn[] }) {
+  const captionId = useId();
+  return (
+    <table className="block w-full border-collapse text-left text-sm sm:table" role="table" aria-labelledby={captionId} data-testid="instrument-returns">
+      <caption id={captionId} className="sr-only">
+        Return of each instrument over the replayed period, with the dates of the prices and exchange rates used
+      </caption>
+      <thead className="block sm:table-header-group" role="rowgroup">
+        <tr className={cn(RETURNS_ROW, "border-b-2 border-line-strong text-ink-muted")} role="row">
+          <th scope="col" role="columnheader" className="pt-1.5 font-semibold sm:py-1.5 sm:pr-3 sm:align-bottom">
+            Instrument
+          </th>
+          <th scope="col" role="columnheader" className="pt-1.5 text-right font-semibold sm:py-1.5 sm:pl-3 sm:align-bottom">
+            Return in CAD
+          </th>
+          <th scope="col" role="columnheader" className="col-span-2 pb-1.5 font-semibold sm:py-1.5 sm:pl-3 sm:align-bottom">
+            Dates of the prices and exchange rates used
+          </th>
+        </tr>
+      </thead>
+      <tbody className="block sm:table-row-group" role="rowgroup">
+        {rows.map((row) => (
+          <tr key={row.instrument_id} className={cn(RETURNS_ROW, "border-b border-line text-ink")} role="row" data-testid="instrument-return" data-instrument-id={row.instrument_id}>
+            <th scope="row" role="rowheader" className="pt-1.5 font-semibold sm:py-1.5 sm:pr-3 sm:align-top">
+              {row.instrument_id} <span className="font-normal text-ink-muted">({row.currency})</span>
+            </th>
+            <td role="cell" className="tabular pt-1.5 text-right sm:py-1.5 sm:pl-3 sm:align-top">
+              {formatReturn(row.return_cad)}
+            </td>
+            <td role="cell" className="tabular col-span-2 pb-1.5 sm:py-1.5 sm:pl-3 sm:align-top">
+              <span className="block" data-testid="price-dates">
+                <span className="text-ink-muted">Prices:</span> <UsedDate date={row.base_price_date} ageDays={row.base_price_age_days} /> and{" "}
+                <UsedDate date={row.end_price_date} ageDays={row.end_price_age_days} />
+              </span>
+              <span className="block" data-testid="fx-dates">
+                <span className="text-ink-muted">Exchange rates:</span>{" "}
+                {row.base_fx_date && row.end_fx_date ? (
+                  <>
+                    <UsedDate date={row.base_fx_date} ageDays={row.base_fx_age_days} /> and <UsedDate date={row.end_fx_date} ageDays={row.end_fx_age_days} />
+                  </>
+                ) : (
+                  "none needed"
+                )}
+              </span>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
+function measureCells(measures: ScenarioMeasures | null) {
   return {
-    loss: measurement ? lossText(measurement.scenario_terminal_return) : "Not evaluated",
-    endReturn: measurement ? formatFraction(measurement.scenario_terminal_return, { signed: true }) : "Not evaluated",
-    drawdown: measurement ? formatFraction(measurement.scenario_max_drawdown) : "Not evaluated",
+    terminal: measures ? formatReturn(measures.scenario_terminal_return) : NOT_COMPUTED,
+    drawdown: measures ? formatReturn(measures.scenario_max_drawdown) : NOT_COMPUTED,
+    drawdownDate: measures?.max_drawdown_date ? formatDate(measures.max_drawdown_date) : NOT_COMPUTED,
   };
 }
 
 /**
- * The scenario risk budget, kept apart from the exposure rules. It answers one
- * narrow question — would this allocation, held through a past period, have
- * lost more than the budget the user chose — and says so on every figure.
+ * The historical replay, kept apart from the exposure rules. It answers one
+ * narrow question — what would this allocation, bought once and held, have
+ * done over a past period — and says on every figure that it is not a
+ * forecast. Whether the loss budget is respected is decided by the engine on
+ * the rule itself; nothing is compared or recomputed here.
  */
 export function ScenarioPanel({ result, scenario }: { result: CheckResult; scenario: ScenarioResult }) {
-  const decisive = scenario.proposed ?? scenario.starting;
-  const before = measurementCells(scenario.starting);
-  const after = measurementCells(scenario.proposed);
-  const note = scenarioNote(scenario);
-
+  const before = measureCells(scenario.starting);
+  const after = measureCells(scenario.proposed);
+  const target = result.purchase_request.instrument_id;
   return (
-    <div className="space-y-5" data-testid="scenario-panel">
-      <Notice tone="caution" title={note}>
+    <div className="space-y-5" data-testid="scenario-panel" data-scenario-status={scenario.status}>
+      <Notice tone="caution" title="A replay of the past — not a forecast">
         <p data-testid="scenario-note">
-          The allocation is assumed to have been bought once and held from <span className="tabular">{formatDate(scenario.period_start)}</span> to{" "}
-          <span className="tabular">{formatDate(scenario.period_end)}</span>. It says what would have happened in that period only. It predicts
-          nothing and guarantees nothing.
+          {scenario.label}. The allocation is assumed to have been bought once on <span className="tabular">{formatDate(scenario.base_date)}</span>{" "}
+          and held to <span className="tabular">{formatDate(scenario.end_date)}</span>. It says what would have happened in that period only. It
+          predicts nothing and guarantees nothing.
         </p>
       </Notice>
 
-      <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-3">
-        <div>
-          <dt className="text-sm font-semibold text-ink-muted">Measured scenario loss{scenario.proposed ? ", after the purchase" : ""}</dt>
-          <dd className="tabular text-2xl font-bold text-ink" data-testid="scenario-loss">
-            {lossText(decisive.scenario_terminal_return)}
-          </dd>
-          <dd className="text-sm text-ink-muted">at the end of the period</dd>
-        </div>
-        <div>
-          <dt className="text-sm font-semibold text-ink-muted">Loss budget you confirmed</dt>
-          <dd className="tabular text-2xl font-bold text-ink" data-testid="scenario-budget">
-            {scenario.budget === null ? "None confirmed" : formatFraction(scenario.budget)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-sm font-semibold text-ink-muted">Gap</dt>
-          <dd className="tabular text-lg font-semibold text-ink" data-testid="scenario-gap">
-            {scenario.budget === null ? "No budget to compare with" : formatGap(scenario.gap).replace("the limit", "the budget")}
-          </dd>
-          {scenario.status ? (
-            <dd className="mt-1">
-              <StatusBadge status={scenario.status} />
-            </dd>
-          ) : null}
-        </div>
-      </dl>
+      {scenario.status === "INSUFFICIENT_HISTORY" ? (
+        <UnknownBlock title="Not enough price history to replay this allocation">
+          <p data-testid="scenario-insufficient">
+            {scenario.missing_instruments.length > 0
+              ? `No usable price history for: ${scenario.missing_instruments.join(", ")}.`
+              : "A price or an exchange rate needed for the period is missing."}{" "}
+            No figure is shown in its place.
+          </p>
+        </UnknownBlock>
+      ) : null}
 
       <table className="w-full border-collapse text-left" data-testid="scenario-table">
-        <caption className="pb-2 text-left text-sm text-ink-muted">{note}. Values in CAD.</caption>
+        <caption className="sr-only">Replay results before and after the purchase. Historical replay, not a forecast.</caption>
         <thead>
           <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
             <td className="py-2 pr-3" />
@@ -95,44 +157,59 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
           </tr>
         </thead>
         <tbody>
-          <tr className="border-b border-line">
-            <th scope="row" className="py-2 pr-3 text-sm font-semibold text-ink-muted">
-              Loss at the end of the period — compared with the budget
-            </th>
-            <td className="tabular py-2 pl-3 text-right font-semibold text-ink">{before.loss}</td>
-            <td className="tabular py-2 pl-3 text-right text-lg font-bold text-ink">{after.loss}</td>
-          </tr>
-          <tr className="border-b border-line">
-            <th scope="row" className="py-2 pr-3 text-sm font-semibold text-ink-muted">
-              Return over the period
-            </th>
-            <td className="tabular py-2 pl-3 text-right text-ink">{before.endReturn}</td>
-            <td className="tabular py-2 pl-3 text-right text-ink">{after.endReturn}</td>
-          </tr>
-          <tr className="border-b border-line">
-            <th scope="row" className="py-2 pr-3 text-sm font-semibold text-ink-muted">
-              Deepest fall during the period — context only, not compared with the budget
-            </th>
-            <td className="tabular py-2 pl-3 text-right text-ink">{before.drawdown}</td>
-            <td className="tabular py-2 pl-3 text-right text-ink">{after.drawdown}</td>
-          </tr>
+          <MeasureRow
+            testId="scenario-terminal"
+            label="Change over the whole period"
+            hint="value at the end compared with the start"
+            values={[before.terminal, after.terminal]}
+          />
+          <MeasureRow
+            testId="scenario-drawdown"
+            label="Deepest fall inside the period"
+            hint="from the highest value reached to the lowest after it"
+            values={[before.drawdown, after.drawdown]}
+          />
+          <MeasureRow testId="scenario-drawdown-date" label="Date of the lowest point" values={[before.drawdownDate, after.drawdownDate]} />
         </tbody>
       </table>
 
-      <div>
-        <h3 className="font-semibold text-ink">Assumptions of the replay</h3>
-        {scenario.assumptions.length > 0 ? (
-          <ul className="mt-1 list-disc space-y-1 pl-5 text-ink">
+      {scenario.target_instrument_return !== null ? (
+        <p className="text-ink" data-testid="scenario-target-return">
+          {target} alone over the same period: <span className="tabular font-semibold">{formatReturn(scenario.target_instrument_return)}</span>, in
+          Canadian dollars.
+        </p>
+      ) : null}
+      {scenario.status === "COMPUTED" && scenario.missing_instruments.length > 0 ? (
+        <p className="text-ink" data-testid="scenario-missing">
+          No usable price history for: {scenario.missing_instruments.join(", ")}.
+        </p>
+      ) : null}
+
+      <p className="text-sm text-ink-muted">
+        Whether the loss budget is respected is decided on the rule itself, in the list of confirmed rules above. The deepest fall is context: it is
+        not one of the rules.
+      </p>
+
+      {scenario.assumptions.length > 0 ? (
+        <details>
+          <summary className="min-h-6 font-semibold text-ink">Assumptions of the replay ({scenario.assumptions.length})</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-ink" data-testid="scenario-assumptions">
             {scenario.assumptions.map((assumption) => (
               <li key={assumption}>{assumption}</li>
             ))}
           </ul>
-        ) : (
-          <p className="mt-1 text-ink-muted">None recorded.</p>
-        )}
-      </div>
+        </details>
+      ) : null}
+      {scenario.instrument_returns.length > 0 ? (
+        <details>
+          <summary className="min-h-6 font-semibold text-ink">Return of each instrument and the dates of the prices used ({scenario.instrument_returns.length})</summary>
+          <div className="mt-2">
+            <InstrumentReturns rows={scenario.instrument_returns} />
+          </div>
+        </details>
+      ) : null}
 
-      <EvidenceButton label="the scenario loss" result={result} evidenceIds={scenario.evidence_ids} />
+      <EvidenceButton label="the historical replay" result={result} evidenceIds={scenario.evidence_ids} />
     </div>
   );
 }

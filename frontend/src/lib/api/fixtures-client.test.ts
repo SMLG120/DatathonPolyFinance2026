@@ -1,11 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { Investigation, PersonaId, Policy, Rule } from "@/lib/contracts";
-import { getRuleThreshold, withRuleThreshold } from "@/lib/rules";
-import type { ApiClient } from "./client";
+import type { ApiClient } from "@/lib/api";
+import type { ConfirmRequest, InvestigationJob, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
+import { FIXTURES } from "@/lib/fixtures";
+import { draftRule, previewRuleSet } from "@/lib/rules";
 import { ApiError } from "./errors";
-import { createFixturesClient, type FixturesClientOptions } from "./fixtures-client";
+import { createFixturesClient } from "./fixtures-client";
 
-const make = (options: FixturesClientOptions = {}) => createFixturesClient({ latencyMs: 0, ...options });
+/**
+ * The fixtures client replays recorded bodies. Every expectation below is the
+ * recorded body itself (`FIXTURES`, a copy of contracts/fixtures/api), so a
+ * test can only pass when the client returned what was recorded.
+ */
+const KEY_1 = "0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61";
+const KEY_2 = "7d1e2f3a-4b5c-4d6e-8f70-91a2b3c4d5e6";
+const KEY_3 = "3c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f";
+
+const client = (options: Parameters<typeof createFixturesClient>[0] = {}) => createFixturesClient({ latencyMs: 0, ...options });
 
 async function failure(promise: Promise<unknown>): Promise<ApiError> {
   try {
@@ -14,559 +24,507 @@ async function failure(promise: Promise<unknown>): Promise<ApiError> {
     if (error instanceof ApiError) return error;
     throw error;
   }
-  throw new Error("expected the request to fail");
+  throw new Error("expected the request to be refused");
 }
 
-async function proposedRules(api: ApiClient, persona: PersonaId, answers: { clarification_id: string; option_id: string }[] = []) {
-  const { portfolio: _portfolio, scenario_objective_text } = await api.getPortfolio(persona);
-  void _portfolio;
-  return api.interpretRules({ persona_id: persona, text: scenario_objective_text, clarification_answers: answers });
+const robertScenario = FIXTURES.portfolioRobert.response.scenario;
+const mateoScenario = FIXTURES.scenarios.mateo;
+if (!mateoScenario) throw new Error("The Mateo scenario is not among the copied contracts.");
+const robertPurchase = FIXTURES.investigationAccepted.request.request as PurchaseRequest;
+const mateoPurchase = mateoScenario.demo_requests[0]?.purchase_request as PurchaseRequest;
+
+/** Confirms a persona's scenario rules at the numbers the scenario offers, in one new policy version. */
+function confirmScenarioRules(api: ApiClient, scenario: typeof robertScenario, overrides: Record<string, number> = {}): Promise<Policy> {
+  const request: ConfirmRequest = {
+    persona_id: scenario.persona.persona_id,
+    policy_id: null,
+    base_version: null,
+    objectives: scenario.objectives,
+    confirmations: scenario.scenario_rules.map((rule) => ({ rule, threshold: overrides[rule.rule_id] ?? (rule.threshold as number) })),
+    withdraw_rule_ids: [],
+    change_note: null,
+  };
+  return api.confirmRules(request).then((response) => response.policy);
 }
 
-async function confirmAll(api: ApiClient, persona: PersonaId, rules: Rule[], thresholds: Record<string, number> = {}): Promise<Policy> {
-  const interpretation = await proposedRules(api, persona);
-  const { policy } = await api.confirmRules({
-    persona_id: persona,
-    base_policy_version: null,
-    objectives: interpretation.objectives,
-    confirmations: rules.map((rule) => ({ rule, threshold: thresholds[rule.rule_id] ?? (getRuleThreshold(rule) as number) })),
-  });
-  return policy;
-}
-
-async function runToEnd(api: ApiClient, id: string): Promise<{ final: Investigation; snapshots: Investigation[] }> {
-  const snapshots: Investigation[] = [];
-  for (let i = 0; i < 20; i += 1) {
-    const snapshot = await api.getInvestigation(id);
-    snapshots.push(snapshot);
-    if (snapshot.status === "SUCCEEDED" || snapshot.status === "FAILED") return { final: snapshot, snapshots };
+async function pollToEnd(api: ApiClient, id: string, limit = 10): Promise<InvestigationJob[]> {
+  const frames: InvestigationJob[] = [];
+  for (let index = 0; index < limit; index += 1) {
+    const frame = await api.getInvestigation(id);
+    frames.push(frame);
+    if (frame.status === "SUCCEEDED" || frame.status === "FAILED") break;
   }
-  throw new Error("the job never reached a terminal status");
+  return frames;
 }
 
-async function robertReport(api: ApiClient) {
-  const interpretation = await proposedRules(api, "robert");
-  const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
-  const { scenario_purchase } = await api.getPortfolio("robert");
-  const created = await api.createInvestigation({
-    persona_id: "robert",
-    policy_version: policy.policy_version,
-    purchase: scenario_purchase!,
-    idempotency_key: "key-1",
-  });
-  const { final, snapshots } = await runToEnd(api, created.investigation_id);
-  return { policy, id: created.investigation_id, final, snapshots };
+async function robertFinished(api: ApiClient) {
+  const policy = await confirmScenarioRules(api, robertScenario);
+  const accepted = await api.createInvestigation(
+    { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null },
+    { idempotencyKey: KEY_1 },
+  );
+  const frames = await pollToEnd(api, accepted.id);
+  return { policy, accepted, frames, final: frames.at(-1) as InvestigationJob };
+}
+
+async function mateoFinished(api: ApiClient) {
+  const policy = await confirmScenarioRules(api, mateoScenario as typeof robertScenario);
+  const accepted = await api.createInvestigation(
+    { persona_id: "mateo", policy_id: policy.policy_id, policy_version: policy.version, request: mateoPurchase, parent_investigation_id: null },
+    { idempotencyKey: KEY_3 },
+  );
+  const frames = await pollToEnd(api, accepted.id);
+  return { policy, accepted, final: frames.at(-1) as InvestigationJob };
 }
 
 describe("fixtures client — portfolios", () => {
-  it("serves Robert's fictional portfolio from the frozen scenario, summing to 100%", async () => {
-    const { portfolio, scenario_purchase } = await make().getPortfolio("robert");
-    const weights = Object.fromEntries(portfolio.positions.map((p) => [p.instrument_id, p.weight]));
-
-    expect(weights).toEqual({ "XBB.TO": 0.3, SPY: 0.2, "XIU.TO": 0.1, "RY.TO": 0.05, JNJ: 0.05 });
-    expect(portfolio.cash_weight).toBe(0.3);
-    expect(portfolio.positions.reduce((sum, p) => sum + p.weight, portfolio.cash_weight)).toBeCloseTo(1, 12);
-    expect(portfolio.valuation_date).toBe("2026-11-12");
-    expect(portfolio.is_fictional).toBe(true);
-    expect(scenario_purchase).toEqual({ instrument_id: "NVDA", target_direct_weight: 0.25 });
+  it("replays the recorded answer for Robert", async () => {
+    expect(await client().getPortfolio("robert")).toEqual(FIXTURES.portfolioRobert.response);
   });
 
-  it("serves Mateo's fictional portfolio, summing to 100%", async () => {
-    const { portfolio, scenario_purchase } = await make().getPortfolio("mateo");
-    expect(portfolio.positions.reduce((sum, p) => sum + p.weight, portfolio.cash_weight)).toBeCloseTo(1, 12);
-    expect(portfolio.cash_weight).toBe(0.25);
-    expect(scenario_purchase).toEqual({ instrument_id: "SPY", target_direct_weight: 0.15 });
+  it("serves Mateo's copied scenario with the registry entries of what he holds and may buy", async () => {
+    const response = await client().getPortfolio("mateo");
+    const registry = FIXTURES.registries.mateo_synthetic_universe?.instruments ?? {};
+    const ids = [...mateoScenario.portfolio.positions.map((position) => position.instrument_id), mateoPurchase.instrument_id].sort();
+    expect(response.scenario).toEqual(mateoScenario);
+    expect(Object.keys(response.instruments).sort()).toEqual(ids);
+    expect(response.purchasable_instrument_ids).toEqual(ids);
+    for (const id of ids) expect(response.instruments[id]).toEqual(registry[id]);
   });
 
-  it("has no data for Amira, who comes after the core", async () => {
-    const error = await failure(make().getPortfolio("amira"));
-    expect(error.kind).toBe("not_found");
+  it("has no portfolio for a persona without recorded data", async () => {
+    expect((await failure(client().getPortfolio("amira"))).kind).toBe("not_found");
+    expect((await failure(client().getPortfolio("nobody"))).kind).toBe("not_found");
   });
 
   it("hands out copies, so a screen cannot corrupt the recorded data", async () => {
-    const api = make();
+    const api = client();
     const first = await api.getPortfolio("robert");
-    first.portfolio.cash_weight = 0.99;
-    expect((await api.getPortfolio("robert")).portfolio.cash_weight).toBe(0.3);
+    first.scenario.portfolio.cash_weight = 0.99;
+    first.scenario.scenario_rules.length = 0;
+    expect(await api.getPortfolio("robert")).toEqual(FIXTURES.portfolioRobert.response);
+  });
+
+  it("can simulate a failure, saying that it is simulated", async () => {
+    const error = await failure(client({ simulate: "portfolio-error" }).getPortfolio("robert"));
+    expect(error.kind).toBe("server");
+    expect(error.message).toMatch(/Simulated failure \(test data\)/);
   });
 });
 
 describe("fixtures client — interpretation", () => {
-  it("offers Robert's scenario rules as PROPOSED with the scenario's numbers", async () => {
-    const interpretation = await proposedRules(make(), "robert");
+  const recordedMateo = FIXTURES.interpret.mateo;
 
-    expect(interpretation.objectives).toHaveLength(1);
-    expect(interpretation.proposed_rules.map((r) => [r.rule_type, r.status, r.origin, getRuleThreshold(r)])).toEqual([
-      ["max_issuer_exposure", "PROPOSED", "FICTIONAL_SCENARIO", 0.1],
-      ["scenario_loss_budget", "PROPOSED", "FICTIONAL_SCENARIO", 0.1],
-    ]);
+  it("replays the recorded interpretation of Mateo's sentence", async () => {
+    expect(await client().interpretRules(recordedMateo.request)).toEqual(recordedMateo.response);
   });
 
-  it("never gives a system-proposed rule a threshold", async () => {
-    const api = make();
-    const first = await proposedRules(api, "mateo");
-    const answered = await proposedRules(api, "mateo", [{ clarification_id: "clar-mateo-oil", option_id: "energy-sector" }]);
-
-    const systemProposed = [...first.proposed_rules, ...answered.proposed_rules].filter((r) => r.origin === "SYSTEM_PROPOSED");
-    expect(systemProposed.length).toBeGreaterThan(0);
-    for (const rule of systemProposed) expect(getRuleThreshold(rule)).toBeNull();
+  it("recognises the recorded sentence whatever its spacing, case or final full stop", async () => {
+    const text = `  ${recordedMateo.request.text.toUpperCase().replace(/\.$/, "")}  `;
+    expect(await client().interpretRules({ ...recordedMateo.request, text })).toEqual(recordedMateo.response);
   });
 
-  it("asks what “oil” means instead of proposing a rule for it", async () => {
-    const interpretation = await proposedRules(make(), "mateo");
-
-    expect(interpretation.proposed_rules.some((r) => r.rule_type === "exclusion")).toBe(false);
-    expect(interpretation.clarifications).toHaveLength(1);
-    const options = interpretation.clarifications[0]!.options;
-    expect(options.filter((o) => o.supported).map((o) => o.option_id)).toEqual(["energy-sector", "named-issuers"]);
-    expect(options.filter((o) => !o.supported).map((o) => o.option_id)).toEqual(["oil-producers", "fossil-fuels"]);
+  it("refuses other wording and says which sentence is recorded, instead of guessing", async () => {
+    const error = await failure(client().interpretRules({ ...recordedMateo.request, text: "I do not want any tobacco." }));
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain(recordedMateo.request.text);
   });
 
-  it("proposes the Energy-sector exclusion only after that definition is chosen", async () => {
-    const answered = await proposedRules(make(), "mateo", [{ clarification_id: "clar-mateo-oil", option_id: "energy-sector" }]);
-
-    expect(answered.clarifications).toHaveLength(0);
-    const exclusion = answered.proposed_rules.find((r) => r.rule_type === "exclusion");
-    expect(exclusion).toMatchObject({ status: "PROPOSED", definition: { kind: "fund_reported_sector", sector: "Energy" }, max_fraction: null });
+  it("says so when nothing is recorded for the persona", async () => {
+    const error = await failure(client().interpretRules({ persona_id: "robert", text: "Keep me safe.", policy_id: null, policy_version: null }));
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toMatch(/no recorded interpretation for this persona/);
   });
 
-  it("says when edited wording was not interpreted", async () => {
-    const response = await make().interpretRules({ persona_id: "robert", text: "Something else entirely", clarification_answers: [] });
-    expect(response.notes.join(" ")).toMatch(/not interpreted/i);
+  it("holds no system-proposed rule with a number: the recording never invents one", () => {
+    const drafts: Rule[] = [
+      ...recordedMateo.response.proposed_rules,
+      ...recordedMateo.response.clarifications.flatMap((clarification) => clarification.options.flatMap((option) => (option.proposed_rule ? [option.proposed_rule] : []))),
+    ];
+    expect(drafts.length).toBeGreaterThan(0);
+    for (const draft of drafts) expect(draft).toMatchObject({ status: "PROPOSED", origin: "SYSTEM_PROPOSED", threshold: null, threshold_source: null });
   });
 });
 
-describe("fixtures client — policy versions", () => {
-  it("creates policy version 1 with the confirmed rules active", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "robert");
-    const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
-
-    expect(policy.policy_version).toBe(1);
-    expect(policy.previous_version).toBeNull();
-    expect(policy.rules.map((r) => r.status)).toEqual(["CONFIRMED", "CONFIRMED"]);
+describe("fixtures client — confirmation", () => {
+  it("replays the recorded policy version 1 for the recorded confirmation", async () => {
+    expect(await client().confirmRules(FIXTURES.confirmRobertV1.request)).toEqual(FIXTURES.confirmRobertV1.response);
   });
 
-  it("carries confirmed rules into the next version when another rule is confirmed", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "robert");
-    const [first, second] = interpretation.proposed_rules as [Rule, Rule];
-    const v1 = await confirmAll(api, "robert", [first]);
-    const { policy: v2 } = await api.confirmRules({
+  it("gives the recorded version 1 when the scenario's rules are confirmed at the scenario's numbers", async () => {
+    expect(await confirmScenarioRules(client(), robertScenario)).toEqual(FIXTURES.confirmRobertV1.response.policy);
+  });
+
+  it("stores another number as the user's own, in a version that claims no recorded hash", async () => {
+    const policy = await confirmScenarioRules(client(), robertScenario, { "robert-issuer-cap-1": 0.2 });
+    expect(policy.version).toBe(1);
+    expect(policy.content_hash).toBe(`sha256:${"0".repeat(64)}`);
+    expect(policy.rules.map((rule) => [rule.rule_id, rule.status, rule.threshold, rule.origin, rule.threshold_source])).toEqual([
+      ["robert-issuer-cap-1", "CONFIRMED", 0.2, "USER_STATED", "USER_ENTERED"],
+      ["robert-loss-budget-1", "CONFIRMED", 0.1, "FICTIONAL_SCENARIO", "FICTIONAL_SCENARIO"],
+    ]);
+  });
+
+  it("writes the next version on top of the last one and supersedes the rule that measured the same thing", async () => {
+    const api = client();
+    const first = await confirmScenarioRules(api, robertScenario);
+    const cap = first.rules.find((rule) => rule.rule_id === "robert-issuer-cap-1") as Rule;
+    const { policy: second } = await api.confirmRules({
       persona_id: "robert",
-      base_policy_version: v1.policy_version,
-      objectives: v1.objectives,
-      confirmations: [{ rule: second, threshold: 0.1 }],
+      policy_id: first.policy_id,
+      base_version: first.version,
+      objectives: first.objectives,
+      confirmations: [{ rule: draftRule(cap, 0.3), threshold: 0.3 }],
+      withdraw_rule_ids: [],
+      change_note: null,
     });
-
-    expect(v2.policy_version).toBe(2);
-    expect(v2.previous_version).toBe(1);
-    expect(v2.rules.filter((r) => r.status === "CONFIRMED").map((r) => r.rule_type)).toEqual(["max_issuer_exposure", "scenario_loss_budget"]);
+    // The same state as the recorded version 2, so the recording itself is returned.
+    expect(second).toEqual(FIXTURES.challenges.changeRule.response.policy);
   });
 
-  it("rejects a threshold outside 0% to 100%", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "robert");
+  it("refuses a confirmation based on a version that is no longer the latest, with the recorded error", async () => {
+    const api = client();
+    const first = await confirmScenarioRules(api, robertScenario);
     const error = await failure(
-      api.confirmRules({
-        persona_id: "robert",
-        base_policy_version: null,
-        objectives: [],
-        confirmations: [{ rule: interpretation.proposed_rules[0]!, threshold: 1.5 }],
-      }),
+      api.confirmRules({ persona_id: "robert", policy_id: first.policy_id, base_version: 7, objectives: [], confirmations: [], withdraw_rule_ids: [], change_note: null }),
     );
-    expect(error.kind).toBe("validation");
+    expect(error).toMatchObject({ kind: "validation", status: FIXTURES.errors.policyVersionConflict.status, code: "POLICY_VERSION_CONFLICT" });
+    expect(error.message).toBe(FIXTURES.errors.policyVersionConflict.response.error.message);
+  });
+
+  it.each([-0.01, 1.01, Number.NaN])("refuses a confirmation whose number is %s", async (threshold) => {
+    const error = await failure(confirmScenarioRules(client(), robertScenario, { "robert-issuer-cap-1": threshold }));
+    expect(error).toMatchObject({ kind: "validation", code: "INVALID_CONFIRMATION" });
   });
 });
 
 describe("fixtures client — investigation lifecycle", () => {
-  it("reveals completed steps progressively and the result only at the end", async () => {
-    const { snapshots, final } = await robertReport(make());
+  it("accepts the recorded request and replays the recorded QUEUED, RUNNING and SUCCEEDED bodies in that order", async () => {
+    const { accepted, frames } = await robertFinished(client());
+    expect(accepted).toEqual(FIXTURES.investigationAccepted.response);
+    expect(frames).toEqual([FIXTURES.jobs.robertQueued.response, FIXTURES.jobs.robertRunning.response, FIXTURES.jobs.robertSucceeded.response]);
+  });
 
-    expect(snapshots.length).toBeGreaterThan(2);
-    for (let i = 1; i < snapshots.length; i += 1) {
-      const previous = snapshots[i - 1]!;
-      const current = snapshots[i]!;
-      // Steps are only ever appended: what was shown is never rewritten or removed.
-      expect(current.steps.slice(0, previous.steps.length)).toEqual(previous.steps);
-    }
-    for (const snapshot of snapshots.slice(0, -1)) {
-      expect(snapshot.status).toBe("RUNNING");
-      expect(snapshot.result).toBeNull();
-    }
-    expect(final.status).toBe("SUCCEEDED");
-    expect(final.result).not.toBeNull();
-    expect(final.steps.map((s) => s.seq)).toEqual(final.steps.map((_, i) => i + 1));
-    expect(final.steps.map((s) => s.tool)).toEqual([
-      "get_portfolio",
-      "get_policy",
-      "simulate_change",
-      "get_holdings",
-      "compute_exposure",
-      "replay_period",
-      "check_rules",
-      "max_compliant_amount",
-    ]);
+  it("keeps answering with the final body once the job is finished", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
+    expect(await api.getInvestigation(accepted.id)).toEqual(FIXTURES.jobs.robertSucceeded.response);
   });
 
   it("returns the same job for a repeated request with the same idempotency key", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "robert");
-    const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
-    const request = {
-      persona_id: "robert" as const,
-      policy_version: policy.policy_version,
-      purchase: { instrument_id: "NVDA", target_direct_weight: 0.25 },
-      idempotency_key: "same-key",
-    };
-    const first = await api.createInvestigation(request);
-    const second = await api.createInvestigation(request);
-    expect(second.investigation_id).toBe(first.investigation_id);
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const body = { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null };
+    const first = await api.createInvestigation(body, { idempotencyKey: KEY_1 });
+    await api.getInvestigation(first.id);
+    const again = await api.createInvestigation(body, { idempotencyKey: KEY_1 });
+    expect(again).toEqual(first);
+    // The job was not restarted: the next poll continues where the first left off.
+    expect((await api.getInvestigation(first.id)).status).toBe("RUNNING");
   });
 
-  it("refuses a purchase it has no recorded result for, instead of inventing one", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "robert");
-    const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
+  it.each([undefined, "", "short", "has spaces in it", "x".repeat(65)])("refuses to start a job without a well-formed idempotency key (%j)", async (idempotencyKey) => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
     const error = await failure(
-      api.createInvestigation({
-        persona_id: "robert",
-        policy_version: policy.policy_version,
-        purchase: { instrument_id: "NVDA", target_direct_weight: 0.2 },
-        idempotency_key: "other",
-      }),
+      api.createInvestigation(
+        { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null },
+        { idempotencyKey: idempotencyKey as string },
+      ),
     );
-    expect(error).toMatchObject({ kind: "validation", code: "FIXTURE_NOT_RECORDED" });
+    expect(error.kind).toBe("validation");
+  });
+
+  it("refuses a purchase it holds no recorded result for, instead of inventing one, and says what is recorded", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const error = await failure(
+      api.createInvestigation(
+        { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: { ...robertPurchase, target_direct_weight: 0.2 }, parent_investigation_id: null },
+        { idempotencyKey: KEY_1 },
+      ),
+    );
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("NVDA at a final direct weight of 20.0%");
+    expect(error.message).toContain("Recorded for this persona: NVDA at a final direct weight of 25.0% with limits 10.0% and 10.0%");
+  });
+
+  it("refuses the recorded purchase under rules the recording was not made with", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario, { "robert-issuer-cap-1": 0.2 });
+    const error = await failure(
+      api.createInvestigation(
+        { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null },
+        { idempotencyKey: KEY_1 },
+      ),
+    );
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("issuer-cap 20.0%");
+  });
+
+  it("refuses a free-text request: nothing recorded resolves it", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const error = await failure(
+      api.createInvestigation(
+        { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: { instrument_id: null, target_direct_weight: null, funding: "CASH", original_words: "Buy some Nvidia" }, parent_investigation_id: null },
+        { idempotencyKey: KEY_1 },
+      ),
+    );
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("a request in free text");
   });
 
   it("refuses to run against a policy version that does not exist", async () => {
     const error = await failure(
-      make().createInvestigation({
-        persona_id: "robert",
-        policy_version: 7,
-        purchase: { instrument_id: "NVDA", target_direct_weight: 0.25 },
-        idempotency_key: "k",
-      }),
+      client().createInvestigation({ persona_id: "robert", policy_id: "pol-robert-demo", policy_version: 1, request: robertPurchase, parent_investigation_id: null }, { idempotencyKey: KEY_1 }),
     );
-    expect(error.kind).toBe("validation");
+    expect(error.kind).toBe("not_found");
   });
 
-  it("can simulate a failed job: terminal, with an error and no result", async () => {
-    const { final } = await robertReport(make({ simulate: "job-failed" }));
-    expect(final.status).toBe("FAILED");
-    expect(final.result).toBeNull();
-    expect(final.error?.message).toMatch(/simulated failure/i);
+  it("answers an unknown job id with the recorded not-found error", async () => {
+    const error = await failure(client().getInvestigation("inv-nope"));
+    expect(error).toMatchObject({ kind: "not_found", status: FIXTURES.errors.notFound.status, message: FIXTURES.errors.notFound.response.error.message });
+  });
+
+  it("can simulate a failed job: it ends with the recorded failure and no result", async () => {
+    const api = client({ simulate: "job-failed" });
+    const accepted = await api.createInvestigation({ persona_id: "robert", policy_id: "any", policy_version: 1, request: robertPurchase, parent_investigation_id: null }, { idempotencyKey: KEY_1 });
+    const frames = await pollToEnd(api, accepted.id);
+    expect(frames.at(-1)).toEqual(FIXTURES.jobs.failed.response);
+    expect(frames.at(-1)?.result).toBeNull();
+    expect(frames.slice(0, -1).every((frame) => frame.result === null && frame.failure === null)).toBe(true);
   });
 
   it("can simulate a job that never finishes", async () => {
-    const api = make({ simulate: "poll-timeout" });
-    const interpretation = await proposedRules(api, "robert");
-    const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
-    const { investigation_id } = await api.createInvestigation({
-      persona_id: "robert",
-      policy_version: policy.policy_version,
-      purchase: { instrument_id: "NVDA", target_direct_weight: 0.25 },
-      idempotency_key: "k",
-    });
-    for (let i = 0; i < 10; i += 1) expect((await api.getInvestigation(investigation_id)).status).toBe("RUNNING");
+    const api = client({ simulate: "poll-timeout" });
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const accepted = await api.createInvestigation(
+      { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null },
+      { idempotencyKey: KEY_1 },
+    );
+    const frames = await pollToEnd(api, accepted.id, 8);
+    expect(frames).toHaveLength(8);
+    expect(frames.every((frame) => frame.result === null && (frame.status === "QUEUED" || frame.status === "RUNNING"))).toBe(true);
+  });
+
+  it("shows a job that has only a final recording as the same job cut short, never with a result before the end", async () => {
+    const { final, policy } = await mateoFinished(client());
+    expect(final).toEqual(FIXTURES.jobs.mateoSucceeded.response);
+    expect(policy.rules.map((rule) => rule.rule_id)).toEqual(["mateo-excl-energy-1", "mateo-controversy-1"]);
+
+    const api = client();
+    const again = await confirmScenarioRules(api, mateoScenario as typeof robertScenario);
+    const accepted = await api.createInvestigation(
+      { persona_id: "mateo", policy_id: again.policy_id, policy_version: again.version, request: mateoPurchase, parent_investigation_id: null },
+      { idempotencyKey: KEY_3 },
+    );
+    const queued = await api.getInvestigation(accepted.id);
+    const running = await api.getInvestigation(accepted.id);
+    expect(queued).toMatchObject({ id: final.id, status: "QUEUED", steps: [], result: null, explanation: [], failure: null });
+    expect(running).toMatchObject({ id: final.id, status: "RUNNING", result: null, explanation: [] });
+    expect(running.steps.length).toBeLessThan(final.steps.length);
+    expect(running.steps.map((step) => step.tool)).toEqual(final.steps.slice(0, running.steps.length).map((step) => step.tool));
+    expect(running.steps.at(-1)).toMatchObject({ status: "RUNNING", finished_at: null, result_summary: null });
   });
 
   it("honours an abort signal", async () => {
     const controller = new AbortController();
-    const pending = failure(createFixturesClient({ latencyMs: 50 }).getPortfolio("robert", { signal: controller.signal }));
     controller.abort();
-    expect((await pending).kind).toBe("aborted");
+    expect((await failure(createFixturesClient({ latencyMs: 20 }).getPortfolio("robert", { signal: controller.signal }))).kind).toBe("aborted");
   });
 });
 
-describe("fixtures client — Robert's result", () => {
-  it("fails both confirmed rules after the purchase and passes both before it", async () => {
-    const { final } = await robertReport(make());
-    const result = final.result!;
-    const issuer = result.rule_results.find((r) => r.rule_type === "max_issuer_exposure")!;
-    const budget = result.rule_results.find((r) => r.rule_type === "scenario_loss_budget")!;
+describe("fixtures client — checks and previews (POST /check)", () => {
+  const preview = FIXTURES.checkRobertPreview;
 
-    expect(issuer.starting.status).toBe("PASS");
-    expect(issuer.proposed).toMatchObject({ status: "FAIL", measured: { lower: 0.265, upper: 0.265 }, limit: 0.1 });
-    expect(issuer.proposed!.gap).toBeCloseTo(0.165, 10);
-
-    expect(budget.starting.status).toBe("PASS");
-    expect(budget.proposed).toMatchObject({ status: "FAIL", limit: 0.1 });
-    expect(budget.proposed!.measured!.lower).toBeCloseTo(0.1778, 10);
-    expect(budget.proposed!.gap).toBeCloseTo(0.0778, 10);
+  it("replays the recorded preview for the recorded request", async () => {
+    expect(await client().check(preview.request)).toEqual(preview.response);
   });
 
-  it("splits the exposure into direct and look-through and restates the cash arithmetic", async () => {
-    const { final } = await robertReport(make());
-    const result = final.result!;
-    const exposure = result.exposures[0]!;
-
-    expect(exposure.proposed).toMatchObject({ direct: 0.25, indirect_known: 0.015, possible_extra: 0, lower: 0.265, upper: 0.265 });
-    expect(exposure.starting).toMatchObject({ direct: 0, indirect_known: 0.015 });
-    expect(result.feasibility).toMatchObject({ status: "FEASIBLE", funding_path: "CASH", cash_before: 0.3, additional_purchase: 0.25 });
-    expect(result.feasibility!.cash_after).toBeCloseTo(0.05, 10);
-  });
-
-  it("reports the scenario result with return and drawdown as separate metrics", async () => {
-    const { final } = await robertReport(make());
-    const scenario = final.result!.scenario!;
-
-    expect(scenario.scenario_id).toBe("replay_2022");
-    expect(scenario.proposed).toEqual({ scenario_terminal_return: -0.1778, scenario_max_drawdown: -0.232 });
-    expect(scenario).toMatchObject({ budget: 0.1, status: "FAIL" });
-    expect(scenario.assumptions.join(" ")).toMatch(/no rebalancing/i);
-  });
-
-  it("gives a maximum compliant weight that accounts for look-through, cash and the loss budget", async () => {
-    const { final } = await robertReport(make());
-    const max = final.result!.max_compliant!;
-
-    expect(max.status).toBe("SUPPORTED");
-    expect(max.verified_by_rerun).toBe(true);
-    // Issuer cap alone would allow 10% - 1.5% = 8.5%; the loss budget binds slightly lower.
-    expect(max.final_direct_weight!).toBeLessThan(0.085);
-    expect(max.final_direct_weight!).toBeCloseTo((0.1 - 0.0603) / 0.47, 8);
-    expect(max.additional_purchase).toBe(max.final_direct_weight);
-    expect(max.binding_rule_ids).toEqual(["rule-robert-loss-budget"]);
-  });
-
-  it("attaches an evidence record, with sources, to every figure it reports", async () => {
-    const { final } = await robertReport(make());
-    const result = final.result!;
-    const evidenceIds = new Set(result.evidence.map((e) => e.evidence_id));
-    const sourceIds = new Set(result.sources.map((s) => s.source_id));
-
-    const referenced = [
-      ...result.rule_results.flatMap((r) => [...r.starting.evidence_ids, ...(r.proposed?.evidence_ids ?? [])]),
-      ...result.exposures.flatMap((e) => e.evidence_ids),
-      ...(result.scenario?.evidence_ids ?? []),
-      ...(result.max_compliant?.evidence_ids ?? []),
-    ];
-    expect(referenced.length).toBeGreaterThan(0);
-    for (const id of referenced) expect(evidenceIds.has(id)).toBe(true);
-    for (const record of result.evidence) {
-      expect(record.policy_version).toBe(1);
-      expect(record.calculation_version).not.toBe("");
-      for (const sourceId of record.source_ids) expect(sourceIds.has(sourceId)).toBe(true);
-    }
-    expect(evidenceIds.size).toBe(result.evidence.length);
-  });
-
-  it("labels every measured source as a placeholder", async () => {
-    const { final } = await robertReport(make());
-    const measured = final.result!.sources.filter((s) => s.source_id !== "fx-src-scenario");
-    for (const source of measured) expect(source.known_limitations.join(" ")).toMatch(/placeholder/i);
-  });
-});
-
-describe("fixtures client — challenge", () => {
-  it("raising the issuer cap creates policy version 2 and leaves version 1 and its report untouched", async () => {
-    const api = make();
-    const { policy: v1, id, final } = await robertReport(api);
-    const before = JSON.stringify(final);
-
-    const response = await api.challengeInvestigation(id, { kind: "CHANGE_RULE", rule_id: "rule-robert-issuer-cap", new_threshold: 0.3 });
-    if (response.kind !== "CHANGE_RULE") throw new Error("expected a rule change");
-    const v2 = response.policy;
-
-    expect(v2.policy_version).toBe(2);
-    expect(v2.previous_version).toBe(1);
-    const superseded = v2.rules.find((r) => r.status === "SUPERSEDED")!;
-    const replacement = v2.rules.find((r) => r.supersedes_rule_id === superseded.rule_id)!;
-    expect(getRuleThreshold(superseded)).toBe(0.1);
-    expect(replacement).toMatchObject({ status: "CONFIRMED", origin: "USER_STATED", rule_type: "max_issuer_exposure" });
-    expect(getRuleThreshold(replacement)).toBe(0.3);
-    expect(replacement.rule_id).not.toBe(superseded.rule_id);
-    expect(v2.objectives).toEqual(v1.objectives);
-
-    // The earlier report is immutable and still retrievable.
-    expect(v1.rules.every((r) => r.status === "CONFIRMED")).toBe(true);
-    expect(JSON.stringify(await api.getInvestigation(id))).toBe(before);
-    expect(response.investigation_id).not.toBe(id);
-  });
-
-  it("re-evaluates every remaining rule: the cap now passes, the loss budget still fails with its gap", async () => {
-    const api = make();
-    const { id } = await robertReport(api);
-    const response = await api.challengeInvestigation(id, { kind: "CHANGE_RULE", rule_id: "rule-robert-issuer-cap", new_threshold: 0.3 });
-    if (response.kind !== "CHANGE_RULE") throw new Error("expected a rule change");
-    const { final } = await runToEnd(api, response.investigation_id);
-    const result = final.result!;
-
-    expect(result.policy_version).toBe(2);
-    const issuer = result.rule_results.find((r) => r.rule_type === "max_issuer_exposure")!;
-    const budget = result.rule_results.find((r) => r.rule_type === "scenario_loss_budget")!;
-    expect(issuer.proposed).toMatchObject({ status: "PASS", limit: 0.3 });
-    expect(budget.proposed).toMatchObject({ status: "FAIL", limit: 0.1 });
-    expect(budget.proposed!.gap).toBeCloseTo(0.0778, 10);
-    expect(result.scenario).toMatchObject({ status: "FAIL", budget: 0.1 });
-    expect(result.rule_results).toHaveLength(2);
-  });
-
-  it("records a fact correction as an unverified user claim and changes nothing else", async () => {
-    const api = make();
-    const { id, final } = await robertReport(api);
-    const before = JSON.stringify(final);
-    const evidenceId = final.result!.evidence[0]!.evidence_id;
-
-    const response = await api.challengeInvestigation(id, {
-      kind: "CORRECT_FACT",
-      evidence_id: evidenceId,
-      proposed_value_text: "6.1%",
-      reason_text: "The fund's fact sheet says so.",
+  it("replays it for the rule set the interface builds when Robert tries 20% on his single-company limit", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const cap = policy.rules.find((rule) => rule.rule_id === "robert-issuer-cap-1") as Rule;
+    const result = await api.check({
+      persona_id: "robert",
+      policy_id: policy.policy_id,
+      policy_version: policy.version,
+      purchase_request: robertPurchase,
+      draft_rules: previewRuleSet(policy.rules, [draftRule(cap, 0.2)]),
     });
-    if (response.kind !== "CORRECT_FACT") throw new Error("expected a fact correction");
+    expect(result).toEqual(preview.response);
+    expect(result.preview).toBe(true);
+    expect(result.policy_version).toBeNull();
+  });
 
-    expect(response.correction).toMatchObject({
-      evidence_id: evidenceId,
+  it("refuses any other draft value and names the one recorded preview", async () => {
+    const drafts = (preview.request.draft_rules ?? []).map((rule) => (rule.status === "PROPOSED" ? draftRule(rule, 0.15) : rule));
+    const error = await failure(client().check({ ...preview.request, draft_rules: drafts }));
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("NVDA at a final direct weight of 25.0% with a draft single-company limit of 20.0%");
+  });
+
+  it("replays the recorded UNKNOWN preview for Mateo", async () => {
+    const recordedUnknown = FIXTURES.checkMateoPreviewUnknown;
+    const result = await client().check(recordedUnknown.request);
+    expect(result).toEqual(recordedUnknown.response);
+    expect(result.rule_results.map((item) => item.status)).toEqual(["UNKNOWN"]);
+    expect(result.max_compliant?.status).toBe("WITHHELD");
+  });
+
+  it("replays the recorded refusal of a request that cannot be evaluated", async () => {
+    const invalid = FIXTURES.checkInvalidRequest;
+    const result = await client().check(invalid.request);
+    expect(result).toEqual(invalid.response);
+    expect(result.execution.status).toBe("INVALID_REQUEST");
+    expect(result.rule_results).toEqual([]);
+  });
+
+  it("answers a check of a stored policy version with the recorded result of the same request under the same rules", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const result = await api.check({ persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, purchase_request: robertPurchase, draft_rules: null });
+    expect(result).toEqual(FIXTURES.jobs.robertSucceeded.response.result);
+  });
+
+  it("refuses a check of a stored policy version that nothing was recorded for", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const error = await failure(
+      api.check({ persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, purchase_request: { ...robertPurchase, target_direct_weight: 0.1 }, draft_rules: null }),
+    );
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("NVDA at a final direct weight of 10.0%");
+  });
+
+  it("does not know a policy version that was never confirmed", async () => {
+    const error = await failure(client().check({ persona_id: "robert", policy_id: "pol-robert-demo", policy_version: 3, purchase_request: robertPurchase, draft_rules: null }));
+    expect(error.kind).toBe("not_found");
+  });
+
+  it("creates no policy version and no job", async () => {
+    const api = client();
+    await api.check(preview.request);
+    expect((await failure(api.getInvestigation("inv-robert-0001"))).kind).toBe("not_found");
+    expect(
+      (await failure(api.createInvestigation({ persona_id: "robert", policy_id: "pol-robert-demo", policy_version: 1, request: robertPurchase, parent_investigation_id: null }, { idempotencyKey: KEY_1 }))).kind,
+    ).toBe("not_found");
+  });
+
+  it("can simulate a failed check", async () => {
+    expect((await failure(client({ simulate: "check-error" }).check(preview.request))).kind).toBe("server");
+  });
+});
+
+describe("fixtures client — challenges", () => {
+  const change = FIXTURES.challenges.changeRule;
+  const fact = FIXTURES.challenges.correctFact;
+  const preference = FIXTURES.challenges.clarifyPreference;
+
+  it("replays the recorded rule change: policy version 2 and a new job, leaving version 1 and its report as they were", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
+    const response = await api.challengeInvestigation(accepted.id, change.request, { idempotencyKey: KEY_2 });
+    expect(response).toEqual(change.response);
+
+    const child = await pollToEnd(api, response.investigation?.id as string);
+    expect(child.at(-1)).toEqual(FIXTURES.jobs.robertAfterChallenge.response);
+    expect(await api.getInvestigation(accepted.id)).toEqual(FIXTURES.jobs.robertSucceeded.response);
+    // Version 1 is still stored and still checks as it did.
+    expect(await api.check({ persona_id: "robert", policy_id: "pol-robert-demo", policy_version: 1, purchase_request: robertPurchase, draft_rules: null })).toEqual(
+      FIXTURES.jobs.robertSucceeded.response.result,
+    );
+  });
+
+  it("needs an idempotency key for a rule change, because it starts a job", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
+    expect((await failure(api.challengeInvestigation(accepted.id, change.request, { idempotencyKey: "" }))).kind).toBe("validation");
+  });
+
+  it("refuses a rule change it has no recording for", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
+    const error = await failure(
+      api.challengeInvestigation(accepted.id, { type: "CHANGE_RULE", payload: { rule_id: "robert-issuer-cap-1", new_threshold: 0.4, user_note: null } }, { idempotencyKey: KEY_2 }),
+    );
+    expect(error.kind).toBe("no_fixture");
+    expect(error.message).toContain("robert-issuer-cap-1 to 30%");
+  });
+
+  it("refuses to challenge a job that has not finished", async () => {
+    const api = client();
+    const policy = await confirmScenarioRules(api, robertScenario);
+    const accepted = await api.createInvestigation(
+      { persona_id: "robert", policy_id: policy.policy_id, policy_version: policy.version, request: robertPurchase, parent_investigation_id: null },
+      { idempotencyKey: KEY_1 },
+    );
+    await api.getInvestigation(accepted.id);
+    const error = await failure(api.challengeInvestigation(accepted.id, change.request, { idempotencyKey: KEY_2 }));
+    expect(error).toMatchObject({ kind: "validation", code: "INVESTIGATION_NOT_FINISHED" });
+  });
+
+  it("replays the recorded fact correction, and the job then carries it as in the recording", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
+    expect(await api.challengeInvestigation(accepted.id, fact.request, { idempotencyKey: KEY_2 })).toEqual(fact.response);
+    expect(await api.getInvestigation(accepted.id)).toEqual(FIXTURES.jobs.robertWithCorrection.response);
+  });
+
+  it("echoes any other correction as an UNVERIFIED assertion and changes no figure", async () => {
+    const api = client();
+    const { accepted, final } = await robertFinished(api);
+    const record = final.result?.evidence.find((item) => item.evidence_id === "ev-xiu-ry-weight");
+    const response = await api.challengeInvestigation(
+      accepted.id,
+      { type: "CORRECT_FACT", payload: { evidence_id: "ev-xiu-ry-weight", asserted_value: 0.09, asserted_unit: "fraction", user_note: "My copy says otherwise.", user_source: null } },
+      { idempotencyKey: KEY_2 },
+    );
+    expect(response.proposed_correction).toMatchObject({
+      investigation_id: accepted.id,
+      evidence_id: "ev-xiu-ry-weight",
+      original_value: record?.value,
+      original_unit: record?.unit,
+      asserted_value: 0.09,
       status: "UNVERIFIED",
       applied_to_calculation: false,
-      proposed_value_text: "6.1%",
+      provenance: { asserted_by: "USER", user_note: "My copy says otherwise.", user_source: null },
     });
-    expect(response.correction.provenance.asserted_by).toBe("USER");
-    expect(JSON.stringify(await api.getInvestigation(id))).toBe(before);
+    expect(response.policy).toBeNull();
+    expect(response.investigation).toBeNull();
+    const after = await api.getInvestigation(accepted.id);
+    expect(after.result).toEqual(FIXTURES.jobs.robertSucceeded.response.result);
+    expect(after.proposed_corrections).toEqual([response.proposed_correction]);
   });
 
-  it("rejects a correction to a figure that is not in the report", async () => {
-    const api = make();
-    const { id } = await robertReport(api);
+  it("refuses a correction to a figure that is not in the report", async () => {
+    const api = client();
+    const { accepted } = await robertFinished(api);
     const error = await failure(
-      api.challengeInvestigation(id, { kind: "CORRECT_FACT", evidence_id: "nope", proposed_value_text: "1%", reason_text: "x" }),
+      api.challengeInvestigation(accepted.id, { type: "CORRECT_FACT", payload: { evidence_id: "ev-nope", asserted_value: 1, asserted_unit: "count", user_note: "x", user_source: null } }, { idempotencyKey: KEY_2 }),
     );
-    expect(error.kind).toBe("validation");
+    expect(error).toMatchObject({ kind: "validation", code: "UNSUPPORTED_CHALLENGE" });
   });
 
-  it("stores a clarified preference in the user's own words without inventing a rule", async () => {
-    const api = make();
-    const { id } = await robertReport(api);
-    const response = await api.challengeInvestigation(id, { kind: "CLARIFY_PREFERENCE", text: "  Not losing money matters most to me.  " });
-    if (response.kind !== "CLARIFY_PREFERENCE") throw new Error("expected a preference clarification");
-
-    expect(response.interpretation.objectives).toEqual([
-      expect.objectContaining({ original_words: "Not losing money matters most to me.", origin: "USER_STATED" }),
-    ]);
-    expect(response.interpretation.proposed_rules).toEqual([]);
-  });
-});
-
-describe("fixtures client — Mateo's result (a failure together with unknowns)", () => {
-  async function mateoReport(api: ApiClient) {
-    const interpretation = await proposedRules(api, "mateo", [{ clarification_id: "clar-mateo-oil", option_id: "energy-sector" }]);
-    const { policy } = await api.confirmRules({
-      persona_id: "mateo",
-      base_policy_version: null,
-      objectives: interpretation.objectives,
-      confirmations: interpretation.proposed_rules.map((rule) => ({ rule, threshold: 0 })),
-    });
-    const created = await api.createInvestigation({
-      persona_id: "mateo",
-      policy_version: policy.policy_version,
-      purchase: { instrument_id: "SPY", target_direct_weight: 0.15 },
-      idempotency_key: "mateo-1",
-    });
-    return (await runToEnd(api, created.investigation_id)).final.result!;
-  }
-
-  it("fails the Energy exclusion on the STARTING portfolio, before any purchase", async () => {
-    const result = await mateoReport(make());
-    const exclusion = result.rule_results.find((r) => r.rule_type === "exclusion")!;
-
-    expect(exclusion.starting).toMatchObject({ status: "FAIL", limit: 0 });
-    expect(exclusion.starting.measured).toEqual({ lower: 0.034, upper: 0.184 });
-    expect(exclusion.proposed!.status).toBe("FAIL");
-    expect(exclusion.proposed!.measured!.lower).toBeCloseTo(0.03895, 10);
-    expect(exclusion.proposed!.measured!.upper).toBeCloseTo(0.18895, 10);
+  it("replays the recorded clarification for Mateo: a draft, with no policy and no job", async () => {
+    const api = client();
+    const { accepted } = await mateoFinished(api);
+    const response = await api.challengeInvestigation(accepted.id, preference.request, { idempotencyKey: KEY_2 });
+    expect(response).toEqual(preference.response);
+    expect(response.policy).toBeNull();
+    expect(response.investigation).toBeNull();
   });
 
-  it("keeps the controversy check UNKNOWN next to the proven failure", async () => {
-    const result = await mateoReport(make());
-    const statuses = Object.fromEntries(result.rule_results.map((r) => [r.rule_type, r.proposed!.status]));
-
-    expect(statuses).toEqual({ controversy_exclusion: "UNKNOWN", exclusion: "FAIL" });
-    expect(result.rule_results.find((r) => r.rule_type === "controversy_exclusion")!.proposed!.gap).toBeNull();
+  it("refuses a clarification in other words", async () => {
+    const api = client();
+    const { accepted } = await mateoFinished(api);
+    const error = await failure(api.challengeInvestigation(accepted.id, { type: "CLARIFY_PREFERENCE", payload: { text: "I meant coal.", objective_id: null } }, { idempotencyKey: KEY_2 }));
+    expect(error.kind).toBe("no_fixture");
   });
 
-  it("treats the fund without holdings as an unknown range, not as zero", async () => {
-    const result = await mateoReport(make());
-    const esgv = result.data_coverage.funds.find((f) => f.fund_id === "ESGV")!;
-    const exposure = result.exposures.find((e) => e.rule_id === "rule-mateo-energy")!;
-
-    expect(esgv).toMatchObject({ status: "MISSING", coverage: 0, holdings_date: null });
-    expect(result.data_coverage.status).toBe("PARTIAL");
-    expect(exposure.proposed!.possible_extra).toBe(0.15);
-    expect(exposure.proposed!.upper).toBeGreaterThan(exposure.proposed!.lower);
-  });
-
-  it("says no purchase is feasible instead of giving a maximum", async () => {
-    const result = await mateoReport(make());
-    expect(result.max_compliant).toMatchObject({ status: "NO_FEASIBLE_PURCHASE", final_direct_weight: null, additional_purchase: null });
-    expect(result.max_compliant!.reason).toMatch(/no purchase is feasible under this funding path/i);
-  });
-
-  it("replays no scenario when no loss budget is confirmed", async () => {
-    expect((await mateoReport(make())).scenario).toBeNull();
-  });
-});
-
-describe("fixtures client — draft previews (POST /check)", () => {
-  async function preview(api: ApiClient, persona: PersonaId, ruleType: Rule["rule_type"], threshold: number, withPurchase: boolean) {
-    const answers = persona === "mateo" ? [{ clarification_id: "clar-mateo-oil", option_id: "energy-sector" }] : [];
-    const interpretation = await proposedRules(api, persona, answers);
-    const rule = interpretation.proposed_rules.find((r) => r.rule_type === ruleType)!;
-    const { scenario_purchase } = await api.getPortfolio(persona);
-    const { result } = await api.check({
-      persona_id: persona,
-      purchase: withPurchase ? scenario_purchase : null,
-      rules: [withRuleThreshold(rule, threshold)],
-      is_draft_preview: true,
-    });
-    return result;
-  }
-
-  it("is marked as a draft preview and belongs to no policy version", async () => {
-    const result = await preview(make(), "robert", "max_issuer_exposure", 0.12, false);
-    expect(result.is_draft_preview).toBe(true);
-    expect(result.policy_version).toBeNull();
-    expect(result.max_compliant).toBeNull();
-    expect(result.rule_results[0]!.proposed).toBeNull();
-  });
-
-  it("passes when the measured value is exactly at the limit", async () => {
-    const result = await preview(make(), "robert", "max_issuer_exposure", 0.265, true);
-    expect(result.rule_results[0]!.proposed).toMatchObject({ status: "PASS", gap: 0 });
-    expect(result.rule_results[0]!.proposed!.reason).toMatch(/exactly at the limit/i);
-  });
-
-  it("fails just below the measured value", async () => {
-    const result = await preview(make(), "robert", "max_issuer_exposure", 0.2649, true);
-    expect(result.rule_results[0]!.proposed!.status).toBe("FAIL");
-  });
-
-  it("is UNKNOWN when the limit falls inside the possible range", async () => {
-    const result = await preview(make(), "mateo", "exclusion", 0.05, false);
-    expect(result.rule_results[0]!.starting).toMatchObject({ status: "UNKNOWN", gap: null, measured: { lower: 0.034, upper: 0.184 } });
-  });
-
-  it("passes only when even the upper bound is within the limit", async () => {
-    expect((await preview(make(), "mateo", "exclusion", 0.184, false)).rule_results[0]!.starting.status).toBe("PASS");
-    expect((await preview(make(), "mateo", "exclusion", 0.1839, false)).rule_results[0]!.starting.status).toBe("UNKNOWN");
-    expect((await preview(make(), "mateo", "exclusion", 0.0339, false)).rule_results[0]!.starting.status).toBe("FAIL");
-  });
-
-  it("does not create a policy version or a job", async () => {
-    const api = make();
-    await preview(api, "robert", "max_issuer_exposure", 0.5, true);
-    const interpretation = await proposedRules(api, "robert");
-    const policy = await confirmAll(api, "robert", interpretation.proposed_rules);
-    // Had the preview been stored, this would not be version 1 with the scenario's 10% cap.
-    expect(policy.policy_version).toBe(1);
-    expect(getRuleThreshold(policy.rules[0]!)).toBe(0.1);
-  });
-
-  it("skips rules that have no threshold yet", async () => {
-    const api = make();
-    const interpretation = await proposedRules(api, "mateo");
-    const { result } = await api.check({ persona_id: "mateo", purchase: null, rules: interpretation.proposed_rules, is_draft_preview: true });
-    expect(result.rule_results).toEqual([]);
+  it("answers a challenge to an unknown job with the recorded not-found error", async () => {
+    const error = await failure(client().challengeInvestigation("inv-nope", change.request, { idempotencyKey: KEY_2 }));
+    expect(error.kind).toBe("not_found");
   });
 });

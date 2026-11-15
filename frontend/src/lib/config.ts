@@ -5,6 +5,8 @@
  * NOT configuration: it is typed at runtime (see `access-code.ts`).
  */
 
+import { POLL_DEADLINE_MS, POLL_INTERVAL_MS } from "@/lib/contracts";
+
 export type AppMode = "fixtures" | "live";
 
 /** Failure states that can be requested in fixtures mode to exercise the interface. */
@@ -74,14 +76,16 @@ export interface Timing {
   previewDebounceMs: number;
 }
 
-export const LIVE_TIMING: Timing = {
-  pollIntervalMs: 2_000,
-  pollDeadlineMs: 120_000,
+/**
+ * The poll interval and deadline are the shared contract's: the deadline is
+ * longer than the server's own job deadline, so the page always outlasts the
+ * job and shows its real outcome. The same values are used on test data.
+ */
+export const TIMING: Timing = {
+  pollIntervalMs: POLL_INTERVAL_MS,
+  pollDeadlineMs: POLL_DEADLINE_MS,
   previewDebounceMs: 400,
 };
 
-export const FIXTURES_TIMING: Timing = {
-  pollIntervalMs: 700,
-  pollDeadlineMs: 20_000,
-  previewDebounceMs: 400,
-};
+/** Fixtures mode with `?simulate=poll-timeout`: a job that never finishes reaches its visible deadline quickly. */
+export const SIMULATED_TIMEOUT_DEADLINE_MS = 4_000;

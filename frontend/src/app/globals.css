@@ -192,6 +192,11 @@
   height: 1.25rem; /* 20px: thin mark */
 }
 
+/* The same company before the purchase: a thinner bar under the main one. */
+.byb-bar[data-size="thin"] {
+  height: 0.625rem;
+}
+
 .byb-bar-track {
   display: flex;
   height: 100%;
@@ -278,6 +283,27 @@
   margin-inline: 0.375rem;
   border-radius: 1px;
   background: var(--color-ink);
+}
+
+/* ---------------------------------------------------------------------------
+ * Sections and chart rows that open on demand (<details>). Our own chevron
+ * replaces the native marker, which a flex or grid summary does not show.
+ * ------------------------------------------------------------------------- */
+.byb-summary {
+  list-style: none;
+}
+
+.byb-summary::-webkit-details-marker {
+  display: none;
+}
+
+.byb-chevron {
+  flex: none;
+  transition: transform 120ms ease-out;
+}
+
+details[open] > .byb-summary .byb-chevron {
+  transform: rotate(90deg);
 }
 
 /* ---------------------------------------------------------------------------

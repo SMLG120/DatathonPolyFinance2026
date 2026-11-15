@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   decimalsToDistinguish,
   formatChange,
+  formatCoverage,
   formatDate,
   formatDateTime,
   formatFraction,
   formatFractionRange,
   formatGap,
   formatPoints,
+  formatReturn,
   formatTime,
   fractionToPercentInput,
   isRange,
@@ -121,14 +123,38 @@ describe("formatPoints and formatGap", () => {
     expect(formatGap(0.0004)).toBe("0.04 points over the limit");
   });
 
-  it("words a minimum the other way round", () => {
-    expect(formatGap(-0.05, "min")).toBe("5.0 points below the minimum");
-    expect(formatGap(0.05, "min")).toBe("5.0 points above the minimum");
+  it("reads the gap as the contract defines it for a minimum too: positive is the size of the breach", () => {
+    expect(formatGap(0.05, "min")).toBe("5.0 points below the minimum");
+    expect(formatGap(-0.05, "min")).toBe("5.0 points above the minimum");
+  });
+
+  it("names the limit as the caller asks, and starts at the decimals asked for", () => {
+    expect(formatGap(0.0525, "max", "budget", 2)).toBe("5.25 points over the budget");
+    expect(formatGap(0.162, "max", "limit")).toBe("16.2 points over the limit");
   });
 
   it("says a gap cannot be determined when it is unknown", () => {
     expect(formatGap(null)).toBe("Cannot be determined");
     expect(formatGap(undefined)).toBe("Cannot be determined");
+  });
+});
+
+describe("formatCoverage and formatReturn", () => {
+  it("truncates a coverage, so a fund just short of complete never reads 100.0%", () => {
+    expect(formatCoverage(0.9987)).toBe("99.8%");
+    expect(formatCoverage(0.9996)).toBe("99.9%");
+    expect(formatCoverage(0.99999)).toBe("99.9%");
+    expect(formatCoverage(0.98)).toBe("98.0%");
+    expect(formatCoverage(1)).toBe("100.0%");
+    expect(formatCoverage(0)).toBe("0.0%");
+    expect(formatCoverage(null)).toBe(UNKNOWN_TEXT);
+  });
+
+  it("shows a return signed, to two decimals", () => {
+    expect(formatReturn(-0.1525)).toBe("−15.25%");
+    expect(formatReturn(0.04)).toBe("+4.00%");
+    expect(formatReturn(0)).toBe("0.00%");
+    expect(formatReturn(null)).toBe(UNKNOWN_TEXT);
   });
 });
 
