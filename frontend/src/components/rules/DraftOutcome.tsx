@@ -17,7 +17,7 @@ export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)} — ${
 export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "here" | "elsewhere" }) {
   const { state, derived } = useWorkflow();
   const policy = derived.currentPolicy;
-  const list = place === "here" ? "“Proposed rules” below" : "“Proposed rules” in Goals & rules";
+  const list = place === "here" ? "“Your limits”" : "“Your limits”";
 
   // The same rule is the same id and the same check: another answer can have given another rule this id.
   if (state.proposedRules.some((rule) => rule.rule_id === draft.rule_id && measureKey(rule) === measureKey(draft))) {
@@ -40,7 +40,7 @@ export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "
     return (
       <>
         <span className="font-semibold">Already in force</span> in policy version <span className="tabular">{policy?.version}</span>: {ruleName(inForce)}.
-        {place === "here" ? " Change its number in the Challenge stage." : " Its number can be changed under “Change a rule”."}
+        {place === "here" ? " Change its number by reviewing the result." : " Its number can be changed under “Change a rule”."}
       </>
     );
   }

@@ -1,9 +1,10 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ProgressBar } from "@/components/tremor/ProgressBar";
 import { LinkButton } from "@/components/ui/Button";
 import { ArrowLeftIcon, ArrowRightIcon } from "@/components/ui/icons";
-import { nextStage, previousStage, stageById, stageHref, STAGES, type StageId } from "@/state/stage";
+import { journeyFor, SCREEN_TITLES, stageHref, JOURNEY, type StageId } from "@/state/stage";
 
 export interface StageFrameProps {
   stage: StageId;
@@ -23,23 +24,24 @@ export interface StageFrameProps {
  * stage whose inputs are missing explains what it needs.
  */
 export function StageFrame({ stage, lead, children, continueNote }: StageFrameProps) {
-  const current = stageById(stage);
-  const previous = previousStage(stage);
-  const next = nextStage(stage);
+  const current = journeyFor(stage);
+  const previous = stage === "goals" || stage === "purchase" ? { id: "persona" as const, title: "profiles" } : stage === "verdict" || stage === "investigation" || stage === "challenge" ? { id: "purchase" as const, title: "your idea" } : null;
+  const next = stage === "persona" ? { id: "purchase" as const, title: "Test an idea" } : stage === "goals" ? { id: "purchase" as const, title: "Test an idea" } : null;
 
   return (
     <article aria-labelledby="stage-title" className="space-y-6">
       <header className="space-y-2">
         <h1 id="stage-title" data-stage-heading tabIndex={-1} className="text-ink">
           <span className="block text-sm font-semibold text-ink-muted">
-            Step {current.number} of {STAGES.length}
+            Step {current.number} of {JOURNEY.length}
             <span className="sr-only">: </span>
           </span>
-          <span className="mt-1 block text-3xl font-bold tracking-tight sm:text-4xl">{current.title}</span>
+          <span className="mt-1 block text-3xl font-bold tracking-tight sm:text-4xl">{SCREEN_TITLES[stage]}</span>
         </h1>
         <div className="max-w-prose text-lg text-ink-muted">{lead}</div>
       </header>
 
+      <ProgressBar value={current.number} max={JOURNEY.length} aria-label="Current step" aria-valuetext={`Step ${current.number} of ${JOURNEY.length}`} />
       {children}
 
       <nav aria-label="Previous and next stage" className="space-y-3 border-t border-line pt-5">
@@ -54,7 +56,7 @@ export function StageFrame({ stage, lead, children, continueNote }: StageFramePr
           )}
           {next ? (
             <LinkButton href={stageHref(next.id)} variant="primary" iconAfter={<ArrowRightIcon />} data-testid="continue-link">
-              Continue to {next.title}
+              {next.title}
             </LinkButton>
           ) : null}
         </div>

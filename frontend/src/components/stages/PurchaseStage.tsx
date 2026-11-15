@@ -9,7 +9,7 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { describedBy, Field, Select } from "@/components/ui/Field";
 import { ArrowRightIcon, ErrorIcon } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/Notice";
-import { Fact, Facts, Panel } from "@/components/ui/Panel";
+import { Panel } from "@/components/ui/Panel";
 import { ExecutionState } from "@/components/verdict/ExecutionState";
 import { useDebouncedPreview } from "@/hooks/useDebouncedPreview";
 import { describeError, isApiError } from "@/lib/api";
@@ -106,19 +106,24 @@ export function PurchaseStage() {
     }
     if (!policy) return;
     const id = await actions.startInvestigation(request);
-    if (id) goToStage("investigation");
+    if (id) goToStage("verdict");
   }
 
   return (
     <StageFrame
       stage="purchase"
-      lead="Describe the purchase to check: which instrument, and the final weight it should have in the portfolio. Nothing is bought; this is a simulation."
+      lead="Choose an investment and its target share. We’ll check it against your confirmed limits."
     >
-      <Panel title="Purchase request" figures>
+      {!policy ? (
+        <Notice tone="info" title="First, confirm your limits" action={<LinkButton href={stageHref("goals")} variant="primary">Set my limits</LinkButton>}>
+          <p>Choose what matters to you before checking an idea.</p>
+        </Notice>
+      ) : <p className="text-sm text-ink-muted">{active.length} confirmed limits · <LinkButton href={stageHref("goals")} variant="quiet" size="sm">Review limits</LinkButton></p>}
+      <Panel title="What would you like to try?" figures>
         <div className="space-y-5">
           {scenario.demo_requests.length > 0 ? (
-            <div className="rounded-md border border-line bg-canvas p-3" data-testid="scenario-requests">
-              <p className="text-sm font-semibold text-ink-muted">Requests written for this fictional scenario</p>
+            <details className="rounded-md border border-line bg-canvas p-3" data-testid="scenario-requests">
+              <summary className="cursor-pointer text-sm font-semibold text-ink-muted">Try an example</summary>
               <ul className="mt-1 space-y-2">
                 {scenario.demo_requests.map((demo) => {
                   const inForm = request?.instrument_id === demo.purchase_request.instrument_id && request.target_direct_weight === demo.purchase_request.target_direct_weight;
@@ -147,11 +152,11 @@ export function PurchaseStage() {
                   );
                 })}
               </ul>
-            </div>
+            </details>
           ) : null}
 
           <div className="grid gap-5 md:grid-cols-2">
-            <Field htmlFor={instrumentId} label="Instrument to buy" hint="Only instruments this simulation holds data for." error={instrumentError}>
+            <Field htmlFor={instrumentId} label="Which investment?" hint="Only supported investments are listed." error={instrumentError}>
               <Select
                 id={instrumentId}
                 ref={instrumentRef}
@@ -160,7 +165,7 @@ export function PurchaseStage() {
                 aria-invalid={instrumentError ? true : undefined}
                 aria-describedby={describedBy(instrumentId, { hint: true, error: Boolean(instrumentError) })}
               >
-                <option value="">Choose an instrument</option>
+                <option value="">Choose an investment</option>
                 {purchasable.map((id) => {
                   const instrument = instruments[id];
                   return (
@@ -175,11 +180,10 @@ export function PurchaseStage() {
 
             <div className="space-y-1.5">
               <label htmlFor={targetId} className="block font-semibold text-ink">
-                Final direct weight of this position
+                Share of the portfolio after buying
               </label>
               <p id={`${targetId}-hint`} className="text-sm text-ink-muted">
-                The share of the whole portfolio the position should have <strong className="font-semibold text-ink">after</strong> the purchase — not
-                the amount added.{" "}
+                Total share <strong className="font-semibold text-ink">after</strong> buying, including what you already hold.{" "}
                 {state.purchase.instrumentId === "" ? null : (
                   <span data-testid="held-now">
                     Held directly now: {held === null ? "nothing" : <span className="tabular">{formatFraction(held)}</span>}.
@@ -215,34 +219,72 @@ export function PurchaseStage() {
             </div>
           </div>
 
-          <Notice tone="info" title="How the purchase is funded">
-            <p data-testid="funding-statement">{FUNDING_STATEMENT}</p>
-          </Notice>
-
-          <div aria-live="polite">
-            {request ? (
-              <Facts>
-                <Fact label="Final direct weight you entered">
-                  <span className="tabular text-xl font-bold" data-testid="entered-target">
-                    {formatFraction(request.target_direct_weight)}
-                  </span>{" "}
-                  <span className="text-ink-muted">in {request.instrument_id}</span>
-                </Fact>
-                <Fact label="Amount added and cash left">
-                  <span data-testid="figures-after-check">
-                    Computed by the service, not by this page: they appear as a preview below once the service answers, and in the report after the
-                    check.
-                  </span>
-                </Fact>
-              </Facts>
-            ) : (
-              <p className="text-ink-muted">Choose an instrument and a final weight. The amount added and the cash left are then computed by the service.</p>
-            )}
-          </div>
+          <p className="text-sm text-ink-muted" data-testid="funding-statement">{FUNDING_STATEMENT}</p>
+      <div className="space-y-3">
+        {state.start.status === "error" ? (
+          state.start.kind === "no_fixture" ? (
+            <Notice tone="info" role="alert" title="The test data holds no investigation of this request">
+              <p data-testid="start-not-recorded">{state.start.error}</p>
+              <p>No investigation was created.</p>
+            </Notice>
+          ) : (
+            <ErrorBlock
+              title="The investigation could not be started"
+              message={state.start.error ?? "The request failed."}
+              onRetry={startRefused ? undefined : () => void start()}
+            >
+              {state.start.issues.length > 0 ? (
+                <ul className="list-disc space-y-1 pl-5" data-testid="start-issues">
+                  {state.start.issues.map((issue, index) => (
+                    <li key={`${index}-${issue}`}>{issue}</li>
+                  ))}
+                </ul>
+              ) : null}
+              <p>No investigation was created.</p>
+              {startRefused ? (
+                <p data-testid="start-refused">The service refused the request as it was sent, so sending it again unchanged would be refused again. Change it above, then start again.</p>
+              ) : null}
+            </ErrorBlock>
+          )
+        ) : null}
+        {state.investigationIds.length > 0 ? (
+          <p className="text-ink-muted">
+            {state.investigationIds.length === 1 ? "One investigation has" : `${state.investigationIds.length} investigations have`} already run in this
+            session. Starting again creates a new one; earlier reports stay available.
+          </p>
+        ) : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button
+            variant="primary"
+            softDisabled={!canStart}
+            busy={starting}
+            busyLabel="Checking your idea…"
+            iconAfter={<ArrowRightIcon />}
+            onClick={() => void start()}
+            data-testid="start-investigation"
+          >
+            Check my idea
+          </Button>
+          <p className="text-sm text-ink-muted" role="status">
+            {canStart && previewRefusal ? (
+              <span data-testid="start-preview-refusal">
+                The preview above says this request cannot be evaluated{previewRefusal.code ? ` (${previewRefusal.code})` : ""}. Started as it is, it is refused for the
+                same reason and no investigation is created. Change the request first.
+              </span>
+            ) : canStart
+              ? "Checks your limits. No trade is placed."
+              : !policy
+                ? "Needs at least one confirmed rule."
+                : attempted
+                  ? "The request above is not complete yet."
+                  : "Needs an instrument and a final weight."}
+          </p>
+        </div>
+      </div>
         </div>
       </Panel>
 
-      <Panel title="Effect on the position and on cash" eyebrow="Preview" figures={previewed !== null} description={FUNDING_STATEMENT}>
+      <Panel collapsible title="Preview cash and exposures" eyebrow="Preview" figures={previewed !== null} description={FUNDING_STATEMENT}>
         <div role="status" aria-live="polite" className="space-y-4" data-testid="purchase-preview" data-preview-status={preview.status}>
           {!request ? (
             <EmptyBlock title="Nothing to preview yet">
@@ -319,7 +361,7 @@ export function PurchaseStage() {
         <PurchaseExposureExplorerSlot result={previewed} />
       </Panel>
 
-      <Panel title="Rules the purchase will be checked against" eyebrow={policy ? `Confirmed policy — version ${policy.version}` : undefined} figures={policy !== null}>
+      <Panel collapsible title="Review your confirmed limits"  figures={policy !== null}>
         {policy ? (
           <ul className="list-disc space-y-1 pl-5 text-ink" data-testid="purchase-policy-rules">
             {active.map((rule) => (
@@ -342,67 +384,7 @@ export function PurchaseStage() {
         )}
       </Panel>
 
-      <div className="space-y-3">
-        {state.start.status === "error" ? (
-          state.start.kind === "no_fixture" ? (
-            <Notice tone="info" role="alert" title="The test data holds no investigation of this request">
-              <p data-testid="start-not-recorded">{state.start.error}</p>
-              <p>No investigation was created.</p>
-            </Notice>
-          ) : (
-            <ErrorBlock
-              title="The investigation could not be started"
-              message={state.start.error ?? "The request failed."}
-              onRetry={startRefused ? undefined : () => void start()}
-            >
-              {state.start.issues.length > 0 ? (
-                <ul className="list-disc space-y-1 pl-5" data-testid="start-issues">
-                  {state.start.issues.map((issue, index) => (
-                    <li key={`${index}-${issue}`}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
-              <p>No investigation was created.</p>
-              {startRefused ? (
-                <p data-testid="start-refused">The service refused the request as it was sent, so sending it again unchanged would be refused again. Change it above, then start again.</p>
-              ) : null}
-            </ErrorBlock>
-          )
-        ) : null}
-        {state.investigationIds.length > 0 ? (
-          <p className="text-ink-muted">
-            {state.investigationIds.length === 1 ? "One investigation has" : `${state.investigationIds.length} investigations have`} already run in this
-            session. Starting again creates a new one; earlier reports stay available.
-          </p>
-        ) : null}
-        <div className="flex flex-wrap items-center gap-3">
-          <Button
-            variant="primary"
-            softDisabled={!canStart}
-            busy={starting}
-            busyLabel="Starting the investigation…"
-            iconAfter={<ArrowRightIcon />}
-            onClick={() => void start()}
-            data-testid="start-investigation"
-          >
-            Start the investigation
-          </Button>
-          <p className="text-sm text-ink-muted" role="status">
-            {canStart && previewRefusal ? (
-              <span data-testid="start-preview-refusal">
-                The preview above says this request cannot be evaluated{previewRefusal.code ? ` (${previewRefusal.code})` : ""}. Started as it is, it is refused for the
-                same reason and no investigation is created. Change the request first.
-              </span>
-            ) : canStart
-              ? "Runs the check against the confirmed policy and shows each step as it completes."
-              : !policy
-                ? "Needs at least one confirmed rule."
-                : attempted
-                  ? "The request above is not complete yet."
-                  : "Needs an instrument and a final weight."}
-          </p>
-        </div>
-      </div>
+
     </StageFrame>
   );
 }

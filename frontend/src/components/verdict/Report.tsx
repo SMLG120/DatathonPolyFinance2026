@@ -1,6 +1,8 @@
 "use client";
 
 import { FeasibilityTable } from "@/components/portfolio/FeasibilityTable";
+import { LinkButton } from "@/components/ui/Button";
+import { stageHref } from "@/state/stage";
 import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Notice } from "@/components/ui/Notice";
@@ -62,31 +64,23 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
   const targetIssuerId = instruments[purchase.instrument_id]?.issuer_id ?? null;
 
   const links: SummaryLink[] = [
-    { id: "report-rules", label: "Confirmed rules" },
-    { id: "report-exposure", label: "Exposure" },
-    ...(result.starting_portfolio_findings.length > 0 ? [{ id: "report-starting", label: "Before the purchase" }] : []),
-    ...(feasibility ? [{ id: "report-cash", label: "Cash" }] : []),
-    ...(result.scenario ? [{ id: "report-replay", label: "Historical replay" }] : []),
-    { id: "report-max", label: "Largest compliant purchase" },
-    { id: "report-objectives", label: "Objectives" },
-    { id: "report-coverage", label: "Data coverage" },
-    ...(job.explanation.length > 0 ? [{ id: "report-sentences", label: "In sentences" }] : []),
-    { id: "report-about", label: "About this report" },
+    { id: "report-rules", label: "See the checks" },
+    { id: "report-exposure", label: "Explore my exposures" },
+    { id: "report-coverage", label: "Sources and missing data" },
   ];
 
   return (
-    <div className="space-y-6" data-testid="report" data-job-id={job.id}>
+    <div className="space-y-6" data-testid="report" data-job-id={job.id} data-policy-version={result.policy_version ?? undefined}>
       <VerdictSummary
         summary={summary}
         links={links}
         scope={
           <>
-            After the purchase of <span className="tabular">{describePurchase(purchase)}</span> · confirmed policy version{" "}
-            <span className="tabular">{result.policy_version ?? "none"}</span>
+            After the purchase of <span className="tabular">{describePurchase(purchase)}</span>
           </>
         }
       >
-        <p className="text-ink">{FUNDING_STATEMENT}</p>
+
         {feasibility ? (
           <p className="text-ink" data-testid="feasibility" data-feasibility={feasibility.status}>
             <span className="font-semibold">Feasibility, reported separately from the rules:</span>{" "}
@@ -114,6 +108,7 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
           </p>
         ) : null}
       </VerdictSummary>
+      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton></div>
 
       {result.policy_consistency.status === "PROVEN_CONFLICT" ? (
         <Notice tone="error" title="Two confirmed rules cannot both be respected" role="alert">
@@ -129,8 +124,8 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         id="report-rules"
         focusableHeading
         figures
-        title="Each confirmed rule, after the purchase"
-        description="Every confirmed rule is listed with what was measured, the limit that was confirmed and the gap between them."
+        title="What fits and what doesn’t"
+        description="Your confirmed limit compared with this simulated purchase."
       >
         {result.rule_results.length > 0 || result.rules_not_evaluated.length > 0 ? (
           <RuleResultsList result={result} lookup={lookup} />
@@ -141,11 +136,11 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         )}
       </Panel>
 
-      <Panel
+      <Panel collapsible
         id="report-exposure"
         focusableHeading
         figures
-        title="Exposure: held directly and through funds"
+        title="Explore my exposures"
         description="The same company can be held directly and inside a fund. Each part is shown, and the part that cannot be measured is drawn as a range."
       >
         <ExposurePanel result={result} lookup={lookup} openIssuerId={targetIssuerId} />
@@ -164,23 +159,25 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         </Panel>
       ) : null}
 
+      <Disclosure id="report-details" title="More analysis and sources" hint={coverageHint(result)} figures>
+      <div className="space-y-4">
       {feasibility ? (
-        <Panel id="report-cash" focusableHeading figures title="The purchase and the cash that funds it" description={FUNDING_STATEMENT}>
+        <Panel collapsible id="report-cash" focusableHeading figures title="The purchase and the cash that funds it" description={FUNDING_STATEMENT}>
           <FeasibilityTable feasibility={feasibility} purchase={purchase} instrumentName={instrumentName(instruments, purchase.instrument_id)} />
         </Panel>
       ) : null}
 
       {result.scenario ? (
-        <Panel id="report-replay" focusableHeading figures title="Historical replay" eyebrow="A separate test, not a forecast">
+        <Panel collapsible id="report-replay" focusableHeading figures title="Historical replay" eyebrow="A separate test, not a forecast">
           <ScenarioPanel result={result} scenario={result.scenario} />
         </Panel>
       ) : null}
 
-      <Panel id="report-max" focusableHeading figures title="Largest purchase that respects every confirmed rule" eyebrow="Shown only when it can be supported">
+      <Panel collapsible id="report-max" focusableHeading figures title="Largest purchase that respects every confirmed rule" eyebrow="Shown only when it can be supported">
         <MaxCompliantBlock result={result} lookup={lookup} maxCompliant={result.max_compliant} />
       </Panel>
 
-      <Panel
+      <Panel collapsible
         id="report-objectives"
         focusableHeading
         figures
@@ -249,6 +246,8 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
             </ul>
           </div>
         ) : null}
+      </Disclosure>
+      </div>
       </Disclosure>
     </div>
   );

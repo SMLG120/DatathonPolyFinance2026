@@ -13,7 +13,7 @@ import { VerdictStage } from "@/components/stages/VerdictStage";
 import { AnnouncerProvider } from "@/components/ui/Announcer";
 import { DEFAULT_PERSONA } from "@/content/personas";
 import { RuntimeProvider, useRuntime } from "@/state/runtime";
-import { stageById, useStage, type StageId } from "@/state/stage";
+import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
 
 const APP_NAME = "Before You Buy — fictional simulation";
@@ -80,7 +80,7 @@ function StageRouter() {
 
   return (
     <>
-      <PageTitle>{`${stageById(stage).title} — ${APP_NAME}`}</PageTitle>
+      <PageTitle>{`${SCREEN_TITLES[stage]} — ${APP_NAME}`}</PageTitle>
       <StageView stage={stage} />
     </>
   );

@@ -141,7 +141,7 @@ describe("ExposureExplorer: values", () => {
 
     const sentence = screen.getByTestId("explorer-totals").querySelector('[data-state="proposed"]');
     expect(sentence).toHaveTextContent(`between ${formatFraction(issuer.proposed.lower)} and ${formatFraction(issuer.proposed.upper)} of the portfolio`);
-    expect(sentence).toHaveTextContent("shown hollow");
+    expect(sentence).toHaveTextContent("uncertain upper bound");
     expect(screen.getByTestId("explorer-table").querySelector('tr[data-row="upper"]')).not.toBeNull();
     const causes = screen.getByTestId("explorer-unknown-causes");
     expect(within(causes).getAllByRole("listitem").length).toBeGreaterThan(0);
@@ -325,6 +325,6 @@ describe("ExposureExplorer: fallback", () => {
     const help = screen.getByTestId("explorer-how-to-read");
     expect(help.tagName).toBe("DETAILS");
     expect(help).toHaveTextContent("Indirect exposure means owning a company through a fund.");
-    expect(help).toHaveTextContent("Depth and width mean nothing");
+    expect(help).toHaveTextContent("Node size, distance and link width do not represent amounts");
   });
 });

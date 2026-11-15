@@ -29,6 +29,12 @@ export interface SummaryLink {
 export function goToSection(id: string): void {
   const section = document.getElementById(id);
   if (!section) return;
+  // A deep evidence link also reveals its enclosing optional sections.
+  let parent = section.parentElement;
+  while (parent) {
+    if (parent instanceof HTMLDetailsElement) parent.open = true;
+    parent = parent.parentElement;
+  }
   let target: HTMLElement | null;
   if (section instanceof HTMLDetailsElement) {
     section.open = true;

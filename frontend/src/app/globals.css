@@ -13,37 +13,37 @@
   --color-*: initial;
 
   /* Neutrals */
-  --color-canvas: #f4f5f7; /* page background */
+  --color-canvas: #fafafa; /* page background */
   --color-surface: #ffffff; /* cards, drawer, inputs */
-  --color-sunken: #eceef2; /* inset panels, table headers */
-  --color-line: #d3d8df; /* decorative hairlines only */
-  --color-line-strong: #6a7483; /* control boundaries (>= 3:1) */
-  --color-ink: #16202b; /* primary text */
-  --color-ink-muted: #485464; /* secondary text */
+  --color-sunken: #f4f4f5; /* inset panels, table headers */
+  --color-line: #e4e4e7; /* decorative hairlines only */
+  --color-line-strong: #71717a; /* control boundaries (>= 3:1) */
+  --color-ink: #18181b; /* primary text */
+  --color-ink-muted: #52525b; /* secondary text */
 
-  /* The one accent */
-  --color-accent: #1d4e89;
-  --color-accent-strong: #153a66; /* hover / pressed */
-  --color-accent-soft: #e7eef7; /* tint behind accent text; chart track */
+  /* shadcn zinc neutrals for controls; Tremor blue for data. */
+  --color-accent: #18181b;
+  --color-accent-strong: #09090b; /* hover / pressed */
+  --color-accent-soft: #f4f4f5; /* tint behind accent text; chart track */
   --color-on-accent: #ffffff;
 
   /* Status. Always paired with an icon shape and a word, never colour alone. */
-  --color-pass: #17603a;
-  --color-pass-soft: #e6f2ea;
-  --color-fail: #9b1c1c;
-  --color-fail-soft: #fbebea;
-  --color-unknown: #7a4700;
-  --color-unknown-soft: #faf0dc;
+  --color-pass: #166534;
+  --color-pass-soft: #f0fdf4;
+  --color-fail: #b91c1c;
+  --color-fail-soft: #fef2f2;
+  --color-unknown: #92400e;
+  --color-unknown-soft: #fffbeb;
 
   /* Persistent simulation banner */
-  --color-banner: #16202b;
+  --color-banner: #18181b;
   --color-on-banner: #ffffff;
-  --color-on-banner-muted: #c9d1db;
+  --color-on-banner-muted: #d4d4d8;
 
   /* Exposure chart: one hue, darker = held more directly (validated as an ordinal ramp). */
-  --color-chart-direct: #1d4e89;
-  --color-chart-indirect: #5c88bf;
-  --color-chart-track: #e7eef7;
+  --color-chart-direct: #1d4ed8;
+  --color-chart-indirect: #4f7ecb;
+  --color-chart-track: #eff6ff;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -62,7 +62,8 @@
     background-color: var(--color-canvas);
     color: var(--color-ink);
     font-family: var(--font-sans);
-    line-height: 1.5;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
     overflow-wrap: break-word;
   }
 
@@ -70,6 +71,7 @@
   h2,
   h3 {
     text-wrap: balance;
+    letter-spacing: -0.025em;
   }
 
   /* One focus style everywhere: visible on every surface used by the app. */

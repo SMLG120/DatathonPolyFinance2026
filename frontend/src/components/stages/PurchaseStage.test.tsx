@@ -11,7 +11,7 @@ import { confirmScenarioRules, go, renderApp } from "@/test/app";
 import { probe, recorded, SENTINEL } from "@/test/probes";
 import { LIVE_CONFIG } from "@/test/render";
 
-const TARGET_LABEL = "Final direct weight of this position";
+const TARGET_LABEL = "Share of the portfolio after buying";
 
 async function toPurchase(options: { api?: ApiClient; confirm?: boolean; live?: boolean } = {}): Promise<UserEvent> {
   const user = userEvent.setup();
@@ -29,11 +29,9 @@ describe("Purchase stage, before any answer from the service", () => {
   it("shows the target the user entered and says the other figures appear after the check", async () => {
     await toPurchase({ confirm: false });
     expect(screen.getByLabelText(TARGET_LABEL)).toHaveValue("25");
-    expect(screen.getByTestId("entered-target")).toHaveTextContent("25.0%");
+    expect(screen.getByTestId("start-investigation")).toHaveTextContent("Check my idea");
     expect(screen.getByTestId("held-now")).toHaveTextContent("Held directly now: nothing.");
-    const note = screen.getByTestId("figures-after-check");
-    expect(note).toHaveTextContent("Computed by the service, not by this page");
-    expect(note).toHaveTextContent("in the report after the check");
+    expect(screen.getByRole("link", { name: "Set my limits" })).toBeVisible();
     expect(screen.getByTestId("funding-statement")).toHaveTextContent("Funded from existing cash; all other positions unchanged; fees and taxes excluded.");
   });
 
@@ -55,7 +53,7 @@ describe("Purchase stage, before any answer from the service", () => {
     const user = await toPurchase({ confirm: false });
     await user.clear(screen.getByLabelText(TARGET_LABEL));
     await user.type(screen.getByLabelText(TARGET_LABEL), "12.5");
-    expect(screen.getByTestId("entered-target")).toHaveTextContent("12.5%");
+    expect(screen.getByLabelText(TARGET_LABEL)).toHaveValue("12.5");
     expect(screen.queryByTestId("cash-after")).toBeNull();
   });
 });
@@ -103,7 +101,7 @@ describe("Purchase stage, the preview", () => {
     expect([...(table.querySelector('tr[data-row="cash"]')?.querySelectorAll("td") ?? [])].map((cell) => cell.textContent)).toEqual(["66.6%", "55.5%"]);
     expect([...(table.querySelector('tr[data-row="purchase"]')?.querySelectorAll("td") ?? [])].map((cell) => cell.textContent)).toEqual(["1.1%", "25.0%"]);
     // The user's own entry is still shown as entered.
-    expect(screen.getByTestId("entered-target")).toHaveTextContent("25.0%");
+    expect(screen.getByTestId("start-investigation")).toHaveTextContent("Check my idea");
   });
 
   it("carries the “Test data” marker in fixtures mode", async () => {
@@ -136,7 +134,7 @@ describe("Purchase stage, the preview", () => {
     expect(screen.queryByTestId("purchase-preview-error")).toBeNull();
     expect(screen.queryByTestId("feasibility-table")).toBeNull();
     expect(screen.queryByTestId("cash-after")).toBeNull();
-    expect(screen.getByTestId("entered-target")).toHaveTextContent("12.0%");
+    expect(screen.getByLabelText(TARGET_LABEL)).toHaveValue("12");
   });
 
   it("shows an error with a retry, and no figure, when the service does not answer", async () => {
@@ -159,7 +157,7 @@ describe("Purchase stage, a request the service cannot evaluate (the recorded in
   it("shows the execution state the service reported, and nothing styled or worded as a verdict", async () => {
     const user = await toPurchase();
     await ready();
-    await user.selectOptions(screen.getByLabelText("Instrument to buy"), "RY.TO");
+    await user.selectOptions(screen.getByLabelText("Which investment?"), "RY.TO");
     await user.clear(screen.getByLabelText(TARGET_LABEL));
     await user.type(screen.getByLabelText(TARGET_LABEL), "2");
 
@@ -182,7 +180,7 @@ describe("Purchase stage, a request the service cannot evaluate (the recorded in
   });
 
   async function enterTheInvalidRequest(user: UserEvent) {
-    await user.selectOptions(screen.getByLabelText("Instrument to buy"), "RY.TO");
+    await user.selectOptions(screen.getByLabelText("Which investment?"), "RY.TO");
     await user.clear(screen.getByLabelText(TARGET_LABEL));
     await user.type(screen.getByLabelText(TARGET_LABEL), "2");
     await screen.findByTestId("execution-state");
@@ -236,7 +234,7 @@ describe("Purchase stage, a request the service cannot evaluate (the recorded in
     expect(within(alert).queryByRole("button")).toBeNull();
     expect(createInvestigation).toHaveBeenCalledTimes(1);
     // The page stays on the purchase stage: nothing was started.
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Step 3 of 6: Proposed purchase");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Step 2 of 3: Test an idea");
   });
 
   it("keeps the retry for a failure that another attempt can get past", async () => {

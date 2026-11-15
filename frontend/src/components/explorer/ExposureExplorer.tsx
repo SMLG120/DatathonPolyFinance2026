@@ -199,16 +199,16 @@ function Legend({ model }: { model: ExplorerReady }) {
     <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink" aria-label="Legend">
       <li className="flex items-center gap-2">
         <span className="byb-swatch" data-seg="direct" aria-hidden="true" />
-        Held directly (solid, dark)
+        Held directly (dark blue)
       </li>
       <li className="flex items-center gap-2">
         <span className="byb-swatch border border-ink" data-seg="indirect" aria-hidden="true" />
-        Through a fund (lighter, outlined)
+        Through a fund (light blue)
       </li>
       {hasUnresolved ? (
         <li className="flex items-center gap-2">
           <span className="byb-swatch" data-seg="possible" aria-hidden="true" />
-          Not attributed (hollow, dashed)
+          Not attributed (amber in network; dashed in chart)
         </li>
       ) : null}
       {model.limit ? (
@@ -318,7 +318,7 @@ function TotalsInWords({ model }: { model: ExplorerReady }) {
             {column.isRange ? (
               <span className="tabular">
                 between {formatFraction(column.known, { decimals })} and {formatFraction(column.upper, { decimals })} of the portfolio; the part that
-                cannot be attributed is shown hollow.
+                cannot be attributed is an uncertain upper bound.
               </span>
             ) : (
               <span className="tabular">{formatFraction(column.known)} of the portfolio.</span>
@@ -482,10 +482,10 @@ function HowToRead() {
     <details className="rounded-md border border-line bg-surface px-3 py-2 text-ink" data-testid="explorer-how-to-read">
       <summary className="cursor-pointer font-semibold text-accent">How to read this</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5">
-        <li>Height is the share of the whole portfolio.</li>
-        <li>Both columns use one scale, so their heights can be compared directly.</li>
-        <li>Depth and width mean nothing. They are the same for every block.</li>
-        <li>A hollow, dashed block is not attributed: it could be this company or another one, because a fund&apos;s holdings are not fully reported.</li>
+        <li>The network shows ownership paths, not a forecast or a risk score.</li>
+        <li>Current and proposed portfolios are separate branches. Compare their percentages in the table.</li>
+        <li>Node size, distance and link width do not represent amounts. The simple chart uses a shared percentage scale.</li>
+        <li>Not attributed means missing holdings: the possible amount is not connected to the company as a proven exposure. The simple chart shows this range hollow and dashed.</li>
         <li>Indirect exposure means owning a company through a fund.</li>
         <li>The numbers are in the table. The drawing never shows a value the table does not.</li>
       </ul>
@@ -502,6 +502,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
   const Heading = headingLevel === 2 ? "h2" : "h3";
   const SubHeading = headingLevel === 2 ? "h3" : "h4";
   const sceneRef = useRef<ExposureSceneHandle>(null);
+  const [simpleView, setSimpleView] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const [sceneFailure, setSceneFailure] = useState<SceneFailure | null>(null);
 
@@ -559,9 +560,18 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
         </p>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-2">
-        <div className="space-y-3">
-          {decision.mode === "3D" ? (
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent-soft p-4">
+        <div>
+          <p className="font-semibold text-ink">See how you own {model.issuerName}</p>
+          <p className="text-sm text-ink-muted">Follow each connection from your portfolio. Select a holding to inspect its source.</p>
+        </div>
+        {decision.mode === "3D" ? <Button size="sm" aria-pressed={simpleView} onClick={() => setSimpleView(!simpleView)}>
+          {simpleView ? "Show interactive network" : "Show simple chart"}
+        </Button> : null}
+      </div>
+      <div className="grid min-w-0 grid-cols-1 gap-5">
+        <div className="min-w-0 space-y-3">
+          {decision.mode === "3D" && !simpleView ? (
             <SceneBoundary onError={onBoundaryError}>
               <Suspense fallback={<div data-testid="explorer-fallback">{fallback}</div>}>
                 <ExposureScene ref={sceneRef} model={model} labels={labels} selectedId={selected?.id ?? null} onSelect={setSelection} onFailure={onSceneFailure} />
@@ -583,7 +593,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
                   </Button>
                 </div>
                 <p className="text-sm text-ink-muted">
-                  Drag to turn the view a little; pinch, or hold Ctrl and scroll, to zoom. Click a block to select it. The buttons do the same.
+                  Drag to rotate; scroll to zoom. Click a holding to see its evidence below, or use the selection buttons.
                 </p>
               </Suspense>
             </SceneBoundary>

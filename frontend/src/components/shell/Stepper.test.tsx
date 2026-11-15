@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { STAGES, type StageId } from "@/state/stage";
+import { JOURNEY, type StageId } from "@/state/stage";
 import { Stepper } from "./Stepper";
 
 describe("Stepper", () => {
@@ -9,9 +9,9 @@ describe("Stepper", () => {
     const nav = screen.getByRole("navigation", { name: "Stages of the simulation" });
     expect(nav).toBeInTheDocument();
     const links = screen.getAllByRole("link");
-    expect(links.map((link) => link.getAttribute("href"))).toEqual(["#/persona", "#/goals", "#/purchase", "#/investigation", "#/verdict", "#/challenge"]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual(["#/persona", "#/purchase", "#/verdict"]);
     expect(links.map((link) => link.textContent?.replace(/\s+/g, " ").trim())).toEqual(
-      STAGES.map((stage) => expect.stringContaining(`Step ${stage.number} of 6: ${stage.title}`)),
+      JOURNEY.map((stage) => expect.stringContaining(`Step ${stage.number} of 3: ${stage.title}`)),
     );
   });
 
@@ -19,21 +19,21 @@ describe("Stepper", () => {
     render(<Stepper current="purchase" completed={new Set<StageId>(["persona", "goals"])} />);
     const current = screen.getAllByRole("link").filter((link) => link.getAttribute("aria-current") === "step");
     expect(current).toHaveLength(1);
-    expect(current[0]).toHaveAccessibleName("Step 3 of 6: Proposed purchase");
+    expect(current[0]).toHaveAccessibleName("Step 2 of 3: Test an idea");
   });
 
   it("says in words which stages are completed", () => {
     render(<Stepper current="purchase" completed={new Set<StageId>(["persona", "goals", "purchase"])} />);
-    expect(screen.getByRole("link", { name: "Step 1 of 6: Persona & portfolio (completed)" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Step 2 of 6: Goals & rules (completed)" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Step 1 of 3: Choose a profile (completed)" })).toBeInTheDocument();
+
     // The current stage is announced as current, not as completed.
-    expect(screen.getByRole("link", { name: "Step 3 of 6: Proposed purchase" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Step 4 of 6: Investigation steps" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Step 2 of 3: Test an idea" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Step 3 of 3: Understand the result" })).toBeInTheDocument();
   });
 
   it("keeps every visible short label inside the accessible name (WCAG 2.5.3)", () => {
-    for (const stage of STAGES) {
-      expect(`Step ${stage.number} of 6: ${stage.title}`.toLowerCase()).toContain(stage.short.toLowerCase());
+    for (const stage of JOURNEY) {
+      expect(`Step ${stage.number} of 3: ${stage.title}`.toLowerCase()).toContain(stage.short.toLowerCase());
     }
   });
 });

@@ -39,7 +39,7 @@ export function Badge({ tone = "neutral", icon, children, className, dashed = fa
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-sm font-semibold leading-6",
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium leading-5",
         dashed && "border-dashed",
         TONES[tone],
         className,

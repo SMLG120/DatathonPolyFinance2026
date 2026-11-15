@@ -2,7 +2,7 @@
 
 import { CheckIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
-import { STAGES, stageHref, type StageId } from "@/state/stage";
+import { JOURNEY, journeyFor, stageHref, type StageId } from "@/state/stage";
 
 export interface StepperProps {
   current: StageId;
@@ -25,9 +25,9 @@ export interface StepperProps {
 export function Stepper({ current, completed }: StepperProps) {
   return (
     <nav aria-label="Stages of the simulation">
-      <ol className="flex gap-1 sm:gap-2">
-        {STAGES.map((stage) => {
-          const isCurrent = stage.id === current;
+      <ol className="flex gap-1 rounded-xl bg-sunken p-1.5 sm:gap-2">
+        {JOURNEY.map((stage) => {
+          const isCurrent = stage.id === journeyFor(current).id;
           const isDone = completed.has(stage.id) && !isCurrent;
           return (
             <li key={stage.id} className="min-w-0 flex-1">
@@ -35,15 +35,15 @@ export function Stepper({ current, completed }: StepperProps) {
                 href={stageHref(stage.id)}
                 aria-current={isCurrent ? "step" : undefined}
                 className={cn(
-                  "group flex min-h-11 flex-col items-center justify-center gap-1 rounded-t-md border-b-4 px-1 py-2 text-center",
+                  "group flex min-h-11 flex-col items-center justify-center gap-1 rounded-lg border px-1 py-2 text-center",
                   "lg:flex-row lg:gap-2 lg:text-left",
-                  isCurrent ? "border-accent bg-accent-soft" : "border-transparent hover:bg-sunken",
+                  isCurrent ? "border-line bg-surface shadow-xs" : "border-transparent hover:bg-sunken",
                 )}
               >
                 <span
                   aria-hidden="true"
                   className={cn(
-                    "tabular flex size-7 flex-none items-center justify-center rounded-full border-2 text-sm font-bold",
+                    "tabular flex size-7 flex-none items-center justify-center rounded-md border text-xs font-semibold",
                     isCurrent && "border-accent bg-accent text-on-accent",
                     isDone && "border-accent bg-surface text-accent",
                     !isCurrent && !isDone && "border-line-strong bg-surface text-ink-muted",
@@ -59,10 +59,10 @@ export function Stepper({ current, completed }: StepperProps) {
                 >
                   {/* One accessible name at every width; the visible labels are decorative copies of it. */}
                   <span className="sr-only">
-                    Step {stage.number} of {STAGES.length}: {stage.title}
+                    Step {stage.number} of {JOURNEY.length}: {stage.title}
                     {isDone ? " (completed)" : ""}
                   </span>
-                  <span aria-hidden="true" className="hidden sm:inline lg:hidden">
+                  <span aria-hidden="true" className="inline lg:hidden">
                     {stage.short}
                   </span>
                   <span aria-hidden="true" className="hidden lg:inline">

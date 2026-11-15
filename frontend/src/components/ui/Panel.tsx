@@ -2,10 +2,12 @@
 
 import { useId, type ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { Card } from "@/components/tremor/Card";
 import { TestDataTag } from "./TestDataTag";
 
 export interface PanelProps {
   title: ReactNode;
+  collapsible?: boolean;
   /** Small label above the title that says what kind of thing this panel is. */
   eyebrow?: ReactNode;
   description?: ReactNode;
@@ -24,30 +26,33 @@ export interface PanelProps {
 }
 
 /** A titled region: a card with a real heading, exposed as a named landmark region. */
-export function Panel({ title, eyebrow, description, aside, children, className, level = 2, tone = "surface", id, focusableHeading = false, figures = false }: PanelProps) {
+export function Panel({ title, eyebrow, description, aside, children, className, level = 2, tone = "surface", id, focusableHeading = false, figures = false, collapsible = false }: PanelProps) {
   const generated = useId();
   const headingId = `${id ?? generated}-title`;
   const Heading = level === 2 ? "h2" : "h3";
+  const Container = collapsible ? "details" : "section";
+  const Header = collapsible ? "summary" : "div";
   return (
-    <section
+    <Card asChild>
+    <Container
       id={id}
       aria-labelledby={headingId}
       data-figures={figures ? "true" : undefined}
       className={cn(
-        "rounded-lg border border-line p-4 sm:p-6",
+        "rounded-xl border border-line p-5 shadow-xs sm:p-7",
         tone === "surface" ? "bg-surface" : "bg-sunken",
         className,
       )}
     >
-      <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
+      <Header className={cn("flex flex-wrap items-start justify-between gap-x-4 gap-y-2", collapsible && "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
         <div className="min-w-0 space-y-1">
-          {eyebrow ? <p className="text-sm font-semibold text-ink-muted">{eyebrow}</p> : null}
+          {eyebrow ? <p className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{eyebrow}</p> : null}
           <Heading
             id={headingId}
             tabIndex={focusableHeading ? -1 : undefined}
             className={cn("font-semibold text-ink", level === 2 ? "text-xl" : "text-lg")}
           >
-            {title}
+            {collapsible ? <span aria-hidden="true" className="mr-2 text-ink-muted">＋</span> : null}{title}
           </Heading>
         </div>
         {aside || figures ? (
@@ -56,10 +61,11 @@ export function Panel({ title, eyebrow, description, aside, children, className,
             {aside}
           </div>
         ) : null}
-      </div>
+      </Header>
       {description ? <div className="mt-2 max-w-prose text-ink-muted">{description}</div> : null}
       <div className="mt-4">{children}</div>
-    </section>
+    </Container>
+    </Card>
   );
 }
 
@@ -71,7 +77,7 @@ export function Facts({ children, className }: { children: ReactNode; className?
 export function Fact({ label, children, wide = false }: { label: ReactNode; children: ReactNode; wide?: boolean }) {
   return (
     <div className={cn("min-w-0", wide && "sm:col-span-2")}>
-      <dt className="text-sm font-semibold text-ink-muted">{label}</dt>
+      <dt className="text-xs font-semibold uppercase tracking-wider text-ink-muted">{label}</dt>
       <dd className="mt-0.5 text-ink">{children}</dd>
     </div>
   );

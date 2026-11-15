@@ -6,7 +6,7 @@ import type { ApiClient } from "@/lib/api";
 import { createFixturesClient } from "@/lib/api/fixtures-client";
 import type { RuntimeConfig, Timing } from "@/lib/config";
 import { RuntimeProvider } from "@/state/runtime";
-import { STAGES, type StageId } from "@/state/stage";
+import { journeyFor, SCREEN_TITLES, type StageId } from "@/state/stage";
 import { FAST_TIMING, FIXTURES_CONFIG } from "./render";
 
 export interface RenderAppOptions {
@@ -28,11 +28,11 @@ export const stageHeading = () => screen.getByRole("heading", { level: 1 });
 
 /** Moves to a stage the way the browser does: by changing the hash. */
 export async function go(stage: StageId): Promise<void> {
-  const target = STAGES.find((candidate) => candidate.id === stage);
+  const target = journeyFor(stage);
   act(() => {
     window.location.hash = `#/${stage}`;
   });
-  await waitFor(() => expect(stageHeading()).toHaveTextContent(`Step ${target?.number} of 6: ${target?.title}`));
+  await waitFor(() => expect(stageHeading()).toHaveTextContent(`Step ${target.number} of 3: ${SCREEN_TITLES[stage]}`));
 }
 
 /** Stage 1: switches from the default persona to Mateo and waits for his portfolio. */
@@ -53,8 +53,7 @@ export async function confirmScenarioRules(user: UserEvent): Promise<void> {
 export async function runInvestigation(user: UserEvent): Promise<HTMLElement> {
   await go("purchase");
   await user.click(screen.getByTestId("start-investigation"));
-  await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
-  await user.click(await screen.findByTestId("see-verdict", {}, { timeout: 5_000 }));
+  await waitFor(() => expect(stageHeading()).toHaveTextContent("Your result"));
   return screen.findByTestId("report");
 }
 

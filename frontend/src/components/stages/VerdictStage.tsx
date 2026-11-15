@@ -15,7 +15,7 @@ import { isTerminalJobStatus, verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 
-const LEAD = "What the checks found, rule by rule, with the evidence behind every figure. An unknown is reported as unknown, never as a pass.";
+const LEAD = "See whether your idea fits your limits. Open any figure to see its evidence.";
 
 /** One line for a report in the list: the engine's headline when the check ran, the execution state otherwise. */
 function reportLine(job: InvestigationJob): string {
@@ -196,17 +196,7 @@ export function VerdictStage() {
             objectives={state.objectives}
             instruments={state.portfolio.data?.instruments ?? {}}
           />
-          <Notice
-            tone="info"
-            title="Something looks wrong, or you would decide differently?"
-            action={
-              <LinkButton href={stageHref("challenge")} size="sm">
-                Challenge this result
-              </LinkButton>
-            }
-          >
-            <p>You can propose a correction to a fact, clarify a preference, or change a rule. This report stays as it is.</p>
-          </Notice>
+
         </>
       ) : null}
 

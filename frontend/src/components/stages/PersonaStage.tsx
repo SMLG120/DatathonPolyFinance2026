@@ -19,10 +19,10 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
   return (
     <li
       className={cn(
-        "flex flex-col gap-3 rounded-lg border p-4",
+        "flex flex-col gap-4 rounded-xl border p-5 transition-shadow",
         !persona.available && "border-dashed border-line-strong bg-canvas",
-        persona.available && selected && "border-accent bg-accent-soft outline outline-2 -outline-offset-2 outline-accent",
-        persona.available && !selected && "border-line bg-surface",
+        persona.available && selected && "border-accent bg-surface ring-1 ring-accent shadow-sm",
+        persona.available && !selected && "border-line bg-surface hover:shadow-sm",
       )}
       data-testid={`persona-${persona.persona_id}`}
     >
@@ -31,13 +31,10 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
           <PersonIcon className="flex-none text-ink-muted" />
           {persona.name}
         </h3>
-        <Badge tone={persona.available ? "neutral" : "unknown"} dashed={!persona.available}>
-          {persona.role_label}
-        </Badge>
+
       </div>
-      <p className="text-sm text-ink-muted">
-        <span className="tabular">{persona.age}</span> years old · {persona.occupation}
-      </p>
+      <p className="text-ink-muted">{persona.objective}</p>
+      <details className="text-sm"><summary className="cursor-pointer font-medium text-ink-muted">Full profile</summary>
       {/* Each group is a direct child of the list: a <dl> may hold <div> groups, but not groups nested in a layout wrapper. */}
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <div className="basis-full">
@@ -57,6 +54,7 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
           <dd className="text-ink">{persona.demonstrates}</dd>
         </div>
       </dl>
+      </details>
       <div className="mt-auto pt-1">
         {persona.available ? (
           selected ? (
@@ -114,11 +112,11 @@ export function PersonaStage() {
   return (
     <StageFrame
       stage="persona"
-      lead="Choose whose fictional situation to explore. Each persona comes from the competition case; the portfolio is invented for this simulation."
+      lead="Pick a fictional investor to try a portfolio decision."
     >
-      <Panel title="Persona" description="The personas, their objectives and their risk profiles are the ones described in the case.">
-        <ul className="grid gap-4 md:grid-cols-3">
-          {PERSONAS.map((persona) => (
+      <Panel title="Who would you like to try?">
+        <ul className="grid gap-4 md:grid-cols-2">
+          {PERSONAS.filter((persona) => persona.available).map((persona) => (
             <PersonaOption
               key={persona.persona_id}
               persona={persona}
@@ -135,7 +133,8 @@ export function PersonaStage() {
       </Panel>
 
       <Panel
-        title="Portfolio"
+        title="View the fictional portfolio"
+        collapsible={portfolio.status === "ready"}
         eyebrow="Fictional simulation"
         figures
         aside={

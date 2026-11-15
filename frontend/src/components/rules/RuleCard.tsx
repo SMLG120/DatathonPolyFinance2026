@@ -30,7 +30,7 @@ const WORDS_LABEL: Record<Rule["origin"], string> = {
 /** The parts every rule card shows, whatever its status: words, scope, origin, status and the linked objective. */
 function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | undefined }) {
   return (
-    <div className="space-y-4">
+    <details className="space-y-4"><summary className="cursor-pointer text-sm font-medium text-ink-muted">Source and definition</summary>
       <figure>
         <figcaption className="text-sm font-semibold text-ink-muted">{WORDS_LABEL[rule.origin]}</figcaption>
         <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink" data-testid="rule-original-words">
@@ -80,7 +80,7 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
           </div>
         ) : null}
       </dl>
-    </div>
+    </details>
   );
 }
 
@@ -175,7 +175,7 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
           }}
         />
 
-        <DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} purchase={purchase} />
+        <details><summary className="cursor-pointer text-sm font-medium text-ink-muted">Preview this limit</summary><DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} purchase={purchase} /></details>
       </article>
     </li>
   );

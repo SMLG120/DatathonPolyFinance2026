@@ -16,6 +16,20 @@ export const STAGES = [
   { id: "challenge", number: 6, title: "Challenge", short: "Challenge" },
 ] as const;
 
+/** Three user-facing moments; detailed routes remain available as secondary views. */
+export const JOURNEY = [
+  { id: "persona", number: 1, title: "Choose a profile", short: "Profile" },
+  { id: "purchase", number: 2, title: "Test an idea", short: "Idea" },
+  { id: "verdict", number: 3, title: "Understand the result", short: "Result" },
+] as const;
+export function journeyFor(stage: StageId) {
+  return JOURNEY[stage === "persona" ? 0 : stage === "goals" || stage === "purchase" ? 1 : 2];
+}
+export const SCREEN_TITLES: Record<StageId, string> = {
+  persona: "Choose a profile", goals: "Your limits", purchase: "Test an idea",
+  investigation: "Analysis details", verdict: "Your result", challenge: "Review this result",
+};
+
 export type StageId = (typeof STAGES)[number]["id"];
 export type Stage = (typeof STAGES)[number];
 

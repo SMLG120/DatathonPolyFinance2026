@@ -1,4 +1,5 @@
 import type { AnchorHTMLAttributes, ButtonHTMLAttributes, ReactNode, Ref } from "react";
+import { buttonVariants } from "@/components/shadcn/button-variants";
 import { cn } from "@/lib/cn";
 
 type Variant = "primary" | "secondary" | "quiet";
@@ -23,25 +24,12 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   ref?: Ref<HTMLButtonElement>;
 }
 
-const BASE = "inline-flex items-center justify-center gap-2 rounded-md font-semibold transition-colors text-left";
-
-const VARIANTS: Record<Variant, string> = {
-  primary: "bg-accent text-on-accent border border-accent hover:bg-accent-strong hover:border-accent-strong",
-  secondary: "bg-surface text-accent border border-accent hover:bg-accent-soft",
-  quiet: "text-accent underline decoration-1 underline-offset-4 hover:text-accent-strong hover:decoration-2",
-};
-
 /**
  * A button that cannot act right now (soft-disabled or busy). It is still
  * focusable and readable, so it keeps AA contrast: grey text on a grey fill
  * with a dashed outline, instead of a faded copy of the active style.
  */
 const UNAVAILABLE = "bg-sunken text-ink-muted border border-dashed border-line-strong cursor-default";
-
-const SIZES: Record<Size, string> = {
-  md: "min-h-11 px-4 py-2 text-base",
-  sm: "min-h-9 px-3 py-1.5 text-sm",
-};
 
 export function Button({
   variant = "secondary",
@@ -59,8 +47,9 @@ export function Button({
 }: ButtonProps) {
   return (
     <button
+      data-slot="button"
       type={type}
-      className={cn(BASE, softDisabled || busy ? UNAVAILABLE : VARIANTS[variant], SIZES[size], variant === "quiet" && "px-1", className)}
+      className={cn(buttonVariants({ variant, size }), (softDisabled || busy) && UNAVAILABLE, className)}
       aria-disabled={softDisabled || busy ? true : undefined}
       aria-busy={busy ? true : undefined}
       onClick={(event) => {
@@ -89,7 +78,7 @@ export interface LinkButtonProps extends AnchorHTMLAttributes<HTMLAnchorElement>
 /** A link that looks like a button. Used for moving between stages: navigation is a link. */
 export function LinkButton({ variant = "secondary", size = "md", icon, iconAfter, className, children, ...rest }: LinkButtonProps) {
   return (
-    <a className={cn(BASE, VARIANTS[variant], SIZES[size], variant === "quiet" && "px-1", className)} {...rest}>
+    <a className={cn(buttonVariants({ variant, size }), className)} {...rest}>
       {icon}
       <span>{children}</span>
       {iconAfter}

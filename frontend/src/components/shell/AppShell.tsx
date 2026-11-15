@@ -73,11 +73,11 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Always on screen, on every stage and at every scroll position. */}
       <section aria-label="Simulation notice" className="on-dark sticky top-0 z-30 bg-banner text-on-banner">
-        <div className="mx-auto flex w-full max-w-5xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6">
           <p className="font-semibold" data-testid="simulation-label">
             {SIMULATION_LABEL}
           </p>
-          <p className="text-on-banner-muted" data-testid="valuation-date">
+          <p className="sr-only" data-testid="valuation-date">
             Valuation date: <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
           </p>
           {config.mode === "fixtures" ? (
@@ -91,22 +91,22 @@ export function AppShell({ children }: { children: ReactNode }) {
       </section>
 
       <header className="border-b border-line bg-surface">
-        <div className="mx-auto w-full max-w-5xl px-4 pt-4 sm:px-6 sm:pt-5">
+        <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <p className="text-xl font-bold tracking-tight text-ink">Before You Buy</p>
-            <p className="text-sm text-ink-muted">Checks a proposed purchase against the rules you confirmed.</p>
+            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-ink text-sm font-bold text-surface">B</span>Before You Buy</p>
+            <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
           </div>
           <div className="mt-4">{needsAccessCode ? <div className="pb-4" /> : <Stepper current={stage} completed={completed} />}</div>
         </div>
       </header>
 
-      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 focus:outline-none sm:px-6 sm:py-8">
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 focus:outline-none sm:px-6 sm:py-10">
         {children}
       </main>
 
       <footer className="border-t border-line bg-surface">
-        <div className="mx-auto w-full max-w-5xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
-          <p>
+        <div className="mx-auto w-full max-w-6xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
+          <details><summary className="cursor-pointer font-medium">About this simulation and its data</summary><p className="mt-3">
             A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no
             trades. Fees and taxes are excluded from every calculation.
           </p>
@@ -116,6 +116,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked &ldquo;Test data&rdquo;.
             </p>
           ) : null}
+          </details>
           {config.mode === "live" && !needsAccessCode ? (
             <p>
               The access code is kept for this browser tab only.{" "}

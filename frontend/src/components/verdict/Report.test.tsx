@@ -35,16 +35,17 @@ describe("Report, page order", () => {
     const report = renderRobert();
     const blocks = [...report.children];
     expect(blocks[0]).toHaveAttribute("data-testid", "verdict-summary");
-    expect(blocks[1]).toHaveAttribute("id", "report-rules");
-    expect(blocks[2]).toHaveAttribute("id", "report-exposure");
-    expect(within(blocks[1] as HTMLElement).getAllByTestId("rule-result")).toHaveLength(2);
-    expect(overviewChart(blocks[2] as HTMLElement)).toBeInTheDocument();
+    expect(blocks[1]).toHaveAttribute("data-testid", "result-actions");
+    expect(blocks[2]).toHaveAttribute("id", "report-rules");
+    expect(blocks[3]).toHaveAttribute("id", "report-exposure");
+    expect(within(blocks[2] as HTMLElement).getAllByTestId("rule-result")).toHaveLength(2);
+    expect(overviewChart(blocks[3] as HTMLElement)).toBeInTheDocument();
   });
 
   it("keeps coverage, the sentences and the notes about the report in closed native disclosures, after everything else", () => {
     const report = renderRobert();
     const ids = [...report.children].map((block) => block.id).filter((id) => id !== "");
-    expect(ids).toEqual(["report-rules", "report-exposure", "report-cash", "report-replay", "report-max", "report-objectives", "report-coverage", "report-sentences", "report-about"]);
+    expect(ids).toEqual(["report-rules", "report-exposure", "report-details"]);
     for (const id of ["report-coverage", "report-sentences", "report-about"]) {
       const section = document.getElementById(id) as HTMLDetailsElement;
       expect(section.tagName).toBe("DETAILS");
@@ -63,19 +64,9 @@ describe("Report, page order", () => {
     const report = renderRobert();
     const links = within(within(report).getByRole("navigation", { name: "Sections of this report" })).getAllByRole("link");
     const targets = links.map((link) => link.getAttribute("data-section"));
-    expect(targets).toEqual([...report.children].map((block) => block.id).filter((id) => id !== ""));
+    expect(targets).toEqual(["report-rules", "report-exposure", "report-coverage"]);
     for (const target of targets) expect(document.getElementById(target as string)).not.toBeNull();
-    expect(links.map((link) => link.textContent)).toEqual([
-      "Confirmed rules",
-      "Exposure",
-      "Cash",
-      "Historical replay",
-      "Largest compliant purchase",
-      "Objectives",
-      "Data coverage",
-      "In sentences",
-      "About this report",
-    ]);
+    expect(links.map((link) => link.textContent)).toEqual(["See the checks", "Explore my exposures", "Sources and missing data"]);
   });
 
   it("opens a closed section from its link and moves focus to it; a panel link moves focus to the panel's heading", async () => {
@@ -84,14 +75,16 @@ describe("Report, page order", () => {
     const report = renderRobert();
     const links = within(within(report).getByRole("navigation", { name: "Sections of this report" }));
 
-    await user.click(links.getByRole("link", { name: "Data coverage" }));
+    await user.click(links.getByRole("link", { name: "Sources and missing data" }));
     const coverage = document.getElementById("report-coverage") as HTMLDetailsElement;
     expect(coverage.open).toBe(true);
+    expect(document.getElementById("report-details")).toHaveAttribute("open");
     expect(coverage.querySelector("summary")).toHaveFocus();
     expect(within(coverage).getAllByTestId("fund-coverage")).toHaveLength(2);
 
-    await user.click(links.getByRole("link", { name: "Exposure" }));
-    expect(screen.getByRole("heading", { level: 2, name: "Exposure: held directly and through funds" })).toHaveFocus();
+    await user.click(links.getByRole("link", { name: "Explore my exposures" }));
+    expect(document.getElementById("report-exposure")).toHaveAttribute("open");
+    expect(document.getElementById("report-exposure")?.querySelector("summary")).toHaveFocus();
     // The address still names the stage: an in-page link never leaves it.
     expect(window.location.hash).toBe("#/verdict");
   });
@@ -101,7 +94,7 @@ describe("Report, page order", () => {
     const targets = within(within(report).getByRole("navigation", { name: "Sections of this report" }))
       .getAllByRole("link")
       .map((link) => link.getAttribute("data-section"));
-    expect(targets).toEqual(["report-rules", "report-exposure", "report-starting", "report-cash", "report-max", "report-objectives", "report-coverage", "report-sentences", "report-about"]);
+    expect(targets).toEqual(["report-rules", "report-exposure", "report-coverage"]);
     expect(document.getElementById("report-replay")).toBeNull();
   });
 });
@@ -175,6 +168,7 @@ describe("Report, the “Test data” marker", () => {
       "verdict-summary",
       "report-rules",
       "report-exposure",
+      "report-details",
       "report-cash",
       "report-replay",
       "report-max",

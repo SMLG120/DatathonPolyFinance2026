@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState } from "react";
+import { useId, useRef, useState, useLayoutEffect } from "react";
 import { ClarificationCard } from "@/components/rules/ClarificationCard";
 import { DraftOutcome, OptionOutcome, ruleName } from "@/components/rules/DraftOutcome";
 import { PolicyRuleCard, ProposedRuleCard, thresholdProblem } from "@/components/rules/RuleCard";
@@ -64,17 +64,17 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
       id="confirmed-policy"
       focusableHeading
       figures
-      title={`Confirmed policy — version ${policy.version}`}
+      title="Your confirmed limits"
       eyebrow="In force"
       aside={
         <Badge tone="accent" icon={<CheckIcon size={16} />}>
           {active.length} active {active.length === 1 ? "rule" : "rules"}
         </Badge>
       }
-      description="A policy version never changes. Confirming or changing a rule creates the next version, and earlier reports keep the version they were checked against."
+      description="These limits will be used to check your idea."
     >
       <div className="space-y-5">
-        <Facts className="sm:grid-cols-3">
+        <details><summary className="cursor-pointer text-sm font-medium text-ink-muted">History and source</summary><Facts className="mt-3 sm:grid-cols-3">
           <Fact label="Version">
             <span className="tabular">{policy.version}</span>
           </Fact>
@@ -85,7 +85,7 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
           <Fact label="Change note" wide>
             {policy.change_note}
           </Fact>
-        </Facts>
+        </Facts></details>
         <ul className="space-y-4">
           {active.map((rule) => (
             <PolicyRuleCard key={rule.rule_id} rule={rule} objective={objectiveOf(rule.objective_id)} />
@@ -169,6 +169,11 @@ export function GoalsStage() {
       }),
     );
 
+  const [confirmationFocus, setConfirmationFocus] = useState(0);
+  useLayoutEffect(() => {
+    if (confirmationFocus > 0) document.getElementById("confirmed-policy-title")?.focus();
+  }, [confirmationFocus]);
+
   async function confirmAll() {
     if (confirmable.length === 0) {
       // Explain instead of doing nothing: the button stays reachable.
@@ -181,7 +186,7 @@ export function GoalsStage() {
     // The cards that held focus are gone: move to the policy they became part of.
     if (confirmed) {
       setAttempted(false);
-      document.getElementById("confirmed-policy-title")?.focus();
+      setConfirmationFocus((count) => count + 1);
     }
   }
 
@@ -198,11 +203,105 @@ export function GoalsStage() {
   return (
     <StageFrame
       stage="goals"
-      lead="A rule counts only after you confirm it, with a number you can see. Until then it is a proposal and nothing checks it."
+      lead="Review these limits and confirm the ones you want to use."
       continueNote={policy ? null : "You can continue, but a purchase can only be checked once at least one rule is confirmed."}
     >
+      {state.proposedRules.length > 0 || !policy ? (
       <Panel
-        title="Objective"
+        title="Your limits"
+        eyebrow="Inactive until confirmed"
+        aside={
+          <Badge tone="neutral" dashed>
+            {state.proposedRules.length} proposed
+          </Badge>
+        }
+        description="Offered by the fictional scenario or drafted from your words. Each one shows exactly what it would check. Change a number, clear it to leave the rule out, then confirm."
+      >
+        {state.proposedRules.length > 0 ? (
+          <div className="space-y-5">
+            <ul className="space-y-4">
+              {state.proposedRules.map((rule) => (
+                <ProposedRuleCard
+                  key={rule.rule_id}
+                  rule={rule}
+                  objective={objectiveOf(rule.objective_id)}
+                  personaId={state.personaId}
+                  policy={policy}
+                  purchase={purchase}
+                  thresholdText={state.thresholdText[rule.rule_id] ?? ""}
+                  onThresholdChange={(text) => actions.setThresholdText(rule.rule_id, text)}
+                  buildPreviewRules={previewRulesFor(rule.rule_id)}
+                  attempted={attempted}
+                  inputRef={(element) => {
+                    if (element) thresholdRefs.current.set(rule.rule_id, element);
+                    else thresholdRefs.current.delete(rule.rule_id);
+                  }}
+                />
+              ))}
+            </ul>
+            <div className="space-y-2 border-t border-line pt-4">
+              <Button
+                variant="primary"
+                softDisabled={confirmable.length === 0}
+                busy={confirming}
+                busyLabel="Confirming…"
+                icon={<CheckIcon />}
+                data-testid="confirm-rules"
+                onClick={() => void confirmAll()}
+              >
+                {confirmable.length === 0
+                  ? "Confirm the rules"
+                  : `Confirm ${confirmable.length === 1 ? "this 1 rule" : `these ${confirmable.length} rules`} with ${confirmable.length === 1 ? "its number" : "their numbers"}`}
+              </Button>
+              <p className="text-sm text-ink-muted" data-testid="confirm-hint">
+                Only the limits you confirm will be checked.
+                {leftOut > 0 ? ` ${leftOut} ${leftOut === 1 ? "rule has" : "rules have"} no valid number and ${leftOut === 1 ? "stays" : "stay"} proposed.` : ""}
+              </p>
+              {attempted && confirmable.length === 0 ? (
+                <p role="alert" className="text-sm font-semibold text-fail">
+                  No proposed rule has a valid number yet. Enter a number in a rule above first.
+                </p>
+              ) : null}
+            </div>
+          </div>
+        ) : (
+          <EmptyBlock title={policy ? "No rule is waiting for confirmation" : "No rule is proposed"}>
+            <p>
+              {policy
+                ? "Everything proposed so far has been confirmed. A confirmed number is changed in the Challenge stage, which creates a new policy version."
+                : "The scenario offers no rule for this persona. Write one in your own words above."}
+            </p>
+          </EmptyBlock>
+        )}
+        {state.confirm.status === "error" ? (
+          state.confirm.code === "POLICY_VERSION_CONFLICT" ? (
+            // No "Try again": the same request would be refused again. The stage has started again instead.
+            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The policy has a newer version than the one this page held."}>
+              <div className="space-y-1" data-testid="policy-conflict">
+                <p>
+                  The policy was changed after this page last received it: from another tab or session, or by a request whose answer never arrived.
+                  The service cannot send this page the newer version.
+                </p>
+                <p>
+                  So this page has set its copy of the policy aside, and this stage starts again: every rule above is a proposal, with the number
+                  shown in it. Confirming them creates a new policy, starting at version 1. Nothing is checked until then. Reports already made keep
+                  the version they were checked against.
+                </p>
+              </div>
+            </ErrorBlock>
+          ) : (
+            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The request failed."} onRetry={() => void confirmAll()}>
+              <p>They are still proposed and inactive. The confirmed policy is unchanged.</p>
+            </ErrorBlock>
+          )
+        ) : null}
+      </Panel>
+
+      ) : null}
+      {policy ? <PolicyPanel policy={policy} earlier={state.policies.slice(0, -1)} /> : null}
+      <Panel
+        title="Why these limits?"
+        collapsible
         eyebrow="Context, not rules"
         description="An objective is kept word for word to give results their context. It is never marked pass or fail, and it never implies a number."
       >
@@ -220,7 +319,8 @@ export function GoalsStage() {
       </Panel>
 
       <Panel
-        title="Rules in your own words"
+        title="Add a limit in your own words"
+        collapsible
         eyebrow="Optional"
         description="Write a limit or an exclusion in a sentence. The service drafts the kind of rule from it and asks when a word has more than one meaning. It never invents a number."
       >
@@ -342,97 +442,7 @@ export function GoalsStage() {
         </div>
       </Panel>
 
-      <Panel
-        title="Proposed rules"
-        eyebrow="Inactive until confirmed"
-        aside={
-          <Badge tone="neutral" dashed>
-            {state.proposedRules.length} proposed
-          </Badge>
-        }
-        description="Offered by the fictional scenario or drafted from your words. Each one shows exactly what it would check. Change a number, clear it to leave the rule out, then confirm."
-      >
-        {state.proposedRules.length > 0 ? (
-          <div className="space-y-5">
-            <ul className="space-y-4">
-              {state.proposedRules.map((rule) => (
-                <ProposedRuleCard
-                  key={rule.rule_id}
-                  rule={rule}
-                  objective={objectiveOf(rule.objective_id)}
-                  personaId={state.personaId}
-                  policy={policy}
-                  purchase={purchase}
-                  thresholdText={state.thresholdText[rule.rule_id] ?? ""}
-                  onThresholdChange={(text) => actions.setThresholdText(rule.rule_id, text)}
-                  buildPreviewRules={previewRulesFor(rule.rule_id)}
-                  attempted={attempted}
-                  inputRef={(element) => {
-                    if (element) thresholdRefs.current.set(rule.rule_id, element);
-                    else thresholdRefs.current.delete(rule.rule_id);
-                  }}
-                />
-              ))}
-            </ul>
-            <div className="space-y-2 border-t border-line pt-4">
-              <Button
-                variant="primary"
-                softDisabled={confirmable.length === 0}
-                busy={confirming}
-                busyLabel="Confirming…"
-                icon={<CheckIcon />}
-                data-testid="confirm-rules"
-                onClick={() => void confirmAll()}
-              >
-                {confirmable.length === 0
-                  ? "Confirm the rules"
-                  : `Confirm ${confirmable.length === 1 ? "this 1 rule" : `these ${confirmable.length} rules`} with ${confirmable.length === 1 ? "its number" : "their numbers"}`}
-              </Button>
-              <p className="text-sm text-ink-muted" data-testid="confirm-hint">
-                Confirms them together in one new policy version.
-                {leftOut > 0 ? ` ${leftOut} ${leftOut === 1 ? "rule has" : "rules have"} no valid number and ${leftOut === 1 ? "stays" : "stay"} proposed.` : ""}
-              </p>
-              {attempted && confirmable.length === 0 ? (
-                <p role="alert" className="text-sm font-semibold text-fail">
-                  No proposed rule has a valid number yet. Enter a number in a rule above first.
-                </p>
-              ) : null}
-            </div>
-          </div>
-        ) : (
-          <EmptyBlock title={policy ? "No rule is waiting for confirmation" : "No rule is proposed"}>
-            <p>
-              {policy
-                ? "Everything proposed so far has been confirmed. A confirmed number is changed in the Challenge stage, which creates a new policy version."
-                : "The scenario offers no rule for this persona. Write one in your own words above."}
-            </p>
-          </EmptyBlock>
-        )}
-        {state.confirm.status === "error" ? (
-          state.confirm.code === "POLICY_VERSION_CONFLICT" ? (
-            // No "Try again": the same request would be refused again. The stage has started again instead.
-            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The policy has a newer version than the one this page held."}>
-              <div className="space-y-1" data-testid="policy-conflict">
-                <p>
-                  The policy was changed after this page last received it: from another tab or session, or by a request whose answer never arrived.
-                  The service cannot send this page the newer version.
-                </p>
-                <p>
-                  So this page has set its copy of the policy aside, and this stage starts again: every rule above is a proposal, with the number
-                  shown in it. Confirming them creates a new policy, starting at version 1. Nothing is checked until then. Reports already made keep
-                  the version they were checked against.
-                </p>
-              </div>
-            </ErrorBlock>
-          ) : (
-            <ErrorBlock className="mt-4" title="The rules could not be confirmed" message={state.confirm.error ?? "The request failed."} onRetry={() => void confirmAll()}>
-              <p>They are still proposed and inactive. The confirmed policy is unchanged.</p>
-            </ErrorBlock>
-          )
-        ) : null}
-      </Panel>
 
-      <PolicyPanel policy={policy} earlier={state.policies.slice(0, -1)} />
     </StageFrame>
   );
 }
