@@ -88,10 +88,13 @@ function segmentLabel(segment: ExplorerSegment): string {
   return UNRESOLVED_LABEL;
 }
 
-/** "1.2%", or "up to 0.2%" for the part that is a bound and not a measurement. */
+/**
+ * "1.2%", or "up to 0.2%" for the part that is a bound and not a measurement. A bound too small for
+ * one decimal is given the decimals that show it is not zero: "up to 0.05%", never "up to 0.0%".
+ */
 function segmentValueText(segment: ExplorerSegment): string {
-  const text = formatFraction(segment.value);
-  return segment.kind === "UNRESOLVED" ? `up to ${text}` : text;
+  if (segment.kind !== "UNRESOLVED") return formatFraction(segment.value);
+  return `up to ${formatFraction(segment.value, { decimals: decimalsToDistinguish(0, segment.value) })}`;
 }
 
 function limitNoun(model: ExplorerReady): string {

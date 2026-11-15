@@ -63,7 +63,9 @@ export function isAbortError(error: unknown): boolean {
 const FALLBACK_MESSAGES: Record<ApiErrorKind, string> = {
   network: "The service could not be reached. Check the connection and try again.",
   timeout: "The service did not answer in time. Try again.",
-  unauthorized: "The access code was not accepted.",
+  // A stage shows this only after a code was accepted again: while none is held, the access-code form stands in
+  // for every stage. So it says what happened then and that the request can be made again now.
+  unauthorized: "The service refused the access code that was in use when this was requested. A code has been accepted since, so it can be requested again.",
   not_found: "The service has no record of this item.",
   validation: "The service rejected the request as invalid.",
   rate_limited: "The service is receiving too many requests. Wait a moment and try again.",

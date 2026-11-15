@@ -19,7 +19,8 @@ export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "
   const policy = derived.currentPolicy;
   const list = place === "here" ? "“Proposed rules” below" : "“Proposed rules” in Goals & rules";
 
-  if (state.proposedRules.some((rule) => rule.rule_id === draft.rule_id)) {
+  // The same rule is the same id and the same check: another answer can have given another rule this id.
+  if (state.proposedRules.some((rule) => rule.rule_id === draft.rule_id && measureKey(rule) === measureKey(draft))) {
     return (
       <>
         <span className="font-semibold">Listed under {list}, without a number.</span> Enter the number you want there, then confirm.
