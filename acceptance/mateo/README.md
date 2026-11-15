@@ -11,10 +11,12 @@ expected value is typed in to make a test pass.
 | `test_mateo_engine.py` | `backend.engine.check_rules` on the synthetic universe **and** on `data/processed`: sector exclusion, controversy exclusion, starting-portfolio findings, evidence chains, coverage rows, maximum compliant weight, conflicts, which rules are evaluated, determinism, schema validity |
 | `test_mateo_interpretation.py` | The interpretation fixtures: a question for "oil", supported and refused definitions, no invented threshold, words preserved, drafts inactive |
 | `live_check.py` | Live-API check of the whole workflow (standard library only). **Prepared, never run against the deployment by this suite** |
+| `inprocess_backend.py` | The real API handler, worker and authorizer (A2's code and in-memory fakes, imported read-only) behind the live script's transport seam; snapshot built from `data/processed` |
+| `test_live_check_inprocess.py` | `live_check.py` run end to end against those handlers (default, `--skip-interpret`, `--require-interpreter`, `--compare-local`, wrong code, worker never runs), plus the backend's error paths against `contracts/api.md` |
 | `test_live_check.py` | Unit tests of the script's pure parts, and an offline end-to-end run against a fake transport backed by the local engine |
 | `mateo_invariants.py` | The invariants of a `check_result` (SEMANTICS sections 1, 5, 6, 9, 10, 11, 13), restated without `byb_contracts`; shared by the tests and the live script |
 | `mateo_helpers.py` | Loaders, policy builders and the independent look-through (`hand_*`) |
-| `FINDINGS.md` | Failing-input reports (E1, E2, L1) and observations |
+| `FINDINGS.md` | Failing-input reports (E1 and E2 closed in engine 1.0.8; L1 and B1 open), the 1.0.1 to 1.0.8 comparison, the in-process run, observations |
 
 ## Run
 
@@ -24,7 +26,8 @@ From the repository root (no network, no AWS, no model):
 
 Tests parametrised `[real]` are skipped when `data/processed/{holdings,instruments,market_data}.json` are
 absent (they are git-ignored). `test_real_data_outcome_is_reported` prints Mateo's real-data outcome.
-The `xfail(strict=True)` tests are the findings; `--runxfail -k "E1 or E2 or L1"` shows them failing.
+The `xfail(strict=True)` tests are the open findings; `--runxfail -k "L1 or B1_an_idempotent"` shows them failing.
+Expected: 190 passed, 2 xfailed (engine `byb-engine-1.0.8`, base `df33dd6`).
 
 ## Live check (after deployment)
 
@@ -76,3 +79,26 @@ bound = in-scope equity weight, `NO_FEASIBLE_PURCHASE` bound by the Energy rule,
 9. `--compare-local` presumes the deployment runs the same engine version (`calculation_version` is compared
    first) on the same data snapshot, and passes no price/FX source labels that would change the document
    (Mateo has no scenario rule, so no price or FX evidence exists either way; a test asserts this).
+
+All nine held against the real handlers in process (`test_live_check_inprocess.py`); the script was not changed.
+
+## Unverifiable until a real deployment
+
+The in-process run uses the real handler, worker and authorizer code, and nothing else real. Still unknown:
+
+1. **API Gateway**: route keys and path parameters as deployed, the authorizer attachment and its cache, the
+   body of its own 401/403, CORS (preflight without a code; `Authorization`, `Content-Type`, `Idempotency-Key`
+   allowed), the 30 s integration cut, throttling (429), payload-format details of real events.
+2. **IAM and configuration**: the roles' access to the bucket, to `lambda:InvokeFunction` and to the SSM
+   parameter; environment variables; the snapshot id the functions actually load.
+3. **S3 for real**: conditional writes (`If-None-Match` / `If-Match`) and consistency under two concurrent
+   requests; here they are A2's fake.
+4. **Lambda asynchronous invocation**: that the worker starts after the 202, its retries on error, its timeout
+   against the 150 s job deadline. Here the test delivers the event itself, and time is a fake clock.
+5. **Any model**: Bedrock access, latency, the explanation text and its citations, `agent.mode`
+   (`MODEL` here means the fake Bedrock returned an empty explanation). `POST /rules/interpret` answers 502
+   until an interpreter exists, so Mateo's "oil" clarification has only been checked on fixtures.
+6. **The deployed data**: that the uploaded snapshot is the local `data/processed` (`--compare-local` answers
+   this on the first real run) and that `calculation_version` is `byb-engine-1.0.8`.
+7. **The access code**: the SSM value (16 characters or more) and that nothing logs it.
+8. **Real latency**: whether `/check` and the 202 stay well under 30 s on a cold start.
