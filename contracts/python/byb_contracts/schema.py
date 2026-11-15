@@ -11,7 +11,7 @@ Schema directory resolution, first match wins:
 3. ``contracts/schemas`` in the repository layout.
 
 Numbers: every number in every document is a finite IEEE-754 double
-(contracts/SEMANTICS.md section 1). Python's ``float`` also holds NaN and
+(contracts/SEMANTICS.md section 2). Python's ``float`` also holds NaN and
 +/-Infinity, which JSON cannot represent and for which every comparison is
 False (so ``minimum`` / ``maximum`` would let NaN through). ``schema_errors``
 therefore rejects any non-finite float anywhere in the document before it looks

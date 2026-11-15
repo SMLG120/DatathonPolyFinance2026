@@ -1,4 +1,4 @@
-"""Non-finite numbers (NaN, +Infinity, -Infinity) are invalid input everywhere (SEMANTICS section 1).
+"""Non-finite numbers (NaN, +Infinity, -Infinity) are invalid input everywhere (SEMANTICS section 2).
 
 Regression tests for the false PASS reported as F-01 / F-05 / F-06: a NaN position weight used to pass
 ``validate_portfolio`` because every comparison with NaN is False, so the range checks and the
@@ -196,7 +196,7 @@ def test_bad_weights_are_rejected(document, fragment):
     pytest.param(_portfolio(1, ), id="integer 1 is a number"),
 ])
 def test_finite_edge_weights_are_accepted(document):
-    """SEMANTICS section 1: every number is a finite double and equality is within EPS, nothing stricter."""
+    """SEMANTICS sections 1 and 2: every number is a finite double and equality is within EPS, nothing stricter."""
     byb.validate_portfolio(document)
 
 
