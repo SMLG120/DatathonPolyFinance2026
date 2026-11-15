@@ -25,6 +25,8 @@ BUILD_BRIEF writes the first route as `/portfolios/{persona}`; the path paramete
   properties are rejected (400). Every success body carries `schema_version`.
 - Every weight, limit, exposure, return and gap is a **fraction** (10% = 0.10). A percentage string
   such as `"25%"` is a 400.
+- Every number is a finite IEEE-754 double. `NaN`, `Infinity` and `-Infinity` (which are not JSON) are
+  rejected with 400 `VALIDATION_ERROR` before any calculation, never read as missing data or as zero.
 - Timestamps are UTC (`2026-11-14T15:02:00Z`). Dates are `YYYY-MM-DD`.
 - Every response is sent with `Cache-Control: no-store`.
 
