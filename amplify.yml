@@ -1,0 +1,42 @@
+# AWS Amplify Hosting build specification (Git-connected deployments only).
+#
+# STATUS: written from the AWS documentation, never executed. No Amplify app
+# exists for this project. See docs/DEPLOYMENT.md, "Not verified without AWS
+# access", before relying on it.
+#
+# The repository is a monorepo whose only web app is `frontend/`, a Next.js
+# static export (`output: "export"` in frontend/next.config.ts). `next build`
+# writes the complete site to `frontend/out`.
+#
+# - `appRoot` must equal the app's AMPLIFY_MONOREPO_APP_ROOT environment
+#   variable (`frontend`). The console sets it when the app is created with
+#   "My app is a monorepo"; otherwise set it by hand.
+# - Commands, `baseDirectory` and cache paths are relative to `appRoot`.
+# - The app's platform must be WEB (static), not WEB_COMPUTE (SSR).
+# - NEXT_PUBLIC_API_BASE_URL is set as an Amplify environment variable. It is
+#   public and is inlined into the JavaScript bundle. Never add a secret here
+#   or as a build variable: the access code is typed by the user at runtime.
+version: 1
+applications:
+  - appRoot: frontend
+    frontend:
+      phases:
+        preBuild:
+          commands:
+            # frontend/package.json engines: node >= 22.12.0
+            - nvm install 22
+            - nvm use 22
+            - node -e "const [a,b]=process.versions.node.split('.').map(Number);if(a<22||(a===22&&b<12)){console.error('Node 22.12 or later is required, found '+process.versions.node);process.exit(1)}"
+            - 'echo "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-EMPTY, so this build runs in FIXTURES MODE (test data)}"'
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: out
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+          - .next/cache/**/*
