@@ -13,6 +13,7 @@ from typing import Any, Iterable, Optional
 
 from byb_contracts import (
     EPS,
+    ContractError,
     FUNDING,
     MAX_PRICE_AGE_DAYS,
     SCENARIOS,
@@ -23,6 +24,8 @@ from byb_contracts import (
     rule_errors,
     validate_purchase_request,
 )
+
+from .guard import non_finite_paths, portfolio_problems, target_problem, threshold_problems
 
 OUT_OF_SCOPE_REASONS = {
     "etf_bond": "Bond fund: outside the scope of the company-exposure rules; not assessed.",
@@ -60,6 +63,15 @@ def held_positions(portfolio: dict) -> list[tuple[str, float]]:
 
 # --------------------------------------------------------------------------- purchase simulation
 
+def refuse_unusable_request(purchase_request: Any) -> None:
+    """Raise ContractError for a request no result can carry: a target that is not a finite number, or any NaN."""
+    why = target_problem(purchase_request)
+    problems = [f"purchase_request.target_direct_weight: {why}"] if why else []
+    problems += [f"{path}: is not a finite number" for path in non_finite_paths(purchase_request, "purchase_request")]
+    if problems:  # NaN passes a schema bound; the result would carry it and could not be serialized
+        raise ContractError("purchase request", list(dict.fromkeys(problems)))
+
+
 def _execution(status: str, code: Optional[str], message: Optional[str]) -> dict:
     return {"status": status, "code": code, "message": message}
 
@@ -80,11 +92,15 @@ def simulate_change(
     A purchase request that does not match its schema raises ``ContractError``:
     no valid result can carry it.
     """
+    refuse_unusable_request(purchase_request)
     validate_purchase_request(purchase_request)
     registry = registry_of(instruments)
     invalid = {"feasibility": None, "starting_portfolio": None, "proposed_portfolio": None}
 
-    errors = portfolio_errors(portfolio)
+    # The engine's own checks first (guard.py); the contract validators second. Neither replaces the other.
+    errors = (portfolio_problems(portfolio)
+              or [f"{path} is not a finite number" for path in non_finite_paths(portfolio, "portfolio")]
+              or portfolio_errors(portfolio))
     if not errors:
         errors = [
             f"position {p['instrument_id']!r} is not in the instrument registry"
@@ -94,8 +110,14 @@ def simulate_change(
     if errors:
         return {"execution": _execution("INVALID_REQUEST", "INVALID_PORTFOLIO", "The portfolio is not valid: " + "; ".join(errors[:3])), **invalid}
 
-    errors = []
     if draft_rules is not None:
+        errors = threshold_problems(draft_rules, "draft_rules") or [f"{path} is not a finite number" for path in non_finite_paths(draft_rules, "draft_rules")]
+    else:
+        rules = policy.get("rules") if isinstance(policy, dict) else None
+        errors = threshold_problems(rules, "policy.rules") or [f"{path} is not a finite number" for path in non_finite_paths(policy, "policy")]
+    if errors:
+        pass
+    elif draft_rules is not None:
         seen = set()
         for i, rule in enumerate(draft_rules):
             errors.extend(f"draft_rules[{i}]: {e}" for e in rule_errors(rule))
@@ -242,14 +264,17 @@ def compute_exposure(portfolio: dict, instruments: Any, holdings: Any) -> dict:
                 bucket = sector_exposure.setdefault(sector, {})
                 bucket[issuer] = bucket.get(issuer, 0.0) + known
             key = (issuer, sector)
+            reported = (row.get("instrument_id") or row.get("name") or "unnamed row", fraction)  # kept so evidence can cite each row
             if key in merged:
                 merged[key]["weight"] += known
                 merged[key]["fund_fraction"] += fraction
                 merged[key]["rows"] += 1
+                merged[key]["reported_rows"].append(reported)
             else:
                 merged[key] = {
                     "position_id": instrument_id, "kind": "FUND", "issuer_id": issuer, "weight": known,
                     "fund_fraction": fraction, "sector": sector, "sector_source": row["sector_source"], "rows": 1,
+                    "reported_rows": [reported],
                 }
         paths.extend(merged.values())
         uncovered = weight * max(0.0, 1.0 - covered)

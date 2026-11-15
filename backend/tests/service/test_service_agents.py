@@ -5,8 +5,27 @@ import pytest
 from backend.agents import schema
 from backend.agents.bedrock_client import BedrockConverse, ModelCallError
 from backend.agents.loop import LoopFailure, LoopLimits, LoopRecorder, run_tool_loop
-from backend.agents.tools import COMPUTE_EXPOSURE_SCHEMA, ToolRegistry, ToolSpec, build_phase1_registry, compute_exposure_placeholder
+from backend.agents.tools import ToolRegistry, ToolSpec
 from service_fakes import FakeBedrock, FakeClock, client_error, final_response, tool_use_response
+
+# A schema with a pattern, a bounded number and no extra properties: the subject of the validator tests.
+# (It was the phase 1 placeholder tool's schema. The investigation tools take no weights at all; they are
+# tested in test_service_worker.py and test_service_tools.py.)
+COMPUTE_EXPOSURE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "instrument_id": {"type": "string", "pattern": r"^[A-Z0-9][A-Z0-9.\-]{0,14}$"},
+        "target_direct_weight": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": ["instrument_id", "target_direct_weight"],
+    "additionalProperties": False,
+}
+
+
+def build_phase1_registry():
+    """One registered tool with a strict schema, for the allowlist and loop tests."""
+    return ToolRegistry([ToolSpec("compute_exposure", "test tool", COMPUTE_EXPOSURE_SCHEMA, lambda a: {"echo": a["target_direct_weight"]},
+                                  lambda a: "in", lambda r: "out")])
 
 
 def test_ag01_schema_accepts_valid_arguments():
@@ -72,12 +91,21 @@ def test_ag05_enum_integer_array_and_nested_validation():
     assert schema.validate({"mode": "a", "ids": ["a", "b", "c"]}, nested)
 
 
-def test_ag06_placeholder_never_reports_unknown_exposure_as_zero():
-    output = compute_exposure_placeholder({"instrument_id": "NVDA", "target_direct_weight": 0.25})
-    assert output["placeholder"] is True and output["calculation_version"] == "phase1-placeholder-1"
-    assert output["unit"] == "portfolio_fraction" and output["direct_weight"] == 0.25 and output["direct_weight_percent"] == 25.0
-    assert output["indirect_weight"] is None and output["total_exposure_upper_bound"] is None
-    assert output["coverage"] == "NOT_COMPUTED"
+def test_ag06_a_step_is_an_observable_tool_action_in_the_contract_shape():
+    """Replaces the phase 1 placeholder test: the placeholder calculation no longer exists.
+
+    That a missing holdings file is never reported as zero exposure is now tested on the real tools and
+    the engine (test_service_tools.py, test_service_workflow.py).
+    """
+    from byb_contracts import schema_errors
+
+    event = build_phase1_registry().execute("compute_exposure", {"instrument_id": "NVDA", "target_direct_weight": 0.25}, origin="server", clock=FakeClock())
+    step = event.to_step(1)
+    assert schema_errors(step, "investigation_job.schema.json#/$defs/step") == []
+    assert step["initiated_by"] == "SERVER" and step["status"] == "OK" and event.is_public
+    assert "tool_use_id" not in step and "arguments" not in step and "output" not in step
+    rejected = build_phase1_registry().execute("delete_everything", {}, origin="model", clock=FakeClock())
+    assert rejected.status == "REJECTED" and not rejected.is_public  # never shown as a step, kept in the trace only
 
 
 def test_ag07_tool_names_match_exactly():

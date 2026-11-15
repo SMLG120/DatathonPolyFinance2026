@@ -10,8 +10,10 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+# The repository root (``backend``), the shared contracts package (``byb_contracts``) and this folder (the fakes).
+for extra in (REPO_ROOT / "contracts" / "python", REPO_ROOT, Path(__file__).resolve().parent):
+    if str(extra) not in sys.path:
+        sys.path.insert(0, str(extra))
 
 from backend.common import log  # noqa: E402
 

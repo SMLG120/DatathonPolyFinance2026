@@ -14,14 +14,18 @@ _BASE_HEADERS = {
 
 
 class ApiError(Exception):
-    """An error with a stable machine-readable code that is safe to show."""
+    """An error in the contract's shape (contracts/api.md, "Errors"). ``message`` is safe to show."""
 
-    def __init__(self, status: int, code: str, message: str, **details: Any) -> None:
+    def __init__(self, status: int, code: str, message: str, details: list[dict[str, str]] | None = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
         self.message = message
-        self.details = details
+        self.details = list(details or [])
+
+
+def detail(path: str, issue: str) -> dict[str, str]:
+    return {"path": path, "issue": issue[:500] or "invalid"}
 
 
 def json_response(status: int, body: dict[str, Any], headers: dict[str, str] | None = None) -> dict[str, Any]:
@@ -31,14 +35,11 @@ def json_response(status: int, body: dict[str, Any], headers: dict[str, str] | N
     return {
         "statusCode": status,
         "headers": merged,
-        "body": json.dumps(body, separators=(",", ":"), allow_nan=False),
+        # UTF-8, not ASCII escapes: formula strings contain characters such as "≈".
+        "body": json.dumps(body, separators=(",", ":"), ensure_ascii=False, allow_nan=False),
     }
 
 
-def error_response(status: int, code: str, message: str, request_id: str | None = None, **details: Any) -> dict[str, Any]:
-    """Body shape: ``{"error": {"code", "message", "request_id", ...}}``."""
-    error: dict[str, Any] = {"code": code, "message": message}
-    if request_id:
-        error["request_id"] = request_id
-    error.update({k: v for k, v in details.items() if v is not None})
-    return json_response(status, {"error": error})
+def error_response(status: int, code: str, message: str, request_id: str | None = None, details: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    """``api.schema.json#/$defs/error_response``: ``{"error": {code, message, details[], request_id}}``."""
+    return json_response(status, {"error": {"code": code, "message": message, "details": list(details or []), "request_id": request_id}})

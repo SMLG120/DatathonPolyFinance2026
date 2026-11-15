@@ -1,5 +1,11 @@
 # Deploying the backend through the AWS MCP tool
 
+> **Milestone 5 (branch `agent/a2-backend`): nothing in this state has been deployed.** The stack in the account
+> still runs the phase-1 template and zip named below. Sections 1 to 5 keep the record of what was run on
+> 2026-11-14 and say what changes for the next deploy: a new zip (engine and contracts included by default), a
+> data snapshot uploaded first (section 3b), two parameters to pass (`DataSnapshotId`, `AllowedOrigin`), and a
+> CORS guard in `02_deploy.py`. Read "Next deploy: checklist" at the end before starting.
+
 This is the sequence that was actually used on 2026-11-14 to create and then
 update stack `before-you-buy` in account `010928212265`, region `us-east-1`.
 It needs no AWS CLI, no SAM CLI and no local AWS credentials: every AWS call
@@ -17,6 +23,7 @@ base URL (stack output `ApiBaseUrl`) and the access code typed at runtime.
 | File | What it is |
 | --- | --- |
 | `scripts/package.py` | Local, standard library only. Builds the deterministic zip `dist/byb-backend-<sha16>.zip`. |
+| `scripts/build_snapshot.py` | Local, standard library only, no AWS. Validates the processed data and the scenarios and writes `dist/snapshots/<snapshot_id>/`. Prints the id and the upload list. |
 | `scripts/mcp/01_bootstrap.py` | Sandbox snippet. Artifacts bucket + access-code parameter. Idempotent. |
 | `scripts/mcp/02_deploy.py` | Sandbox snippet. Change set: create, show validation and changes, optionally execute. |
 | `scripts/mcp/03_status.py` | Sandbox snippet. Wait, then print status, outputs and failed events. |
@@ -41,9 +48,11 @@ Used on 2026-11-14: `lambda/byb-backend-5cf91f80c5c1a2ce.zip` (96,694 bytes,
 19 files) with `templates/template-e532ad55e3d0fd57.yaml` (23,609 bytes), then
 with `templates/template-9b1c94d4e07d8bc3.yaml` (24,229 bytes, current).
 
-Add `--with-engine` once `backend/engine/` exists, and
-`--include contracts/python=<archive prefix>` if the contracts package must
-ship (phase 2).
+Milestone 5: `python3 scripts/package.py` with no option builds the complete zip: `backend/` (handlers, engine,
+agents, common), `byb_contracts/` (from `contracts/python/byb_contracts`) and `byb_contracts/schemas/` (from
+`contracts/schemas`; the functions find it through `BYB_SCHEMA_DIR=/var/task/byb_contracts/schemas`). No data,
+fixture, scenario or test file is in it, and the build fails if one would be (tests `pk05` to `pk07`). `--with-engine`
+is no longer needed.
 
 ## 2. Bootstrap (once)
 
@@ -67,6 +76,35 @@ through presigned URLs. Call `get_presigned_url` with two requests
 Both must print `http=200`. A presigned URL embeds a short-lived session
 token: never write one into a file in this repository or into a report.
 
+## 3b. Data snapshot (milestone 5; not run yet)
+
+The Lambdas read holdings, prices, the instrument registry, the controversy and source registries and the three
+fictional scenarios from the data bucket, never from the zip (issuer holdings and Yahoo-derived prices are not
+redistributable through Git). Both functions refuse to serve anything from a snapshot that fails its checks.
+
+1. Build and check locally (no AWS call):
+
+       python3 scripts/build_snapshot.py --check     # validate only, print the id
+       python3 scripts/build_snapshot.py             # write dist/snapshots/<snapshot_id>/
+
+   The id is `snap-<valuation date>-<12 hex>` and is derived from the SHA-256 of every file: other data, other id.
+   For the data of 2026-11-14 the script printed `snap-2026-11-12-3390e023b308` (9 files, 1,427,264 bytes).
+2. Upload every file of the printed `uploads` list to the **data** bucket (stack output `DataBucketName`) under
+   exactly the printed key, `snapshots/<snapshot_id>/<name>`: one `get_presigned_url` request per file
+   (`operation: upload`), then `curl --upload-file` as in section 3. Upload `manifest.json` last. Neither function
+   role can write under `snapshots/`: only the deploying identity can.
+3. Check in the sandbox that the nine keys exist (`ListObjectsV2`, prefix `snapshots/<snapshot_id>/`) and that the
+   sizes equal the printed `bytes`.
+4. Pass `{"DataSnapshotId": "<snapshot_id>"}` in `PARAMETER_OVERRIDES` (section 4). The parameter has no default.
+
+A snapshot is never modified in place. New data is a new id, a new prefix and a parameter change; the previous
+snapshot stays, and every investigation records the id it used (job `internal`, result `inputs`, trace, logs).
+
+The first deploy of the milestone-5 template is special: the data bucket is created by the stack, and the stack
+needs `DataSnapshotId`. The bucket already exists in the deployed stack, so for an update, upload first and deploy
+second. For a brand-new stack, deploy with the id printed by the build, upload immediately after: until the upload
+is complete every data route answers 500 and every investigation ends `FAILED / DATA_UNAVAILABLE`, nothing else.
+
 ## 4. Create the change set, read it, execute it
 
 In `scripts/mcp/02_deploy.py` set `CODE_KEY` and `TEMPLATE_KEY`, keep
@@ -87,7 +125,19 @@ same change set, refuses to execute if any validation failed, calls
 afterwards (the file is committed in that state).
 
 Parameters other than the code location go in `PARAMETER_OVERRIDES`, for
-example `{"AllowedOrigin": "https://main.<app-id>.amplifyapp.com"}`.
+example `{"DataSnapshotId": "snap-2026-11-12-3390e023b308", "AllowedOrigin": "https://main.<app-id>.amplifyapp.com"}`.
+A parameter with no default and no previous value (`DataSnapshotId` on the first milestone-5 deploy) stops the
+snippet before any change set is created.
+
+**CORS origin.** The template keeps `AllowedOrigin` with the default `*` for local development, and the deployed
+stack currently has `*`. A deployment that serves a hosted frontend must pass the exact origin, scheme included and
+without a trailing slash. `02_deploy.py` computes the value the stack would have after the change set (override,
+else the stack's current value, else the template default) and reports it as `allowed_origin`. If it is `*`, or not
+an `https://` origin (`http://localhost...` is accepted), the report carries `cors_refusal` and, with
+`EXECUTE = True`, the change set is **not executed** (`"refused"` in the report). The only way through is
+`ALLOW_WILDCARD_ORIGIN = True`, set on purpose and set back afterwards. Nothing about the running stack changes
+until someone makes that choice: the guard only stops the next execution. CORS is not access control (the bearer
+code is); the point is that no arbitrary website can drive the API from a browser in which the code was typed.
 
 What happened on 2026-11-14:
 
@@ -142,11 +192,32 @@ Store, `/before-you-buy/access-code`, "Show decrypted value".
 
 ## 7. Rotating the access code
 
-`PutParameter` with `Overwrite=True` on the same name (generate the value in
-the sandbox, as the bootstrap does). No redeploy. The new code is accepted
-within 60 seconds (the authorizer's in-memory cache). The old code can still be
-accepted for up to 300 seconds, because API Gateway caches the authorizer's
-answer for each `Authorization` header value.
+How long a rotated code keeps working, by template:
+
+| Template | API Gateway authorizer cache (`ReauthorizeEvery`) | Function cache (`ACCESS_CODE_CACHE_SECONDS`) | Worst case |
+| --- | --- | --- | --- |
+| deployed now (phase 1) | 300 seconds | 60 seconds | about 6 minutes (360 seconds) |
+| milestone 5 (this branch, not deployed) | 0: nothing cached | 30 seconds | 30 seconds |
+
+With `ReauthorizeEvery` 0 every request invokes the authorizer function (the throttle is 5 requests per second on
+the costly routes, so the cost is negligible), and the only delay left is the function's own in-memory copy of the
+code, kept 30 seconds per warm container to avoid one SSM call per request. The function refuses a cache setting
+above 300 seconds.
+
+Procedure (sandbox for the AWS calls; nothing is redeployed):
+
+1. `PutParameter` with `Overwrite=True` on `/before-you-buy/access-code`, the value generated inside the sandbox
+   as the bootstrap does (48 random hexadecimal characters). Never return or print the value.
+2. Wait 45 seconds on the milestone-5 template (30 seconds of cache plus a margin). On the phase-1 template still
+   deployed, wait 6 minutes and 30 seconds.
+3. Verify with the OLD code: `curl -s -o /dev/null -w '%{http_code}\n' -H @old-header-file <ApiBaseUrl>/portfolios/robert`
+   must print `403` (a wrong code is 403; `401` is the answer when no `Authorization` header is sent at all). If it
+   still prints `200`, the wait was too short or the parameter was not overwritten: do not consider the code rotated.
+4. Verify with the NEW code: the same request must print `200`.
+5. Delete both header files.
+
+During the wait the old code can still be accepted and the new one refused, per warm container. Rotation does not
+end investigations already running; they need no code.
 
 ## 8. Teardown
 
@@ -156,3 +227,21 @@ answer for each `Authorization` header value.
 4. `DeleteParameter` on `/before-you-buy/access-code`.
 
 The whole account is deleted after 2026-11-16, which removes all of it anyway.
+
+## Next deploy: checklist (milestone 5, to be run by the lead; none of it has been run)
+
+1. `uv run --no-project --python 3.14 --with pytest --with boto3 --with jsonschema pytest backend/tests contracts/python/tests -q` passes.
+2. `python3 scripts/package.py` -> zip key; `shasum -a 256 infra/template.yaml | cut -c1-16` -> template key.
+3. `python3 scripts/build_snapshot.py` -> snapshot id and upload list; upload the snapshot to the data bucket (3b).
+4. Upload the zip and the template to the artifacts bucket (3).
+5. `02_deploy.py`: `CODE_KEY`, `TEMPLATE_KEY`, `PARAMETER_OVERRIDES = {"DataSnapshotId": ..., "AllowedOrigin": ...}`,
+   `EXECUTE = False`. Read the change set. Expected: the three functions, both function roles (new statements on
+   `policies/*` and `snapshots/*`), five new routes with their integrations and permissions, the authorizer
+   (`ReauthorizeEvery` 0), the API (CORS origin). No replacement of the bucket, the API or a function.
+6. `EXECUTE = True`, run, set it back. `03_status.py`.
+7. `scripts/e2e_smoke.sh` (section 6). It exercises the seven routes with the milestone-5 shapes.
+8. Rotation check if the code is rotated (section 7).
+
+`scripts/e2e_probe.sh` still sends the phase-1 request shapes and will fail against the milestone-5 API; it was
+not updated (it starts 12 real investigations per run and cannot be tried without AWS).
+

@@ -1,4 +1,4 @@
-# Backend infrastructure (phase 1: minimal vertical slice)
+# Backend infrastructure (phase 1 deployed; milestone 5 in this branch, not deployed)
 
 Stack `before-you-buy`, account `010928212265`, region `us-east-1`. One SAM
 template, `infra/template.yaml`, deployed through CloudFormation change sets.
@@ -12,6 +12,63 @@ Everything is a fictional simulation; the account is deleted after 2026-11-16.
 > outputs in `infra/evidence/raw/`), the 429 answers seen right after a flood (smoke runs 4
 > and 5), the final smoke run on the current template, and a pending decision on the throttle
 > limits. See `work/PAUSE_CHECKPOINT.md`.
+
+## Milestone 5 (branch `agent/a2-backend`): what the code and the template are now. Not deployed.
+
+Everything from "What phase 1 proves" down describes the deployment that is still running in the account
+(phase-1 zip, template `9b1c94d4e07d8bc3`) and stays as its record. This section says what differs in this branch.
+None of it has been deployed, and no AWS call was made to produce it: it is verified by the local tests only
+(`backend/tests/service`, in particular `test_service_template.py`, `test_service_package.py`,
+`test_service_workflow.py`).
+
+**Code.** The seven routes of `contracts/api.md` are implemented in the API function; the worker runs the real
+engine (`backend/engine`, `check_rules`) on the stored request before and independently of any model call; the
+"Gap to the contracts" table below is closed except where "Limitations of milestone 5" says otherwise. The
+placeholder `compute_exposure` is gone. A model failure no longer fails the job: the server runs the same checks,
+every statement is a template and `agent.mode` is `DETERMINISTIC_FALLBACK`.
+
+**Data.** Holdings, prices, registries and the three scenarios are a snapshot in the data bucket under
+`snapshots/<snapshot_id>/` (`manifest.json` plus eight files), read by both functions with `s3:GetObject`, verified
+(manifest id, SHA-256 of every file, strict JSON, contract validators, coverage and issuer consistency) and cached
+in memory per container. Nothing can write there except the deploying identity. The id is the stack parameter
+`DataSnapshotId` (no default) and the environment variable `DATA_SNAPSHOT_ID`. See `scripts/deploy.md`, 3b.
+
+**Template changes since the deployed one** (each is asserted by `test_service_template.py`):
+
+| What | Before (deployed) | Now (this branch) |
+| --- | --- | --- |
+| Parameters | - | `DataSnapshotId` (required, pattern `snap-YYYY-MM-DD-<12 hex>`); output `DataSnapshotId` |
+| Routes | `POST /investigations`, `GET /investigations/{id}` | plus `POST /investigations/{id}/challenge` (throttle 5 rps, burst 10, like create), `GET /portfolios/{persona_id}`, `POST /rules/interpret`, `POST /rules/confirm`, `POST /check` (default throttle 20 rps, burst 40). Same authorizer, payload 2.0, 20 s integration timeout. No `$default` route |
+| API function environment | `DATA_BUCKET`, `WORKER_FUNCTION_NAME`, `JOB_DEADLINE_SECONDS`, `LOG_LEVEL` | plus `DATA_SNAPSHOT_ID`, `BYB_SCHEMA_DIR=/var/task/byb_contracts/schemas`, `BEDROCK_MODEL_ID` (display only: the role has no Bedrock permission) |
+| Worker environment | as deployed | plus `DATA_SNAPSHOT_ID`, `BYB_SCHEMA_DIR` |
+| API role, `s3:GetObject` | `jobs/*`, `results/*` | plus `policies/*`, `snapshots/*` (statement `ReadJobsResultsPoliciesAndSnapshots`) |
+| API role, `s3:PutObject` | `jobs/*` with `If-None-Match` or `If-Match` | plus `policies/*` only with `If-None-Match` (new statement `CreatePolicyVersionOnlyIfAbsent`, condition `Null: s3:if-none-match = false`): a policy version is written once and never overwritten |
+| API role, `s3:ListBucket` | prefix `jobs/*` | prefixes `jobs/*` and `policies/*` (statement `ListJobsAndPoliciesPrefixesOnly`, condition `StringLike s3:prefix`): latest-version lookup, and a missing object is a 404 instead of a 403 |
+| Worker role, `s3:GetObject` | `jobs/*`, `snapshots/*` | plus `policies/*` (statement `ReadJobsPoliciesAndSnapshots`) |
+| Authorizer | `ReauthorizeEvery: 300`, function cache 60 s | `ReauthorizeEvery: 0`, function cache 30 s: a rotated code stops working within 30 s instead of about 6 minutes |
+| CORS | `AllowedOrigin` default `*` | unchanged in the template; `scripts/mcp/02_deploy.py` refuses to execute a change set whose effective origin is `*` unless `ALLOW_WILDCARD_ORIGIN` is set on purpose |
+
+No statement uses a wildcard action or `Resource: "*"`; no role can write under `snapshots/`; the worker cannot
+write `policies/` or create a job; the authorizer role is unchanged. Worker timeout 160 s = contract deadline
+150 s + 10 s; reserved concurrency and retries 0 are unchanged.
+
+**Failure codes of a job** are now the contract's: `DEADLINE_EXCEEDED`, `WORKER_INVOCATION_FAILED`,
+`WORKER_ERROR`, `ENGINE_ERROR`, `DATA_UNAVAILABLE`. The `MODEL_*` codes below no longer exist: a model problem
+is a fallback, not a failure.
+
+**Limitations of milestone 5.**
+
+- `POST /rules/interpret` and the `CLARIFY_PREFERENCE` challenge answer 502 `INTERPRETER_FAILED` (a code the
+  contract documents): no interpreter is implemented. A free-text purchase request is answered by a template
+  clarification built from the scenario's demo requests, without a model.
+- Model-written statements are filtered by wording rules (`backend/agents/explain.py`), which is not a proof of
+  meaning. Decisive sentences are always the engine's templates.
+- The 5 s budget of `POST /check` is logged (`check_completed.elapsed_ms`), not enforced. Locally a check on the
+  real data takes about 60 ms plus about 35 ms of input guards; a cold start also loads and validates the 1.4 MB
+  snapshot (about 0.3 s locally, not measured in Lambda).
+- `ReauthorizeEvery: 0`, the five new routes and the new IAM statements have never been through CloudFormation.
+- The snapshot id is not a member of the frozen result or job schema: it is in the job's internal part, the
+  stored result's `inputs`, the trace and the logs, not in what `GET` returns.
 
 What phase 1 proves: one real request goes through API Gateway, is stored,
 reaches Amazon Bedrock, executes an allowlisted tool and writes a result and a

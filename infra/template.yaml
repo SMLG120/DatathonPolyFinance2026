@@ -44,7 +44,10 @@ Parameters:
   AllowedOrigin:
     Type: String
     Default: "*"
-    Description: CORS allowed origin. "*" until the Amplify origin is known; tighten it to that origin afterwards.
+    Description: >-
+      CORS allowed origin. The default "*" is for local development against the API only. A deployment that serves a
+      hosted frontend must pass the exact origin (https://<branch>.<app-id>.amplifyapp.com); scripts/mcp/02_deploy.py
+      refuses to execute a change set whose effective value is "*" unless that is explicitly allowed.
   AccessCodeParameterName:
     Type: String
     Default: /before-you-buy/access-code
@@ -63,6 +66,13 @@ Parameters:
     Default: 7
     AllowedValues: [1, 3, 5, 7, 14, 30]
     Description: Retention of every log group in this stack.
+  DataSnapshotId:
+    Type: String
+    AllowedPattern: ^snap-[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9a-f]{12}$
+    Description: >-
+      Id of the data snapshot under snapshots/<id>/ in the data bucket (printed by scripts/build_snapshot.py).
+      It is content-derived: new data means a new id, and every investigation records the id it used.
+      Upload the snapshot before deploying; no default on purpose.
   WorkerReservedConcurrency:
     Type: Number
     Default: 5
@@ -187,11 +197,12 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: >-
-          API fn only creates/reads job documents, reads results and hands the job to the worker. No Bedrock, no
-          snapshots, no traces. ListBucket limited to jobs/ so a missing job is a 404 rather than a 403.
+          API fn creates/reads job documents, reads results, policies and the data snapshot (POST /check runs the
+          engine here), creates policy versions once, and hands the job to the worker. No Bedrock, no traces, no
+          write to snapshots/ or results/. ListBucket limited to jobs/ and policies/ (a missing object is a 404).
         must:
           - lambda:InvokeFunction on the worker fn only
-          - PutObject on jobs/ only, and only as a conditional write
+          - PutObject on jobs/ & policies/ only, and only as a conditional write; snapshots/ is read-only for every role
         mutable: review-required
     Properties:
       Description: Execution role of the Before You Buy API function.
@@ -220,12 +231,21 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !GetAtt ApiLogGroup.Arn
-              - Sid: ReadJobsAndResults
+              - Sid: ReadJobsResultsPoliciesAndSnapshots
                 Effect: Allow
                 Action: s3:GetObject
                 Resource:
                   - !Sub ${DataBucket.Arn}/jobs/*
                   - !Sub ${DataBucket.Arn}/results/*
+                  - !Sub ${DataBucket.Arn}/policies/*
+                  - !Sub ${DataBucket.Arn}/snapshots/*
+              - Sid: CreatePolicyVersionOnlyIfAbsent
+                Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub ${DataBucket.Arn}/policies/*
+                Condition:
+                  "Null":
+                    s3:if-none-match: "false"
               - Sid: CreateJobOnlyIfAbsent
                 Effect: Allow
                 Action: s3:PutObject
@@ -240,13 +260,15 @@ Resources:
                 Condition:
                   "Null":
                     s3:if-match: "false"
-              - Sid: ListJobsPrefixOnly
+              - Sid: ListJobsAndPoliciesPrefixesOnly
                 Effect: Allow
                 Action: s3:ListBucket
                 Resource: !GetAtt DataBucket.Arn
                 Condition:
                   StringLike:
-                    s3:prefix: jobs/*
+                    s3:prefix:
+                      - jobs/*
+                      - policies/*
               - Sid: DispatchToWorkerOnly
                 Effect: Allow
                 Action: lambda:InvokeFunction
@@ -295,11 +317,12 @@ Resources:
                   - logs:CreateLogStream
                   - logs:PutLogEvents
                 Resource: !GetAtt WorkerLogGroup.Arn
-              - Sid: ReadJobsAndSnapshots
+              - Sid: ReadJobsPoliciesAndSnapshots
                 Effect: Allow
                 Action: s3:GetObject
                 Resource:
                   - !Sub ${DataBucket.Arn}/jobs/*
+                  - !Sub ${DataBucket.Arn}/policies/*
                   - !Sub ${DataBucket.Arn}/snapshots/*
               - Sid: UpdateJobOnlyByCompareAndSwap
                 Effect: Allow
@@ -389,7 +412,7 @@ Resources:
           - JOB_DEADLINE_SECONDS here + 10 <= worker fn Timeout
     Properties:
       FunctionName: !Sub ${AWS::StackName}-api
-      Description: Before You Buy HTTP API handlers (investigations).
+      Description: Before You Buy HTTP API handlers (the seven routes of contracts/api.md; no model call).
       Handler: backend.api.handler.handler
       Runtime: !Ref PythonRuntime
       Architectures:
@@ -408,6 +431,10 @@ Resources:
           DATA_BUCKET: !Ref DataBucket
           WORKER_FUNCTION_NAME: !Ref WorkerFunction
           JOB_DEADLINE_SECONDS: "150"
+          DATA_SNAPSHOT_ID: !Ref DataSnapshotId
+          # Display only (agent.model_id of a queued job). This role has no bedrock permission.
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BYB_SCHEMA_DIR: /var/task/byb_contracts/schemas
           LOG_LEVEL: INFO
       Events:
         CreateInvestigation:
@@ -427,6 +454,50 @@ Resources:
             ApiId: !Ref HttpApi
             Method: GET
             Path: /investigations/{id}
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+        ChallengeInvestigation:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /investigations/{id}/challenge
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+            RouteSettings:
+              # A CHANGE_RULE challenge starts an investigation: same limit as POST /investigations.
+              ThrottlingBurstLimit: 10
+              ThrottlingRateLimit: 5
+        GetPortfolio:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: GET
+            Path: /portfolios/{persona_id}
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+        InterpretRules:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /rules/interpret
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+        ConfirmRules:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /rules/confirm
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
+        Check:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /check
             PayloadFormatVersion: "2.0"
             TimeoutInMillis: 20000
       Tags:
@@ -473,6 +544,8 @@ Resources:
           MAX_TOOL_CALLS: "16"
           BEDROCK_MAX_TOKENS: "4096"
           CODE_ARTIFACT: !Ref CodeS3Key
+          DATA_SNAPSHOT_ID: !Ref DataSnapshotId
+          BYB_SCHEMA_DIR: /var/task/byb_contracts/schemas
           LOG_LEVEL: INFO
       Tags:
         project: before-you-buy
@@ -484,6 +557,8 @@ Resources:
         why: Compares the bearer token with the SSM access code in constant time. Demo-grade shared code, not user identity.
         must:
           - fail closed - an unreadable or too-short stored code must never authorize
+          - rotation delay = ACCESS_CODE_CACHE_SECONDS (30 s) only while ReauthorizeEvery stays 0; raising either lengthens
+            the time a rotated code keeps working (it was 60 s + 300 s)
           - API Gateway waits at most 10 s for an authorizer; keep Timeout below that
     Properties:
       FunctionName: !Sub ${AWS::StackName}-authorizer
@@ -504,7 +579,7 @@ Resources:
       Environment:
         Variables:
           ACCESS_CODE_PARAMETER_NAME: !Ref AccessCodeParameterName
-          ACCESS_CODE_CACHE_SECONDS: "60"
+          ACCESS_CODE_CACHE_SECONDS: "30"
           LOG_LEVEL: INFO
       Tags:
         project: before-you-buy
@@ -519,7 +594,8 @@ Resources:
           Lambda authorizer. CORS is convenience for the browser, not access control - the authorizer is.
         must:
           - every route keeps the default authorizer; do not add a $default route
-          - AllowedOrigin "*" is temporary - set it to the Amplify origin once known
+          - AllowedOrigin "*" is temporary - a deployment serving a hosted frontend must pass the exact origin;
+            scripts/mcp/02_deploy.py refuses to execute with "*" unless ALLOW_WILDCARD_ORIGIN is set on purpose
           - throttling stays modest - each POST can cost several Bedrock calls
     Properties:
       Name: !Sub ${AWS::StackName}-http-api
@@ -553,7 +629,9 @@ Resources:
             Identity:
               Headers:
                 - Authorization
-              ReauthorizeEvery: 300
+              # 0 = API Gateway does not cache the authorizer's answer: a rotated access code stops working as soon as
+              # the function's own cache (ACCESS_CODE_CACHE_SECONDS) expires. Cost: one authorizer invocation per request.
+              ReauthorizeEvery: 0
       Tags:
         project: before-you-buy
 
@@ -588,6 +666,9 @@ Outputs:
   CodeArtifact:
     Description: S3 key of the deployed Lambda zip.
     Value: !Ref CodeS3Key
+  DataSnapshotId:
+    Description: Data snapshot both functions read (snapshots/<id>/ in the data bucket).
+    Value: !Ref DataSnapshotId
   WorkerLogGroupName:
     Description: Log group of the worker function.
     Value: !Ref WorkerLogGroup

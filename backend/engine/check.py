@@ -13,6 +13,7 @@ import re
 from typing import Any, Optional
 
 from byb_contracts import (
+    ContractError,
     DEFAULT_VALUATION_DATE,
     EXPOSURE_TOP_N,
     SCENARIOS,
@@ -31,14 +32,18 @@ from .core import (
     held_positions,
     public_row,
     records_of,
+    refuse_unusable_request,
     registry_of,
     replay_state,
     simulate_change,
 )
+from .guard import data_problems, non_finite_paths
 from .text import eq, num, pct, points, span, total
 from .version import CALCULATION_VERSION
 
 STATES = ("starting", "proposed")
+SECTOR_LABEL_NOTE = "A sector label is not a list of oil producers and is not a controversy finding."
+CONTROVERSY_RECORD_NOTE = "A record says that a dated event is on file with its source; it is not a judgement of the company."
 STATE_LABEL = {"starting": "STARTING", "proposed": "PROPOSED"}
 STATE_TAG = {"starting": "start", "proposed": "prop"}
 STATE_WORDS = {"starting": "before the purchase", "proposed": "after the purchase"}
@@ -316,10 +321,20 @@ class _Document:
             rows = [p for p in exposure["paths"] if p["kind"] == "FUND" and p["position_id"] == fund_id and p["issuer_id"] == issuer]
             fraction = sum(p["fund_fraction"] for p in rows)
             several = sum(p["rows"] for p in rows) > 1
+            period = {"type": "AS_OF", "date": fund["holdings_date"]}
+            row_ids, row_terms = [], []
+            if several:  # share classes, or one company on several rows: each reported row is its own record
+                reported = [entry for p in rows for entry in p["reported_rows"]]
+                for index, (what, row_fraction) in enumerate(reported, start=1):
+                    row_ids.append(self.ev.add(
+                        f"ev-cwrow-{fund_id}-{issuer}-{index}", "FACT", "fund_constituent_weight", row_fraction, "ISSUER", issuer, via=fund_id,
+                        period=period, sources=[fund["source_id"]], assumptions=[f"One reported row of the fund's holdings file: {what}."],
+                    ))
+                    row_terms.append(row_fraction)
             constituent = self.ev.add(
                 f"ev-cw-{fund_id}-{issuer}", "CALCULATION" if several else "FACT", "fund_constituent_weight", fraction, "ISSUER", issuer, via=fund_id,
-                period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
-                formula=f"sum of the reported rows of this company in the fund {eq(fraction)}" if several else None,
+                period=period, sources=[fund["source_id"]], derived=row_ids,
+                formula=f"sum of the reported rows of this company in the fund: {total(row_terms)} {eq(fraction)}" if several else None,
             )
             derived.append(self.ev.add(
                 f"ev-via-{issuer}-{fund_id}-{tag}", "CALCULATION", "issuer_exposure_via_fund", known, "ISSUER", issuer, via=fund_id, state=label,
@@ -385,6 +400,8 @@ class _Document:
                 derived.append(self.weight_ev(part["position_id"], state))
                 if part["kind"] == "FUND":
                     sources.append(self.fund_info[part["position_id"]]["source_id"])
+                    if kind == "SECTOR":  # the fraction multiplied below is itself a record of the calculation path
+                        derived.append(self.sector_fraction_ev(rule, part["position_id"], part["fund_fraction"]))
                     terms.append(f"{num(self.position_weight(part['position_id'], state))} x {num(part['fund_fraction'])} (via {part['position_id']})")
                 else:
                     terms.append(f"{num(part['known'])} ({part['position_id']} held directly)")
@@ -410,7 +427,7 @@ class _Document:
             upper_id = self.ev.add(
                 f"ev-rule-{rule_id}-up-{tag}", "CALCULATION", "exposure_upper", upper, "RULE", rule_id, state=label,
                 assumptions=[UNATTRIBUTED_NOTE, "A holding without a sector label counts toward the upper bound only."],
-                derived=[lower_id] + self.unattributed_evs(state) + (self.scope_weight_evs(state) if unclassified > 0 else []),
+                derived=[lower_id] + self.unattributed_evs(state) + (self.scope_weight_evs(state) + self.unlabelled_evs(state) if unclassified > 0 else []),
                 formula=f"{num(lower)} + {num(extra)} (not reported by the funds) + {num(unclassified)} (reported without a sector label) {eq(upper)}",
             )
         else:
@@ -420,6 +437,33 @@ class _Document:
                 formula=f"{num(lower)} + {num(extra)} {eq(upper)}",
             )
         return [lower_id, upper_id]
+
+    def sector_fraction_ev(self, rule: dict, fund_id: str, fraction: float) -> str:
+        """The share of one fund that its holdings file labels with the rule's sector."""
+        fund, sector = self.fund_info[fund_id], rule["parameters"]["definition"]["sector"]
+        return self.ev.add(
+            f"ev-secw-{fund_id}-{rule['rule_id']}", "CALCULATION", "fund_constituent_weight", fraction, "FUND", fund_id,
+            period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
+            assumptions=[f"Rows of the fund's holdings file labelled exactly '{sector}'. " + SECTOR_LABEL_NOTE],
+            formula=f"sum of the reported weights of the rows labelled '{sector}' {eq(fraction)}",
+        )
+
+    def unlabelled_evs(self, state: str) -> list[str]:
+        """A null sector_label record for each fund whose holdings file reports no sector label on any row."""
+        ids = []
+        for fund in self.exposure[state]["funds"]:
+            if fund["status"] == "MISSING" or fund["coverage_fraction"] <= 0 or fund["sector_labelled_fraction"] > 0:
+                continue
+            fund_id = fund["fund_id"]
+            ids.append(self.ev.add(
+                f"ev-sector-{fund_id}-none", "FACT" if fund["source_id"] else "ASSUMPTION", "sector_label", None, "FUND", fund_id, unit="text",
+                period={"type": "AS_OF", "date": fund["holdings_date"]}, sources=[fund["source_id"]],
+                assumptions=[
+                    f"No constituent row of the {fund_id} holdings file carries a sector label. For a sector rule a missing label counts "
+                    "as unknown: it adds to the upper bound only and is never read as outside the sector."
+                ],
+            ))
+        return ids
 
     def gap_ev(self, rule: dict, state: str) -> Optional[str]:
         result = self.a["results"][rule["rule_id"]][state]
@@ -456,14 +500,20 @@ class _Document:
                             via=path["position_id"] if fund else None,
                             period={"type": "AS_OF", "date": fund["holdings_date"]} if fund else None,
                             sources=[path["sector_source"]],
-                            assumptions=["A sector label is not a list of oil producers and is not a controversy finding."],
+                            assumptions=[SECTOR_LABEL_NOTE],
                         ))
             if kind == "CONTROVERSY":
                 for record in self.a["flagged"][rule["rule_id"]].get(issuer, []):
                     ids.append(self.ev.add(
-                        f"ev-record-{record['record_id']}", "FACT", "controversy_record", f"{record['nature']} ({record['event_date']}): {record['summary']}",
+                        # SEMANTICS section 13: the value is the registry record_id, the period the event date. What the
+                        # registry says about the event is description, kept apart from the value.
+                        f"ev-record-{record['record_id']}", "FACT", "controversy_record", record["record_id"],
                         "ISSUER", issuer, unit="text", period={"type": "AS_OF", "date": record["event_date"]}, sources=record["source_ids"],
-                        assumptions=[record["coverage_note"]],
+                        assumptions=[
+                            f"Registry record {record['record_id']}, as the registry describes it: {record['nature']} - {record['summary']}",
+                            record["coverage_note"],
+                            CONTROVERSY_RECORD_NOTE,
+                        ],
                     ))
         return ids
 
@@ -700,19 +750,33 @@ def check_rules(
     labelled FACT. ``include_max_compliant=False`` is used by the boundary
     re-run: the section is then WITHHELD with a reason saying so.
     """
+    refuse_unusable_request(purchase_request)
     validate_purchase_request(purchase_request)
     if policy is None and draft_rules is None:
         raise ValueError("check_rules needs a policy, or draft_rules for a preview")
     analysis: dict = {"preview": draft_rules is not None}
     try:
+        if include_max_compliant:  # the boundary re-run reuses data this call has already checked
+            problems = data_problems(instruments, holdings, market_data, controversies)
+            if problems:
+                execution = {"status": "ERROR", "code": "ENGINE_ERROR",
+                             "message": "The check was not run because the data cannot be trusted: " + "; ".join(problems) + ". Nothing was calculated."}
+                return _invalid_result(analysis, portfolio, policy, purchase_request, execution)
         analysis = analyse(portfolio, policy, purchase_request, instruments, holdings, market_data, controversies, draft_rules)
         if not analysis["ok"]:
             return _invalid_result(analysis, portfolio, policy, purchase_request, analysis["sim"]["execution"])
-        return _build(analysis, portfolio, policy, purchase_request, instruments, holdings, market_data, controversies,
-                      draft_rules, data_sources, include_max_compliant)
-    except Exception as error:  # SEMANTICS section 4: an unexpected failure is reported, never raised to the caller
-        execution = {"status": "ERROR", "code": "ENGINE_ERROR", "message": f"The check could not be completed ({type(error).__name__}: {error})."}
-        return _invalid_result(analysis, portfolio, policy, purchase_request, execution)
+        result = _build(analysis, portfolio, policy, purchase_request, instruments, holdings, market_data, controversies,
+                        draft_rules, data_sources, include_max_compliant)
+        if non_finite_paths(result, "result", 1):  # last line of defence: no NaN or infinity ever leaves the engine
+            raise ArithmeticError("a computed value is not finite")
+        return result
+    except ContractError:
+        raise  # an invalid purchase request: documented above, no result can carry it
+    except Exception:  # SEMANTICS section 4: an unexpected failure is reported, never raised to the caller
+        # The message is fixed text: exception text can hold internal detail and is not for the user.
+        execution = {"status": "ERROR", "code": "ENGINE_ERROR",
+                     "message": "The check could not be completed because of an internal error. Nothing was calculated."}
+        return _invalid_result({"preview": draft_rules is not None}, portfolio, policy, purchase_request, execution)
 
 
 def _build(analysis, portfolio, policy, request, instruments, holdings, market_data, controversies, draft_rules, data_sources, include_max) -> dict:
@@ -740,6 +804,8 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
         if not scenario_rule:
             evidence_ids += [i for i in doc.unattributed_evs("proposed")]
             evidence_ids += doc.subject_evs(rule, "proposed")
+            if "UNCLASSIFIED_SECTOR" in result["unknown_causes"]:
+                evidence_ids += doc.unlabelled_evs("proposed")
         evidence_ids += doc.measured_evs(rule, "starting")
         rule_results.append({
             "rule_id": rule_id,
@@ -909,6 +975,17 @@ def _build(analysis, portfolio, policy, request, instruments, holdings, market_d
                 formula=f"{num(max_compliant['final_direct_weight'])} - {num(sim['feasibility']['starting_direct_weight'])} {eq(max_compliant['additional_purchase'])}",
             )
             max_compliant["evidence_ids"] = [final_id, added_id]
+        elif max_compliant["status"] == "NO_FEASIBLE_PURCHASE":
+            binding = max_compliant["binding_constraint"]
+            if binding["type"] == "RULE":
+                # What proves it: the bound measured before any purchase that is already on the wrong side of the limit
+                # (the lower bound for a maximum, the upper bound for a minimum), and the limit.
+                rule = next(r for r in evaluated if r["rule_id"] == binding["rule_id"])
+                measured = doc.measured_evs(rule, "starting")
+                proof = measured[-1:] if rule["rule_type"] == "min_issuer_exposure" else measured[:1]
+                max_compliant["evidence_ids"] = proof + [doc.threshold_ev(rule)]
+            else:
+                max_compliant["evidence_ids"] = ["ev-cash-start"]
     else:
         max_compliant = {
             "status": "WITHHELD", "final_direct_weight": None, "additional_purchase": None, "binding_constraint": None,
