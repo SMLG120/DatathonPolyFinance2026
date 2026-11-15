@@ -81,12 +81,30 @@ describe("App shell", () => {
     expect(screen.getByText("Needs at least one confirmed rule.")).toBeInTheDocument();
   });
 
-  it("marks Amira as coming after core and offers no way to select her", async () => {
+  it("offers Amira as the third persona, after Robert and Mateo, without changing the default", async () => {
     renderApp();
     await screen.findByTestId("portfolio-table");
-    expect(screen.queryByTestId("persona-amira")).toBeNull();
+    const cards = screen.getAllByTestId(/^persona-(robert|mateo|amira)$/);
+    expect(cards.map((card) => card.getAttribute("data-testid"))).toEqual(["persona-robert", "persona-mateo", "persona-amira"]);
     expect(within(screen.getByTestId("persona-robert")).getByTestId("persona-selected")).toBeInTheDocument();
     expect(within(screen.getByTestId("persona-mateo")).getByRole("button", { name: "Use Mateo’s portfolio" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("persona-amira")).getByRole("button", { name: "Use Amira’s portfolio" })).toBeInTheDocument();
+    expect(screen.queryByText(/Not available in this build/)).toBeNull();
+  });
+
+  it("loads Amira's fictional portfolio exactly as recorded, crypto included, with the fiction notice", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await user.click(screen.getByRole("button", { name: "Use Amira’s portfolio" }));
+    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Amira’s fictional portfolio"));
+    const { scenario } = FIXTURES.portfolioAmira.response;
+    expect(scenario.fictional).toBe(true);
+    expect(screen.getByTestId("fiction-notice")).toHaveTextContent(scenario.fiction_notice);
+    const table = screen.getByTestId("portfolio-table");
+    expect(within(table).getAllByTestId("portfolio-row")).toHaveLength(scenario.portfolio.positions.length + 1);
+    for (const name of ["Bitcoin", "Ether", "Shopify", "JPMorgan Chase", "NVIDIA"]) expect(table).toHaveTextContent(name);
+    expect(within(screen.getByTestId("persona-amira")).getByTestId("persona-selected")).toBeInTheDocument();
   });
 
   it("shows the portfolio and the fiction notice exactly as the service sent them", async () => {
@@ -700,6 +718,40 @@ async function toVerdictWithoutReport(api: ReturnType<typeof createFixturesClien
   await waitFor(() => expect(stageHeading()).toHaveTextContent("Your result"));
   return user;
 }
+
+describe("Amira: wording that needs clarification, not a verdict", () => {
+  it("offers her fictional-scenario rule and answers her sentence with a question, never a number or a contradiction", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await user.click(screen.getByRole("button", { name: "Use Amira’s portfolio" }));
+    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Amira’s fictional portfolio"));
+
+    await go("goals");
+    const cards = await screen.findAllByTestId("rule-card");
+    expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["amira-issuer-cap-1"]);
+    expect(cards[0]).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
+    expect(within(cards[0] as HTMLElement).getByRole("textbox")).toHaveValue("20");
+
+    await user.click(screen.getByTestId("use-scenario-sentence"));
+    expect(screen.getByDisplayValue("I want maximum growth and strict diversification.")).toBeInTheDocument();
+    await user.click(screen.getByTestId("interpret-words"));
+    const interpretation = await screen.findByTestId("interpretation");
+    const answer = FIXTURES.interpret.amira.response;
+    const question = within(interpretation).getByTestId("clarification-card");
+    expect(question).toHaveTextContent(answer.clarifications[0]?.question as string);
+    expect(within(question).getAllByTestId("unsupported-option").length).toBeGreaterThan(0);
+    // "maximum growth" is reported as something no rule measures, not turned into a rule.
+    expect(interpretation).toHaveTextContent("maximum growth");
+    expect(interpretation).toHaveTextContent(answer.unsupported[0]?.reason as string);
+    // No drafted rule carries a number, and nothing claims a contradiction between her two wishes.
+    expect(answer.proposed_rules).toEqual([]);
+    expect(interpretation.textContent?.toLowerCase().replace("not a proven contradiction", "")).not.toMatch(/contradict/);
+    // Nothing is confirmed by interpreting: the scenario's card is still the only proposal and no policy exists.
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(1);
+    expect(screen.queryAllByTestId("policy-rule-card")).toHaveLength(0);
+  });
+});
 
 describe("Mateo: a preference that needs a definition, and missing data", () => {
   it("asks instead of guessing, lists no check twice, and reports two failures with what was already failing kept apart", async () => {

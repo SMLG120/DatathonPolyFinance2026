@@ -42,8 +42,8 @@ import { ApiError } from "./errors";
  * answer exists for it; anything else is refused with a `no_fixture` error
  * that says what is recorded. Five things are not recordings of the route
  * they answer and are kept deliberately small:
- * - GET /portfolio is recorded for Robert only; for Mateo and Amira the answer
- *   is the contract's scenario file with the registry entries it names, put
+ * - GET /portfolio is recorded for Robert and Amira; for Mateo the answer is
+ *   the contract's scenario file with the registry entries it names, put
  *   together the way the recorded Robert answer is (nothing is computed);
  * - a confirmation writes the stored rules the way contracts/SEMANTICS.md §14
  *   says the server does (status, provenance, new rule id on a change);
@@ -154,7 +154,9 @@ function thresholdList(rules: Rule[]): string {
 // ---------------------------------------------------------------------------
 
 function portfolioResponse(personaId: PersonaId): PortfolioResponse {
-  if (personaId === FIXTURES.portfolioRobert.response.scenario.persona.persona_id) return FIXTURES.portfolioRobert.response;
+  for (const recordedPortfolio of [FIXTURES.portfolioRobert, FIXTURES.portfolioAmira]) {
+    if (personaId === recordedPortfolio.response.scenario.persona.persona_id) return recordedPortfolio.response;
+  }
   const scenario = FIXTURES.scenarios[personaId];
   const registry = FIXTURES.registries[`${personaId}_synthetic_universe`];
   if (!scenario || !registry) {

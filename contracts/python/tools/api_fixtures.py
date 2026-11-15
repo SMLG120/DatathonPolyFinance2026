@@ -60,6 +60,22 @@ def portfolio_response():
             "purchasable_instrument_ids": ["JNJ", "NVDA", "RY.TO", "SPY", "XBB.TO", "XIU.TO"]}
 
 
+def amira_portfolio_response():
+    """GET /portfolios/amira, abbreviated like Robert's to her positions. Labels are the committed starter-kit registry labels."""
+    entries = [
+        instrument("SPY", "SPY", "SPDR S&P 500 ETF Trust", "etf_equity", "USD", "Broad market (U.S.)", STARTER),
+        instrument("XIU.TO", "XIU.TO", "iShares S&P/TSX 60 Index ETF", "etf_equity", "CAD", "Broad market (Canada)", STARTER),
+        instrument("NVDA", "NVIDIA", "NVIDIA", "equity", "USD", "Information Technology", STARTER),
+        instrument("MSFT", "MICROSOFT", "Microsoft", "equity", "USD", "Information Technology", STARTER),
+        instrument("SHOP.TO", "SHOPIFY", "Shopify", "equity", "CAD", "Information Technology", STARTER),
+        instrument("JPM", "JPMORGAN_CHASE", "JPMorgan Chase", "equity", "USD", "Financials", STARTER),
+        instrument("BTC-USD", "BTC-USD", "Bitcoin", "crypto", "USD", "Crypto asset", STARTER),
+        instrument("ETH-USD", "ETH-USD", "Ether", "crypto", "USD", "Crypto asset", STARTER),
+    ]
+    return {"schema_version": "1.0.0", "scenario": sd.amira(), "instruments": {e["instrument_id"]: e for e in entries},
+            "purchasable_instrument_ids": sorted(e["instrument_id"] for e in entries)}
+
+
 def all_fixtures():
     robert_scn = sd.robert()
     create_robert = {"persona_id": "robert", "policy_id": "pol-robert-demo", "policy_version": 1, "request": aj.ROBERT_REQUEST, "parent_investigation_id": None}
@@ -80,6 +96,10 @@ def all_fixtures():
         fx("portfolio_robert", "GET /portfolios/{persona_id}", 200, "api.schema.json#/$defs/portfolio_response", portfolio_response(),
            "GET /portfolios/robert. The fictional scenario plus registry entries. `instruments` is abbreviated here to Robert's positions and NVDA; "
            "the deployed response lists every purchasable instrument. Sector labels are the starter-kit registry labels.", synthetic=False),
+        fx("portfolio_amira", "GET /portfolios/{persona_id}", 200, "api.schema.json#/$defs/portfolio_response", amira_portfolio_response(),
+           "GET /portfolios/amira. The fictional scenario plus registry entries, abbreviated like portfolio_robert to her positions; "
+           "the deployed response lists every purchasable instrument. Sector labels are the starter-kit registry labels. "
+           "Crypto assets carry equity_scope false, so company-exposure rules do not assess them.", synthetic=False),
         fx("interpret_mateo_clarification", "POST /rules/interpret", 200, "interpretation.schema.json", aj.mateo_interpretation(),
            "Mateo's sentence. 'oil' is ambiguous, so the interpreter asks a question whose options carry the drafts they lead to. "
            "The drafts are SYSTEM_PROPOSED structures with a null threshold: no number is invented.",
