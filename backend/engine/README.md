@@ -22,7 +22,12 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.2`.
+`CALCULATION_VERSION` is `byb-engine-1.0.3`.
+
+Change from 1.0.2 (one evidence record; no number, status or boundary changed): the `value` of a
+`controversy_record` evidence record is the registry `record_id` (SEMANTICS section 13), with the event date as its
+period. The registry's own description (nature, summary, coverage note) is carried in `assumptions`, not in the value.
+Test: `backend/tests/engine/test_engine_evidence_records.py`.
 
 Change from 1.0.1 (boundary rounding): the maximum compliant final weight is the closed-form end rounded **down** to
 9 decimals (`boundary.floor_to_grid`), not to the nearest. Rounding to the nearest could return a weight up to 5e-10

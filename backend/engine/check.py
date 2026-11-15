@@ -39,6 +39,7 @@ from .text import eq, num, pct, points, span, total
 from .version import CALCULATION_VERSION
 
 STATES = ("starting", "proposed")
+CONTROVERSY_RECORD_NOTE = "A record says that a dated event is on file with its source; it is not a judgement of the company."
 STATE_LABEL = {"starting": "STARTING", "proposed": "PROPOSED"}
 STATE_TAG = {"starting": "start", "proposed": "prop"}
 STATE_WORDS = {"starting": "before the purchase", "proposed": "after the purchase"}
@@ -461,9 +462,15 @@ class _Document:
             if kind == "CONTROVERSY":
                 for record in self.a["flagged"][rule["rule_id"]].get(issuer, []):
                     ids.append(self.ev.add(
-                        f"ev-record-{record['record_id']}", "FACT", "controversy_record", f"{record['nature']} ({record['event_date']}): {record['summary']}",
+                        # SEMANTICS section 13: the value is the registry record_id, the period the event date. What the
+                        # registry says about the event is description, kept apart from the value.
+                        f"ev-record-{record['record_id']}", "FACT", "controversy_record", record["record_id"],
                         "ISSUER", issuer, unit="text", period={"type": "AS_OF", "date": record["event_date"]}, sources=record["source_ids"],
-                        assumptions=[record["coverage_note"]],
+                        assumptions=[
+                            f"Registry record {record['record_id']}, as the registry describes it: {record['nature']} - {record['summary']}",
+                            record["coverage_note"],
+                            CONTROVERSY_RECORD_NOTE,
+                        ],
                     ))
         return ids
 

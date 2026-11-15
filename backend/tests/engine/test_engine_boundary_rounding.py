@@ -170,4 +170,5 @@ def test_cash_bound_boundary_never_exceeds_cash():
 
 
 def test_version_was_bumped_for_the_formula_change():
-    assert engine.CALCULATION_VERSION == "byb-engine-1.0.2"
+    # 1.0.2 is the first version with the fix; later versions keep it (they change evidence records only).
+    assert tuple(int(n) for n in engine.CALCULATION_VERSION.removeprefix("byb-engine-").split(".")) >= (1, 0, 2)
