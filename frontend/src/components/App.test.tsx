@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 import { storeAccessCode } from "@/lib/access-code";
 import { ApiError } from "@/lib/api";
 import { createFixturesClient } from "@/lib/api/fixtures-client";
-import { IDEMPOTENCY_KEY_PATTERN } from "@/lib/contracts";
+import type { ApiClient } from "@/lib/api";
+import { IDEMPOTENCY_KEY_PATTERN, type ChallengeResponse, type Interpretation, type Rule } from "@/lib/contracts";
 import { FIXTURES } from "@/lib/fixtures";
 import { STAGES } from "@/state/stage";
 import { chooseMateo, confirmScenarioRules, go, renderApp, runInvestigation, stageHeading, toVerdict } from "@/test/app";
@@ -170,7 +171,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     }
     expect(within(first).getByTestId("evidence-formula")).toHaveTextContent("0.25 + 0.012 = 0.262");
     expect(within(first).getAllByTestId("evidence-input")).toHaveLength(2);
-    expect(within(dialog).getByTestId("source-details-note")).toHaveTextContent("load with the live API");
+    expect(within(dialog).getByTestId("source-details-note")).toHaveTextContent("Only the ids of a figure’s sources are available here");
     // Focus is inside the drawer while it is open.
     expect(dialog.contains(document.activeElement)).toBe(true);
 
@@ -432,6 +433,194 @@ describe("Idempotency keys", () => {
   });
 });
 
+describe("Idempotency keys after a failure (finding F-03)", () => {
+  const workerFailed = () => new ApiError("server", "The investigation worker could not be started.", { status: 503, code: "WORKER_INVOCATION_FAILED" });
+
+  it("starts with a new key after 503 WORKER_INVOCATION_FAILED, and keeps the key after a 429", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const createInvestigation = vi.fn(fixtures.createInvestigation);
+    createInvestigation
+      .mockRejectedValueOnce(new ApiError("rate_limited", "The service is receiving too many requests. Wait a moment and try again.", { status: 429 }))
+      .mockRejectedValueOnce(workerFailed());
+
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, createInvestigation } });
+    await screen.findByTestId("portfolio-table");
+    await confirmScenarioRules(user);
+    await go("purchase");
+    await user.click(screen.getByTestId("start-investigation"));
+    const main = within(screen.getByRole("main"));
+    expect(await main.findByRole("alert")).toHaveTextContent("The service is receiving too many requests.");
+
+    // The same action again after a 429: the same key, so the service cannot start a second job.
+    await user.click(within(main.getByRole("alert")).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(main.getByRole("alert")).toHaveTextContent("The investigation worker could not be started."));
+    expect(createInvestigation).toHaveBeenCalledTimes(2);
+
+    // After the 503 the job stored under that key is FAILED: the retry needs a new key, or the 503 is replayed for ever.
+    await user.click(within(main.getByRole("alert")).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(stageHeading()).toHaveTextContent("Investigation steps"));
+    const keys = createInvestigation.mock.calls.map((call) => call[1]?.idempotencyKey);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
+    expect(keys[2]).toMatch(IDEMPOTENCY_KEY_PATTERN);
+    // The three attempts carried the same request.
+    expect(createInvestigation.mock.calls[2]?.[0]).toEqual(createInvestigation.mock.calls[0]?.[0]);
+  });
+
+  it("does the same for a rule change: the key is kept after a network error and replaced after the 503", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const challengeInvestigation = vi.fn(fixtures.challengeInvestigation);
+    challengeInvestigation.mockRejectedValueOnce(new ApiError("network", "The service could not be reached. Check the connection and try again.")).mockRejectedValueOnce(workerFailed());
+    const user = await toVerdict({ api: { ...fixtures, challengeInvestigation } });
+    await go("challenge");
+    await user.click(within(screen.getByTestId("change-rule-form")).getByTestId("fill-example-rule"));
+
+    const main = within(screen.getByRole("main"));
+    await user.click(screen.getByTestId("submit-rule-change"));
+    expect(await main.findByRole("alert")).toHaveTextContent("The service could not be reached.");
+    await user.click(screen.getByTestId("submit-rule-change"));
+    await waitFor(() => expect(main.getByRole("alert")).toHaveTextContent("The investigation worker could not be started."));
+    await user.click(screen.getByTestId("submit-rule-change"));
+    await screen.findByTestId("rule-change-comparison");
+
+    const keys = challengeInvestigation.mock.calls.map((call) => call[2]?.idempotencyKey);
+    expect(keys).toHaveLength(3);
+    expect(keys[1]).toBe(keys[0]);
+    expect(keys[2]).not.toBe(keys[1]);
+    expect(challengeInvestigation.mock.calls[2]?.[1]).toEqual(challengeInvestigation.mock.calls[0]?.[1]);
+  });
+});
+
+describe("A policy version conflict (finding F-04)", () => {
+  it("sets the policy it held aside and starts the rule stage again: nothing in force, every rule a proposal, no retry that can only fail", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const confirmRules = vi.fn(fixtures.confirmRules);
+    const conflict = FIXTURES.errors.policyVersionConflict;
+    // The recorded job stands in for an investigation under a version 1 that holds one rule (the test data records none).
+    const createInvestigation = vi.fn(async () => FIXTURES.investigationAccepted.response);
+    const getInvestigation = vi.fn(async () => recorded.robertJob());
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, confirmRules, createInvestigation, getInvestigation } });
+    await screen.findByTestId("portfolio-table");
+
+    // Version 1 with the first rule only; then a report under it.
+    await go("goals");
+    const offered = await screen.findAllByTestId("rule-card");
+    await user.clear(within(offered[1] as HTMLElement).getByRole("textbox"));
+    await user.click(screen.getByTestId("confirm-rules"));
+    expect(await screen.findAllByTestId("policy-rule-card")).toHaveLength(1);
+    const versionOne = (await confirmRules.mock.results[0]?.value)?.policy;
+    const report = await runInvestigation(user);
+    const jobId = report.getAttribute("data-job-id");
+
+    // The service now holds a newer version than this page does, and says so with the recorded 409.
+    confirmRules.mockRejectedValueOnce(new ApiError("validation", conflict.response.error.message, { status: conflict.status, code: conflict.response.error.code }));
+    await go("goals");
+    await user.type(within(screen.getByTestId("rule-card")).getByRole("textbox"), "12");
+    await user.click(screen.getByTestId("confirm-rules"));
+
+    const alert = await within(screen.getByRole("main")).findByRole("alert");
+    expect(conflict.status).toBe(409);
+    expect(confirmRules.mock.calls[1]?.[0]).toMatchObject({ policy_id: versionOne?.policy_id, base_version: 1 });
+    expect(alert).toHaveTextContent("The rules could not be confirmed");
+    expect(alert).toHaveTextContent(conflict.response.error.message);
+    expect(within(alert).getByTestId("policy-conflict")).toHaveTextContent("this stage starts again");
+    // The same request would be refused again, so it is not offered.
+    expect(within(alert).queryByRole("button")).toBeNull();
+
+    // The stale version is no longer presented as the policy in force.
+    expect(screen.queryAllByTestId("policy-rule-card")).toHaveLength(0);
+    expect(screen.getByText("No confirmed rule yet")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Confirmed policy — version/ })).toBeNull();
+    // Every rule is a proposal again: the one being confirmed keeps the number typed, the scenario's other rule is offered again.
+    const proposals = screen.getAllByTestId("rule-card");
+    expect(proposals.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-loss-budget-1", "robert-issuer-cap-1"]);
+    expect(proposals.map((card) => (within(card).getByRole("textbox") as HTMLInputElement).value)).toEqual(["12", "10"]);
+    for (const card of proposals) expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+
+    // Nothing can be checked until a rule is confirmed again.
+    await go("purchase");
+    expect(screen.getByTestId("start-investigation")).toHaveAttribute("aria-disabled", "true");
+    expect(screen.getByText("Needs at least one confirmed rule.")).toBeInTheDocument();
+    // The report made under version 1 is still the report it was, with the version it was checked against.
+    await go("verdict");
+    expect(screen.getByTestId("report")).toHaveAttribute("data-job-id", jobId);
+    expect(screen.getByTestId("report")).toHaveTextContent("confirmed policy version 1");
+    expect(overviewChart(screen.getByTestId("report"))).toHaveTextContent("Confirmed limit 10.0%");
+
+    // Confirming again creates a new policy: no policy id, no base version.
+    await go("goals");
+    await user.click(screen.getByTestId("confirm-rules"));
+    expect(await screen.findAllByTestId("policy-rule-card")).toHaveLength(2);
+    expect(confirmRules).toHaveBeenCalledTimes(3);
+    expect(confirmRules.mock.calls[2]?.[0]).toMatchObject({ policy_id: null, base_version: null });
+    expect(within(screen.getByRole("main")).queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps offering a retry for any other refusal of a confirmation", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const confirmRules = vi.fn(fixtures.confirmRules);
+    confirmRules.mockRejectedValueOnce(new ApiError("server", "The service reported an internal error. Nothing was changed.", { status: 500 }));
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, confirmRules } });
+    await screen.findByTestId("portfolio-table");
+    await go("goals");
+    await screen.findAllByTestId("rule-card");
+    await user.click(screen.getByTestId("confirm-rules"));
+    const alert = await within(screen.getByRole("main")).findByRole("alert");
+    expect(within(alert).queryByTestId("policy-conflict")).toBeNull();
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(2);
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    expect(await screen.findAllByTestId("policy-rule-card")).toHaveLength(2);
+  });
+});
+
+describe("Polling through failed status requests (finding F-02)", () => {
+  it("keeps asking through more than three failed polls in a row and shows the report when the job finishes", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    let polls = 0;
+    const getInvestigation = vi.fn(async (...args: Parameters<typeof fixtures.getInvestigation>) => {
+      polls += 1;
+      // The first poll answers; the next five are throttled by the gateway; then the service answers again.
+      if (polls >= 2 && polls <= 6) throw new ApiError("rate_limited", "The service is receiving too many requests. Wait a moment and try again.", { status: 429 });
+      return fixtures.getInvestigation(...args);
+    });
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, getInvestigation } });
+    await screen.findByTestId("portfolio-table");
+    await confirmScenarioRules(user);
+    const report = await runInvestigation(user);
+
+    expect(report).toHaveAttribute("data-job-id", recorded.robertJob().id);
+    expect(polls).toBeGreaterThan(6);
+    expect(within(screen.getByRole("main")).queryByText("The status of the investigation could not be fetched")).toBeNull();
+  });
+
+  it("says so while a failed status request is being retried, and stops with the last failure at the time limit", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const getInvestigation = vi.fn(async () => {
+      throw new ApiError("network", "The service could not be reached. Check the connection and try again.");
+    });
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, getInvestigation }, timing: { ...FAST_TIMING, pollDeadlineMs: 400 } });
+    await screen.findByTestId("portfolio-table");
+    await confirmScenarioRules(user);
+    await go("purchase");
+    await user.click(screen.getByTestId("start-investigation"));
+
+    expect(await screen.findByTestId("polling-retrying")).toHaveTextContent("The service could not be reached.");
+    const alert = await within(screen.getByRole("main")).findByRole("alert", {}, { timeout: 5_000 });
+    expect(alert).toHaveTextContent("No final answer within");
+    expect(within(alert).getByTestId("polling-last-error")).toHaveTextContent("The service could not be reached.");
+    expect(within(alert).getByRole("button", { name: "Keep waiting" })).toBeInTheDocument();
+    expect(getInvestigation.mock.calls.length).toBeGreaterThan(3);
+    expect(screen.queryByTestId("polling-retrying")).toBeNull();
+    expect(screen.queryByTestId("see-verdict")).toBeNull();
+  });
+});
+
 describe("A result whose check did not run", () => {
   it("shows the execution state and never a verdict, even when rule results arrive with it", async () => {
     const fixtures = createFixturesClient({ latencyMs: 0 });
@@ -577,6 +766,199 @@ describe("Mateo: a preference that needs a definition, and missing data", () => 
   });
 });
 
+/**
+ * The interpreter of the service numbers what it writes from 1 in every answer: its first question is
+ * always `clar-1`, its drafts `draft-<kind>-<n>`, its objectives `obj-<n>`. So the answer to "interpret my
+ * words" and the answer to a later "clarify a preference" hold a question and a draft with the same ids.
+ * These answers are the contract's recorded ones with only that changed, together with what else differs
+ * in what the service sends: the words in question are the investor's own word ("oil"), `created_at` has
+ * milliseconds, and the clarified preference offers four readings, not two.
+ */
+const asTheServiceNumbers = {
+  rule: (rule: Rule, ruleId: string): Rule => ({ ...rule, rule_id: ruleId, original_words: "oil" }),
+  interpretation(): Interpretation {
+    const answer = structuredClone(FIXTURES.interpret.mateo.response);
+    return {
+      ...answer,
+      interpretation_id: "int-0a1b2c3d4e5f",
+      created_at: "2026-11-14T15:10:00.123Z",
+      clarifications: answer.clarifications.map((clarification, index) => ({
+        ...clarification,
+        clarification_id: `clar-${index + 1}`,
+        about_words: "oil",
+        options: clarification.options.map((option) => (option.proposed_rule ? { ...option, proposed_rule: this.rule(option.proposed_rule, "draft-excl-1") } : option)),
+      })),
+      proposed_rules: answer.proposed_rules.map((rule) => ({ ...rule, rule_id: "draft-controversy-2" })),
+    };
+  },
+  clarifiedPreference(): ChallengeResponse {
+    const exchange = structuredClone(FIXTURES.challenges.clarifyPreference.response);
+    const notCheckable = FIXTURES.interpret.mateo.response.clarifications.flatMap((clarification) => clarification.options.filter((option) => !option.supported));
+    if (!exchange.interpretation) throw new Error("The recording changed: no interpretation in the answer to the clarified preference.");
+    return {
+      ...exchange,
+      interpretation: {
+        ...exchange.interpretation,
+        interpretation_id: "int-9f8e7d6c5b4a",
+        created_at: "2026-11-14T15:16:00.456Z",
+        clarifications: exchange.interpretation.clarifications.map((clarification, index) => ({
+          ...clarification,
+          clarification_id: `clar-${index + 1}`,
+          about_words: "oil",
+          options: [
+            ...clarification.options.map((option) => (option.proposed_rule ? { ...option, proposed_rule: this.rule(option.proposed_rule, "draft-excl-1") } : option)),
+            ...structuredClone(notCheckable),
+          ],
+        })),
+      },
+    };
+  },
+};
+
+describe("Answers of the interpreter that share ids: it numbers from 1 in every answer", () => {
+  it("Mateo's “oil”: the question of a clarified preference is not answered by the choice made in Goals & rules, and neither changes the other", async () => {
+    const first = asTheServiceNumbers.interpretation();
+    const second = asTheServiceNumbers.clarifiedPreference();
+    // What the test relies on: both answers hold a question `clar-1` whose first reading leads to a draft `draft-excl-1`.
+    expect(first.clarifications.map((clarification) => clarification.clarification_id)).toEqual(["clar-1"]);
+    expect(second.interpretation?.clarifications.map((clarification) => clarification.clarification_id)).toEqual(["clar-1"]);
+    expect(second.interpretation?.clarifications[0]?.options).toHaveLength(4);
+
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const interpretRules = vi.fn<ApiClient["interpretRules"]>().mockResolvedValue(first);
+    const challengeInvestigation = vi.fn<ApiClient["challengeInvestigation"]>().mockResolvedValue(second);
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, interpretRules, challengeInvestigation } });
+    await screen.findByTestId("portfolio-table");
+    await chooseMateo(user);
+
+    // Goals & rules: the question about "oil", in the investor's own word, with the readings that cannot be checked.
+    await go("goals");
+    await screen.findAllByTestId("rule-card");
+    await user.click(screen.getByTestId("use-scenario-sentence"));
+    await user.click(screen.getByTestId("interpret-words"));
+    const asked = within(await screen.findByTestId("interpretation")).getByTestId("clarification-card");
+    expect(asked).toHaveTextContent(first.clarifications[0]?.question as string);
+    expect(within(asked).getByRole("blockquote")).toHaveTextContent("“oil”");
+    expect(within(asked).getAllByRole("radio")).toHaveLength(2);
+    expect(within(asked).getAllByTestId("unsupported-option")).toHaveLength(2);
+    // The first reading (the Energy label) is chosen: its rule is the one the scenario already offers.
+    await user.click(within(asked).getAllByRole("radio")[0] as HTMLElement);
+    await user.click(within(asked).getByTestId("choose-definition"));
+    expect(await within(asked).findByTestId("clarification-outcome")).toHaveTextContent("Already listed under “Proposed rules” below");
+    expect(within(asked).getByText("Definition chosen")).toBeInTheDocument();
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(2);
+
+    await user.click(screen.getByTestId("confirm-rules"));
+    expect(await screen.findAllByTestId("policy-rule-card")).toHaveLength(2);
+    await runInvestigation(user);
+
+    // Challenge: the clarified preference comes back with its own question `clar-1`. Nothing in it is answered yet.
+    await go("challenge");
+    await user.click(screen.getByTestId("fill-example-preference"));
+    await user.click(screen.getByTestId("submit-preference"));
+    const again = within(await screen.findByTestId("preference-response")).getByTestId("clarification-card");
+    expect(again).toHaveTextContent(second.interpretation?.clarifications[0]?.question as string);
+    expect(within(again).getByText("No rule written yet")).toBeInTheDocument();
+    expect(within(again).queryByText("Definition chosen")).toBeNull();
+    expect(within(again).queryByTestId("clarification-outcome")).toBeNull();
+    expect(within(again).getAllByRole("radio").filter((radio) => (radio as HTMLInputElement).checked)).toHaveLength(0);
+    expect(within(again).getAllByRole("radio")).toHaveLength(2);
+    expect(within(again).getAllByTestId("unsupported-option")).toHaveLength(2);
+
+    // Here the other reading is chosen (named companies: no rule comes with it).
+    const named = second.interpretation?.clarifications[0]?.options[1];
+    expect(named?.proposed_rule).toBeNull();
+    await user.click(within(again).getAllByRole("radio")[1] as HTMLElement);
+    await user.click(within(again).getByTestId("choose-definition"));
+    expect(await within(again).findByTestId("clarification-outcome")).toHaveTextContent(`Recorded. ${named?.description}`);
+
+    // The question in Goals & rules still has the answer given there, and only that one.
+    await go("goals");
+    const stillAsked = within(screen.getByTestId("interpretation")).getByTestId("clarification-card");
+    expect(within(stillAsked).getByText("Definition chosen")).toBeInTheDocument();
+    expect(within(stillAsked).getByTestId("clarification-outcome")).toHaveTextContent("Already in force in policy version 1");
+    expect(within(stillAsked).getByTestId("clarification-outcome")).not.toHaveTextContent("Recorded.");
+    expect(screen.getByRole("heading", { name: "Confirmed policy — version 1" })).toBeInTheDocument();
+  });
+
+  it("lists two different rules that arrive under one id as two rules, each with the objective of its own answer, and confirms them under different ids", async () => {
+    const energy = FIXTURES.interpret.mateo.response.clarifications.flatMap((clarification) => clarification.options).find((option) => option.proposed_rule)?.proposed_rule;
+    if (!energy) throw new Error("The recording changed: no reading of “oil” leads to a rule.");
+    const parameters = energy.parameters as { definition: { kind: "fund_reported_sector"; sector: string } };
+    const answer = (interpretationId: string, words: string, sector: string): Interpretation => ({
+      ...structuredClone(FIXTURES.interpret.mateo.response),
+      interpretation_id: interpretationId,
+      created_at: "2026-11-14T15:10:00.123Z",
+      original_words: words,
+      objectives: [{ objective_id: "obj-1", original_words: words, kind: "constraint", source: "USER_STATED", case_reference: null }],
+      proposed_rules: [
+        {
+          ...structuredClone(energy),
+          rule_id: "draft-excl-1",
+          original_words: words,
+          objective_id: "obj-1",
+          parameters: { ...parameters, definition: { ...parameters.definition, sector } },
+        } as Rule,
+      ],
+      clarifications: [],
+      unsupported: [],
+    });
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const interpretRules = vi
+      .fn<ApiClient["interpretRules"]>()
+      .mockResolvedValueOnce(answer("int-aaaaaaaaaaaa", "Nothing labelled Energy.", parameters.definition.sector))
+      .mockResolvedValueOnce(answer("int-bbbbbbbbbbbb", "Nothing labelled Utilities either.", "Utilities"));
+    const confirmRules = vi.fn(fixtures.confirmRules);
+    const user = userEvent.setup();
+    renderApp({ api: { ...fixtures, interpretRules, confirmRules } });
+    await screen.findByTestId("portfolio-table");
+    await go("goals");
+    await screen.findAllByTestId("rule-card");
+    const ruleIds = () => screen.getAllByTestId("rule-card").map((card) => card.getAttribute("data-rule-id"));
+    const scenarioIds = ruleIds();
+
+    const words = screen.getByLabelText("What should the portfolio respect?");
+    await user.type(words, "Nothing labelled Energy.");
+    await user.click(screen.getByTestId("interpret-words"));
+    await waitFor(() => expect(ruleIds()).toEqual([...scenarioIds, "draft-excl-1"]));
+    await user.clear(words);
+    await user.type(words, "Nothing labelled Utilities either.");
+    await user.click(screen.getByTestId("interpret-words"));
+    // The second answer's rule has the first one's id and is another rule: it is listed too, under an id of its own.
+    await waitFor(() => expect(ruleIds()).toEqual([...scenarioIds, "draft-excl-1", "draft-excl-1-2"]));
+    expect(within(screen.getByTestId("interpretation")).getByTestId("drafted-rule")).toHaveTextContent("Already listed under “Proposed rules” below");
+
+    // Each rule shows the objective of the answer it came from, though both answers call theirs `obj-1`.
+    const [, , first, second] = screen.getAllByTestId("rule-card") as [HTMLElement, HTMLElement, HTMLElement, HTMLElement];
+    expect(first).toHaveTextContent("“Nothing labelled Energy.”");
+    expect(first).not.toHaveTextContent("Utilities");
+    expect(second).toHaveTextContent("“Nothing labelled Utilities either.”");
+    expect(second).toHaveTextContent("Utilities");
+    expect(screen.getAllByTestId("objective").map((objective) => objective.querySelector("blockquote")?.textContent)).toEqual(
+      expect.arrayContaining(["“Nothing labelled Energy.”", "“Nothing labelled Utilities either.”"]),
+    );
+
+    // Both get a number and are confirmed together: the request names no id twice, and each rule names an objective it carries.
+    await user.type(within(first).getByRole("textbox"), "0");
+    await user.type(within(second).getByRole("textbox"), "0");
+    await user.click(screen.getByTestId("confirm-rules"));
+    await waitFor(() => expect(screen.getAllByTestId("policy-rule-card")).toHaveLength(scenarioIds.length + 2));
+    const request = confirmRules.mock.calls[0]?.[0];
+    if (!request) throw new Error("No confirmation was sent.");
+    const sentIds = request.confirmations.map((confirmation) => confirmation.rule.rule_id);
+    expect(sentIds).toEqual([...scenarioIds, "draft-excl-1", "draft-excl-1-2"]);
+    expect(new Set(sentIds).size).toBe(sentIds.length);
+    const objectiveWords = (ruleId: string) => {
+      const rule = request.confirmations.find((confirmation) => confirmation.rule.rule_id === ruleId)?.rule;
+      return request.objectives.find((objective) => objective.objective_id === rule?.objective_id)?.original_words;
+    };
+    expect(objectiveWords("draft-excl-1")).toBe("Nothing labelled Energy.");
+    expect(objectiveWords("draft-excl-1-2")).toBe("Nothing labelled Utilities either.");
+    expect(new Set(request.objectives.map((objective) => objective.objective_id)).size).toBe(request.objectives.length);
+  });
+});
+
 describe("Requests the test data holds no answer for", () => {
   it("says so calmly when a different purchase is started, and creates no investigation", async () => {
     const user = userEvent.setup();
@@ -704,6 +1086,51 @@ describe("live mode", () => {
     expect(requests.at(-1)).toEqual({ url: "https://api.example.test/portfolios/robert", authorization: "Bearer right-code" });
     // The code never travels in a URL.
     expect(requests.some((request) => request.url.includes("right-code") || request.url.includes("wrong-code"))).toBe(false);
+  });
+
+  it("after a code is refused mid-session and a new one accepted, says what happened and lets the refused request be made again (finding F-05)", async () => {
+    const portfolios = { robert: recorded.robertPortfolio(), mateo: await createFixturesClient({ latencyMs: 0 }).getPortfolio("mateo") };
+    let accepted = "first-code";
+    const requests: { url: string; authorization: string | null; status: number }[] = [];
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const authorization = new Headers(init?.headers).get("Authorization");
+      const persona = String(input).endsWith("/portfolios/mateo") ? "mateo" : "robert";
+      const ok = authorization === `Bearer ${accepted}`;
+      requests.push({ url: String(input), authorization, status: ok ? 200 : 403 });
+      // The gateway's own refusal, as the deployed stage sends it: not the contract's error shape.
+      return new Response(JSON.stringify(ok ? portfolios[persona] : { message: "Forbidden" }), { status: ok ? 200 : 403, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", LIVE_CONFIG.apiBaseUrl ?? "");
+    storeAccessCode("first-code");
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByTestId("portfolio-table");
+
+    // The code is replaced on the service while the tab is open; the next request is refused.
+    accepted = "second-code";
+    await user.click(screen.getByRole("button", { name: "Use Mateo’s portfolio" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Enter the access code" })).toBeInTheDocument();
+    expect(screen.getByText("The service no longer accepts the code that was in use")).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("byb.accessCode")).toBeNull();
+    expect(requests.at(-1)).toEqual({ url: "https://api.example.test/portfolios/mateo", authorization: "Bearer first-code", status: 403 });
+
+    await user.type(screen.getByLabelText("Access code"), "second-code");
+    await user.click(screen.getByRole("button", { name: "Continue" }));
+
+    // Back where the refused request was made: what happened, in the page's own words, and a way to make it again.
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The portfolio could not be loaded");
+    expect(alert).toHaveTextContent("The service refused the access code that was in use when this was requested.");
+    expect(alert).toHaveTextContent("A code has been accepted since, so it can be requested again.");
+    expect(alert).not.toHaveTextContent("Forbidden");
+    expect(screen.queryByTestId("portfolio-table")).toBeNull();
+
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Mateo’s fictional portfolio"));
+    expect(requests.at(-1)).toEqual({ url: "https://api.example.test/portfolios/mateo", authorization: "Bearer second-code", status: 200 });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(window.sessionStorage.getItem("byb.accessCode")).toBe("second-code");
   });
 
   it("shows no “Test data” marker and no fixtures label on any stage when the answers come from a service", async () => {

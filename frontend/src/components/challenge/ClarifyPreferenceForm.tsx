@@ -8,7 +8,7 @@ import { describedBy, Field, Select, TextArea } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
 import type { DemoChallenge, InvestigationJob, Objective } from "@/lib/contracts";
 import { stageHref } from "@/state/stage";
-import { useWorkflow } from "@/state/workflow";
+import { clarificationKey, useWorkflow } from "@/state/workflow";
 
 /**
  * Path 2: clarify a preference. The text goes back through the interpreter.
@@ -136,13 +136,15 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
               </h4>
               <ul className="mt-2 space-y-4">
                 {response.clarifications.map((clarification) => {
-                  const chosen = state.chosenOptions[clarification.clarification_id] ?? null;
+                  // Named by this answer as well as by its id: the question asked in Goals & rules can have the same id.
+                  const key = clarificationKey(response.interpretation_id, clarification.clarification_id);
+                  const chosen = state.chosenOptions[key] ?? null;
                   return (
                     <ClarificationCard
-                      key={clarification.clarification_id}
+                      key={key}
                       clarification={clarification}
                       chosenOptionId={chosen}
-                      onChoose={(optionId) => actions.chooseOption(clarification.clarification_id, optionId)}
+                      onChoose={(optionId) => actions.chooseOption(response.interpretation_id, clarification.clarification_id, optionId)}
                       outcome={<OptionOutcome option={clarification.options.find((option) => option.option_id === chosen)} place="elsewhere" />}
                     />
                   );

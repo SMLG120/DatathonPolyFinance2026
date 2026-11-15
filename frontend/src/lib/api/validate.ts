@@ -36,14 +36,30 @@ function isPolicy(value: unknown): boolean {
   return isObject(value) && isString(value.policy_id) && isNumber(value.version) && Array.isArray(value.objectives) && isRuleList(value.rules);
 }
 
+/**
+ * `interpretation_id`, `clarification_id` and `option_id` are what the page names a question and its
+ * answer by, so an interpretation without them is unreadable rather than half-usable. Their values are
+ * not constrained: the service numbers questions and drafts from 1 in every answer.
+ */
 function isInterpretation(value: unknown): boolean {
   return (
     isObject(value) &&
+    isString(value.interpretation_id) &&
     Array.isArray(value.objectives) &&
+    value.objectives.every((objective) => isObject(objective) && isString(objective.objective_id) && isString(objective.original_words)) &&
     isRuleList(value.proposed_rules) &&
     Array.isArray(value.unsupported) &&
     Array.isArray(value.clarifications) &&
-    value.clarifications.every((item) => isObject(item) && isString(item.question) && Array.isArray(item.options))
+    value.clarifications.every(
+      (item) =>
+        isObject(item) &&
+        isString(item.clarification_id) &&
+        isString(item.question) &&
+        Array.isArray(item.options) &&
+        item.options.every(
+          (option) => isObject(option) && isString(option.option_id) && (option.proposed_rule === null || option.proposed_rule === undefined || isRuleList([option.proposed_rule])),
+        ),
+    )
   );
 }
 

@@ -18,19 +18,28 @@ const DEFAULT_TIMEOUT_MS = 20_000;
 
 function kindForStatus(status: number): ApiErrorKind {
   if (status === 401 || status === 403) return "unauthorized";
-  if (status === 404) return "not_found";
+  // 410: the record is past its expiry. Like 404, asking again gives the same answer.
+  if (status === 404 || status === 410) return "not_found";
   if (status === 400 || status === 409 || status === 422) return "validation";
   if (status === 429) return "rate_limited";
   if (status >= 500) return "server";
   return "invalid_response";
 }
 
-/** Reads the contract's error body, `{ "error": { code, message, details, request_id } }`, if the service sent one. */
+/**
+ * Reads the contract's error body, `{ "error": { code, message, details, request_id } }`, if the service sent one.
+ *
+ * A body in any other shape comes from the gateway in front of the service
+ * (`{"message":"Forbidden"}`, `{"message":"Too Many Requests"}`). Nothing is
+ * read from it: the page then acts on the status alone and words the failure
+ * itself (contracts/api.md, "Errors").
+ */
 function readErrorBody(body: unknown): { code: string | null; message: string | null; details: ApiErrorDetail[]; requestId: string | null } {
   const empty = { code: null, message: null, details: [], requestId: null };
   if (typeof body !== "object" || body === null) return empty;
   const outer = body as Record<string, unknown>;
-  const inner = typeof outer.error === "object" && outer.error !== null ? (outer.error as Record<string, unknown>) : outer;
+  if (typeof outer.error !== "object" || outer.error === null) return empty;
+  const inner = outer.error as Record<string, unknown>;
   const details = Array.isArray(inner.details)
     ? inner.details.flatMap((detail) =>
         typeof detail === "object" && detail !== null && typeof (detail as ApiErrorDetail).issue === "string"
@@ -106,10 +115,17 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
       callerSignal?.removeEventListener("abort", onCallerAbort);
     }
 
+    let text = "";
+    try {
+      text = await response.text();
+    } catch {
+      // A successful answer that broke off on the way is a connection failure, not an answer in the wrong shape.
+      // A refusal is still acted on by its status.
+      if (response.ok) throw new ApiError(controller.signal.aborted ? "aborted" : "network", fallbackMessage(controller.signal.aborted ? "aborted" : "network"));
+    }
     let parsed: unknown = undefined;
     let parseFailed = false;
     try {
-      const text = await response.text();
       parsed = text === "" ? undefined : JSON.parse(text);
     } catch {
       parseFailed = true;
@@ -117,7 +133,11 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
 
     if (!response.ok) {
       const kind = kindForStatus(response.status);
-      if (kind === "unauthorized") options.onUnauthorized?.();
+      if (kind === "unauthorized") {
+        // contracts/api.md, Authentication: 401 and 403 are treated alike, whoever answered, and their body is not read.
+        options.onUnauthorized?.();
+        throw new ApiError(kind, fallbackMessage(kind), { status: response.status });
+      }
       const { code, message, details, requestId } = readErrorBody(parsed);
       throw new ApiError(kind, message ?? fallbackMessage(kind), { status: response.status, code, details, requestId });
     }

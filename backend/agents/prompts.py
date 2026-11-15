@@ -69,9 +69,9 @@ preserving capital, ESG) is an objective; it is never a number.
   exclusion: avoid or cap named companies (issuer_ids), or a sector the investor names by a label of the reference list (sector).
   controversy_exclusion: avoid or cap companies with recorded controversies.
   scenario_loss_budget: a maximum loss the investor states for a bad year.
-  Company ids and sector labels come only from the reference data. If the investor wrote a percentage for that rule in \
-the same sentence, copy the part that contains it into threshold_words; otherwise threshold_words is null. \
-Never supply a number yourself.
+  Company ids and sector labels come only from the reference data. A rule's words include the investor's whole limit phrase with its percentage when there is one \
+(for example "no more than 10% in any one company"). If the rule's words contain a percentage, copy the part of them \
+that contains it into threshold_words; otherwise threshold_words is null. Never supply or choose a number yourself.
 - ambiguous: a part that could mean several things. Topics: EXCLUSION_DEFINITION (what to avoid is not a named company or \
 an exact sector label, for example "oil", "tobacco", "weapons"; add the closest sector label from the reference list, or null), \
 DIVERSIFICATION (diversified, not concentrated, spread out, without a stated limit), \

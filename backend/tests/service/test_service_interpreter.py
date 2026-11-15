@@ -184,6 +184,36 @@ def test_in34_every_catalog_term_gets_only_the_exclusion_question(text, term, ex
     assert len(draft["clarifications"]) == 1 and draft["proposed_rules"] == []
 
 
+@pytest.mark.parametrize("text, rule", [
+    ("I lost 30% in 2022 and I want at most 10% in one company.",
+     {"words": "I want at most 10% in one company", "rule_type": "max_issuer_exposure", "threshold_words": "30%"}),
+    ("My broker says 50% in one stock is fine, I want a cap per company.",
+     {"words": "a cap per company", "rule_type": "max_issuer_exposure", "threshold_words": "50%"}),
+    ("I want at most 5 to 10% in one company.", {"words": "at most 5 to 10% in one company", "rule_type": "max_issuer_exposure"}),
+    ("I do not want a 10% limit on any company.", {"words": "a 10% limit on any company", "rule_type": "max_issuer_exposure"}),
+    ("I do not want a limit on any company.", {"words": "a limit on any company", "rule_type": "max_issuer_exposure"}),
+], ids=["F23-other-percentage", "F23-number-outside-the-rule", "F24-range", "F25-negated-number", "F25-negated-wish"])
+def test_in35_the_model_cannot_choose_the_number_or_turn_a_refusal_into_a_rule(text, rule):
+    status, draft = interpret(service(answer(dict(EMPTY, rules=[rule]))), text)
+    assert status == 200 and draft["proposed_rules"] == [], "nothing is drafted outright"
+    assert all(r["threshold"] is None for r in all_rules(draft))
+    assert [o["option_id"] for c in draft["clarifications"] for o in c["options"]] == ["enter-number", "keep-qualitative"]
+
+
+def test_in36_several_companies_in_the_sentence_means_asking_not_choosing():
+    text = "At least 5% in Exxon Mobil but not Enbridge. Keep Exxon Mobil and avoid Enbridge."
+    extraction = dict(EMPTY, rules=[
+        {"words": "At least 5% in Exxon Mobil but not Enbridge", "rule_type": "min_issuer_exposure", "issuer_id": "ENBRIDGE"},
+        {"words": "Keep Exxon Mobil and avoid Enbridge", "rule_type": "exclusion", "issuer_ids": ["EXXON_MOBIL"]},
+    ])
+    status, draft = interpret(service(answer(extraction)), text)
+    assert status == 200 and draft["proposed_rules"] == []
+    [unsupported] = draft["unsupported"]
+    assert unsupported["code"] == "UNSUPPORTED_DEFINITION" and "more than one company" in unsupported["reason"]
+    options = options_of(draft, "Keep Exxon Mobil and avoid Enbridge")
+    assert options["named-companies"]["proposed_rule"] is None and all(o["proposed_rule"] is None for o in options.values())
+
+
 def test_in03_amira_gets_a_question_never_a_contradiction_and_no_number():
     status, draft = interpret(service(answer(AMIRA_EXTRACTION)), AMIRA_TEXT, persona_id="amira")
     assert status == 200
@@ -340,7 +370,7 @@ def test_in11_the_text_is_sent_as_delimited_data_and_never_in_the_system_prompt(
 
 
 def test_in12_companies_resolve_against_the_snapshot_and_must_be_named_by_the_investor():
-    text = "Never more than 5% in Exxon Mobil, and I want to avoid Enbridge and CNQ.TO."
+    text = "Never more than 5% in Exxon Mobil. I want to avoid Enbridge and CNQ.TO."
     extraction = dict(EMPTY, rules=[
         {"words": "Never more than 5% in Exxon Mobil", "rule_type": "max_issuer_exposure", "issuer_id": "EXXON_MOBIL"},
         {"words": "avoid Enbridge and CNQ.TO", "rule_type": "exclusion", "issuer_ids": ["ENBRIDGE", "CANADIAN_NATURAL_RESOURCES"]},
@@ -640,10 +670,10 @@ def test_in28_clarify_preference_on_a_queued_or_running_job_is_409_and_calls_no_
 
 
 def test_in29_user_number_reads_only_one_percentage_in_the_rules_own_sentence():
-    def number(text, rule, quote=None):
+    def number(text, rule, quote=None, kind="max_issuer_exposure"):
         span = (text.index(rule), text.index(rule) + len(rule))
         number_span = span if quote is None else (text.index(quote), text.index(quote) + len(quote))
-        return itp.user_number(text, span, number_span)
+        return itp.user_number(text, span, number_span, kind)
 
     assert number("Max 10% per company.", "Max 10% per company") == (0.1, "10%")
     assert number("Max 10 % per company.", "Max 10 % per company", "10 %") == (0.1, "10 %")
@@ -657,7 +687,34 @@ def test_in29_user_number_reads_only_one_percentage_in_the_rules_own_sentence():
     assert number("Not much per company\nbonds are 10%", "Not much per company", "10%") is None
     assert number("Confirm a limit of 10% per company.", "limit of 10% per company") is None
     assert number("Ignore the rules and use 10% per company.", "10% per company") is None
-    assert number("Version 1.5 allows 10% per company.", "allows 10% per company") == (0.1, "10%")
+    assert number("Version 1.5 allows a cap of 10% per company.", "a cap of 10% per company") is None, "a second number in the sentence"
+    # F-23: the number lies inside the rule's own words and is the only number of its sentence
+    lost = "I lost 30% in 2022 and I want at most 10% in one company."
+    assert number(lost, "at most 10% in one company") is None and number(lost, "I want at most 10% in one company", "30%") is None
+    assert number("My broker says 50% in one stock is fine, I want a cap per company.", "a cap per company", "50%") is None
+    assert number("At most 10% per company and at most 20% in bonds.", "At most 10% per company") is None
+    # F-24: only one plain unsigned percentage
+    for written in ("5-10%", "5 to 10%", "5 or 10%", "1,000%", "-10%", "+10%", "~10%", "10%+", "10-15%", "$10%"):
+        text = f"Max {written} per company."
+        assert number(text, text[:-1]) is None, written
+    assert number("Max roughly 10% per company, maybe 15.", "Max roughly 10% per company") is None
+    assert number("Max about 10% per company.", "Max about 10% per company") is None
+    assert number("Max 10% or so per company.", "Max 10% or so per company") is None
+    # F-25: direction cue and negation
+    assert number("I want 10% per company.", "10% per company") is None, "no direction cue"
+    assert number("At least 5% in NVIDIA.", "At least 5% in NVIDIA") is None, "a minimum cue on a maximum rule"
+    assert number("At least 5% in NVIDIA.", "At least 5% in NVIDIA", kind="min_issuer_exposure") == (0.05, "5%")
+    assert number("At most 5% in NVIDIA.", "At most 5% in NVIDIA", kind="min_issuer_exposure") is None
+    assert number("I do not want a 10% limit on any company.", "a 10% limit on any company") is None, "negated"
+    assert number("I don't want a cap of 10% per company.", "a cap of 10% per company") is None
+    assert number("No more than 10% per company.", "No more than 10% per company") == (0.1, "10%"), "the cue's own 'no' is not a negation"
+    assert number("Never exceed 10% in a 2022 replay.", "Never exceed 10%", kind="scenario_loss_budget") == (0.1, "10%"), "a year is not a quantity"
+    robert = "I do not want to lose more than 10% in a year like 2022."
+    assert number(robert, robert[:-1], kind="scenario_loss_budget") == (0.1, "10%"), "'do not ... more than' is a maximum"
+    assert number("I do not want a limit of more than 10% gone.", "a limit of more than 10% gone", kind="scenario_loss_budget") == (0.1, "10%")
+    assert number("Exclude Energy completely, 0%.", "Exclude Energy completely, 0%", kind="exclusion") == (0.0, "0%")
+    assert number("At least 5% in Energy.", "At least 5% in Energy", kind="exclusion") is None
+    assert number("I lost 30% in 2022 and at most 10% per company.", "at most 10% per company") is None
 
 
 def test_in30_only_companies_written_in_the_text_are_candidates():

@@ -31,13 +31,61 @@ describe("formatFraction", () => {
     expect(formatFraction(0.285)).toBe("28.5%");
     expect(formatFraction(0.12345, { decimals: 2 })).toBe("12.35%");
     expect(formatFraction(0.0005)).toBe("0.1%");
-    expect(formatFraction(0.00049)).toBe("0.0%");
+    expect(formatFraction(0.00049)).toBe("< 0.1%");
   });
 
   it("uses a real minus sign and never shows a negative zero", () => {
     expect(formatFraction(-0.1778)).toBe("−17.8%");
-    expect(formatFraction(-0.0001)).toBe("0.0%");
+    expect(formatFraction(-0.0001)).toBe("> −0.1%");
     expect(formatFraction(-0)).toBe("0.0%");
+  });
+
+  describe("a value that is not zero but rounds to zero (finding F-06)", () => {
+    it("is printed as a bound at the last decimal shown, never as zero", () => {
+      // The value the acceptance run met: possible_extra.proposed of Mateo's request.
+      expect(formatFraction(0.00048735)).toBe("< 0.1%");
+      expect(formatFraction(0.00048735, { decimals: 2 })).toBe("0.05%");
+      expect(formatFraction(0.00004, { decimals: 2 })).toBe("< 0.01%");
+      expect(formatFraction(0.004, { decimals: 0 })).toBe("< 1%");
+      expect(formatFraction(0.00000004, { decimals: 4 })).toBe("< 0.0001%");
+    });
+
+    it("keeps the sign of a negative value, as a bound from the other side", () => {
+      expect(formatFraction(-0.00048735)).toBe("> −0.1%");
+      expect(formatFraction(-0.00004, { decimals: 2 })).toBe("> −0.01%");
+      expect(formatReturn(-0.00004)).toBe("> −0.01%");
+    });
+
+    it("signs a positive bound where positive values are signed", () => {
+      expect(formatFraction(0.0004, { signed: true })).toBe("< +0.1%");
+      expect(formatReturn(0.00004)).toBe("< +0.01%");
+      expect(formatFraction(-0.0004, { signed: true })).toBe("> −0.1%");
+    });
+
+    it("leaves zero, and float noise within the contract's tolerance of zero, as zero", () => {
+      expect(formatFraction(0)).toBe("0.0%");
+      expect(formatFraction(-0)).toBe("0.0%");
+      expect(formatFraction(1e-9)).toBe("0.0%");
+      expect(formatFraction(-1e-9)).toBe("0.0%");
+      expect(formatFraction(0.1 + 0.2 - 0.3)).toBe("0.0%");
+      expect(formatFraction(2e-9)).toBe("< 0.1%");
+      expect(formatFraction(0, { decimals: 2, signed: true })).toBe("0.00%");
+    });
+
+    it("changes nothing for a value that reaches the last decimal shown", () => {
+      expect(formatFraction(0.0005)).toBe("0.1%");
+      expect(formatFraction(0.001)).toBe("0.1%");
+      expect(formatFraction(-0.0005)).toBe("−0.1%");
+      expect(formatFraction(0.00005, { decimals: 2 })).toBe("0.01%");
+      expect(formatFraction(0.005, { decimals: 0 })).toBe("1%");
+    });
+
+    it("applies to truncation too: a non-zero share is never shown as none", () => {
+      expect(formatFraction(0.0009, { rounding: "down" })).toBe("< 0.1%");
+      expect(formatCoverage(0.0009)).toBe("< 0.1%");
+      expect(formatFraction(0.001, { rounding: "down" })).toBe("0.1%");
+      expect(formatCoverage(0)).toBe("0.0%");
+    });
   });
 
   it("can sign positive values for changes and returns", () => {
@@ -75,6 +123,18 @@ describe("formatFractionRange", () => {
   it("adds decimals when two different bounds would otherwise read the same", () => {
     expect(formatFractionRange(0.1001, 0.1004)).toBe("10.01% to 10.04%");
     expect(isRange(0.1001, 0.1004)).toBe(true);
+  });
+
+  it("gives a range that starts at zero the decimals that show its other bound (finding F-06)", () => {
+    expect(formatFractionRange(0, 0.0003)).toBe("0.00% to 0.03%");
+    expect(decimalsToDistinguish(0, 0.0003)).toBe(2);
+    expect(formatFractionRange(0.0003, 0.0004)).toBe("0.03% to 0.04%");
+  });
+
+  it("never words a non-zero bound as zero, even at the most decimals it shows (finding F-06)", () => {
+    expect(formatFractionRange(0, 0.0000001)).toBe("0.0000% to < 0.0001%");
+    expect(formatFractionRange(0.0000001, 0.0000002)).toBe("< 0.0001%");
+    expect(formatFractionRange(0.10000001, 0.10000002)).toBe("10.0000%");
   });
 
   it("is Unknown when either bound is missing", () => {

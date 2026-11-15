@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PURCHASE_PREVIEW_LABEL } from "@/components/stages/PurchaseStage";
 import { storeAccessCode } from "@/lib/access-code";
 import type { ApiClient } from "@/lib/api";
+import { ApiError } from "@/lib/api/errors";
 import { createFixturesClient } from "@/lib/api/fixtures-client";
 import type { CheckResult } from "@/lib/contracts";
 import { confirmScenarioRules, go, renderApp } from "@/test/app";
@@ -178,5 +179,80 @@ describe("Purchase stage, a request the service cannot evaluate (the recorded in
     expect(screen.queryByTestId("feasibility-table")).toBeNull();
     expect(screen.queryByTestId("purchase-preview-label")).toBeNull();
     expect(screen.getByTestId("held-now")).toHaveTextContent("Held directly now: 5.0%.");
+  });
+
+  async function enterTheInvalidRequest(user: UserEvent) {
+    await user.selectOptions(screen.getByLabelText("Instrument to buy"), "RY.TO");
+    await user.clear(screen.getByLabelText(TARGET_LABEL));
+    await user.type(screen.getByLabelText(TARGET_LABEL), "2");
+    await screen.findByTestId("execution-state");
+  }
+
+  it("says beside the start button that starting it would be refused, before anything is sent (finding F-08)", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const createInvestigation = vi.fn(fixtures.createInvestigation);
+    const user = await toPurchase({ api: { ...fixtures, createInvestigation } });
+    await ready();
+    expect(screen.queryByTestId("start-preview-refusal")).toBeNull();
+
+    await enterTheInvalidRequest(user);
+    const hint = await screen.findByTestId("start-preview-refusal");
+    expect(hint).toHaveTextContent("The preview above says this request cannot be evaluated (TARGET_BELOW_CURRENT_WEIGHT).");
+    expect(hint).toHaveTextContent("no investigation is created");
+    expect(hint.closest('[role="status"]')).not.toBeNull();
+    expect(createInvestigation).not.toHaveBeenCalled();
+    // The button stays usable: the refusal is the service's to give, and it explains itself (next test).
+    expect(screen.getByTestId("start-investigation")).not.toHaveAttribute("aria-disabled");
+
+    // The hint belongs to the request it was given for: it goes when the request changes.
+    await user.clear(screen.getByLabelText(TARGET_LABEL));
+    await waitFor(() => expect(screen.queryByTestId("start-preview-refusal")).toBeNull());
+  });
+
+  it("shows what the service refused when the start is answered 422, and offers no retry that could only be refused again (finding F-08)", async () => {
+    const execution = recorded.invalidRequest().execution;
+    const issue = `${execution.code}: ${execution.message}`;
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    // The service's answer to this request (contract section 6, rule 3): 422, with the engine's refusal in details[0].issue.
+    const createInvestigation = vi.fn<ApiClient["createInvestigation"]>().mockRejectedValue(
+      new ApiError("validation", "The purchase request cannot be evaluated.", {
+        status: 422,
+        code: "INVALID_PURCHASE_REQUEST",
+        details: [{ path: "request", issue }],
+        requestId: "req-test-422",
+      }),
+    );
+    const user = await toPurchase({ api: { ...fixtures, createInvestigation } });
+    await ready();
+    await enterTheInvalidRequest(user);
+
+    await user.click(screen.getByTestId("start-investigation"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The investigation could not be started");
+    expect(alert).toHaveTextContent("The purchase request cannot be evaluated.");
+    expect(within(alert).getByTestId("start-issues")).toHaveTextContent(issue);
+    expect(alert).toHaveTextContent("No investigation was created.");
+    expect(within(alert).getByTestId("start-refused")).toHaveTextContent("sending it again unchanged would be refused again");
+    expect(within(alert).queryByRole("button")).toBeNull();
+    expect(createInvestigation).toHaveBeenCalledTimes(1);
+    // The page stays on the purchase stage: nothing was started.
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Step 3 of 6: Proposed purchase");
+  });
+
+  it("keeps the retry for a failure that another attempt can get past", async () => {
+    const fixtures = createFixturesClient({ latencyMs: 0 });
+    const createInvestigation = vi
+      .fn<ApiClient["createInvestigation"]>()
+      .mockRejectedValue(new ApiError("rate_limited", "The service is receiving too many requests. Wait a moment and try again.", { status: 429 }));
+    const user = await toPurchase({ api: { ...fixtures, createInvestigation } });
+    await ready();
+
+    await user.click(screen.getByTestId("start-investigation"));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("No investigation was created.");
+    expect(within(alert).queryByTestId("start-issues")).toBeNull();
+    expect(within(alert).queryByTestId("start-refused")).toBeNull();
+    await user.click(within(alert).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(createInvestigation).toHaveBeenCalledTimes(2));
   });
 });
