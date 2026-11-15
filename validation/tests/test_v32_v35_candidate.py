@@ -703,10 +703,8 @@ def test_v34_every_possible_highlight_states_subject_state_and_date_and_never_a_
 
 
 @pytest.mark.vcase("V34")
-@pytest.mark.xfail(strict=True, reason="F-21 (LOW): a highlight sentence does not always say unambiguously what its record measures. (1) The rows of two "
-                                       "share classes of one issuer and their sum get the same description with three different values "
-                                       "(ALPHABET through SPY). BUILD_BRIEF 6 / AC-E3: wrong asset, unit or period; AC-E1")
 def test_v34_two_different_records_never_get_the_same_description(both_results):
+    """F-21 (1), closed by 2462ba8: was a strict xfail (the rows of two share classes and their sum shared one description)."""
     for persona, result in both_results.items():
         seen: dict = {}
         for evidence_id, (text, _) in _every_sentence(result).items():
@@ -715,10 +713,8 @@ def test_v34_two_different_records_never_get_the_same_description(both_results):
 
 
 @pytest.mark.vcase("V34")
-@pytest.mark.xfail(strict=True, reason="F-21 (LOW): (2) the weight of the excluded category inside a fund (Energy in XIU.TO, record "
-                                       "ev-secw-XIU.TO-mateo-excl-energy-1) is printed as 'weight inside the fund, as its holdings file reports it, "
-                                       "fund XIU.TO' with no mention of the category or the rule, so it reads as a statement about the whole fund")
 def test_v34_a_category_weight_highlight_names_the_category_or_the_rule(both_results):
+    """F-21 (2), closed by 2462ba8: was a strict xfail (a sector's share of a fund read as a statement about the fund)."""
     sentences = _every_sentence(both_results["mateo"])
     category = {k: text for k, (text, record) in sentences.items() if k.startswith("ev-secw-")}
     assert category, "the Mateo result has category-weight records"
@@ -736,13 +732,9 @@ F20_CALLS = {
 
 
 @pytest.mark.vcase("V34")
-@pytest.mark.xfail(strict=True, reason="F-20 (HIGH): two strings chosen by the model reach the client inside public steps. (a) issuer_id of "
-                                       "lookup_controversy_evidence is checked against a pattern only, not against the issuers of the result, and "
-                                       "is echoed with status OK ('Issuer BUY-NOW.ALL-RULES-PASS.'). (b) For a rejected call of an allowlisted "
-                                       "tool the step prints the argument key names ('argument types: you_should_buy:int'), 8 keys of 64 "
-                                       "characters. BUILD_BRIEF 6, 1; AC-N2 (no text returned by the service advises), AC-A1")
 @pytest.mark.parametrize("name", sorted(F20_CALLS))
 def test_v34_a_string_chosen_by_the_model_is_not_echoed_into_a_public_step(shared, baseline, name):
+    """F-20, closed by a151fc7: was a strict xfail (issuer id echoed with status OK; key names of rejected arguments printed)."""
     call, message = F20_CALLS[name]
     job, _, body = model_final(shared, baseline, answer(), tools=(call,))
     assert message not in body, [s["input_summary"] for s in job["steps"] if s["initiated_by"] == "MODEL"]
@@ -750,9 +742,8 @@ def test_v34_a_string_chosen_by_the_model_is_not_echoed_into_a_public_step(share
 
 @pytest.mark.vcase("V34")
 def test_v34_what_bounds_the_tool_argument_channel(shared, baseline):
-    """Scope of F-20: only the two declared arguments exist; fund_id is an enum of the funds held; issuer_id accepts
-    upper-case letters, digits, dot, underscore and hyphen, 64 characters at most. Anything else is rejected, is not
-    executed, and no argument VALUE reaches the client. (Key names do: that is part (b) of F-20.)"""
+    """Only the two declared arguments exist; fund_id is an enum of the funds held and (since a151fc7) issuer_id an enum
+    of the issuers of the result. Anything else is rejected, is not executed, and nothing of it reaches the client."""
     bad = [("lookup_controversy_evidence", {"issuer_id": f"Buy now {CANARY}"}), ("lookup_controversy_evidence", {"issuer_id": "A" * 65}),
            ("lookup_controversy_evidence", {"issuer_id": "NVIDIA", "note": CANARY}), ("lookup_controversy_evidence", {"issuer_id": ["NVIDIA", CANARY]}),
            ("get_holdings", {"fund_id": CANARY}), ("get_holdings", {"fund_id": "SPY", "x": CANARY}), ("check_rules", {"comment": CANARY}),
@@ -765,6 +756,78 @@ def test_v34_what_bounds_the_tool_argument_channel(shared, baseline):
     assert sum(1 for e in events if e["origin"] == "model" and e["status"] == "REJECTED") == len(bad)
     good, _, body = model_final(shared, baseline, answer(), tools=(("get_holdings", {"fund_id": "SPY"}), ("lookup_controversy_evidence", {"issuer_id": "NVIDIA"})))
     assert [s["input_summary"] for s in good["steps"] if s["initiated_by"] == "MODEL"] == ["Fund SPY.", "Issuer NVIDIA."]
+
+
+STEP_TEXTS = (r"Rejected call: \d+ argument\(s\) supplied\. They are not shown\.", r"Rejected call: the arguments were not an object\. They are not shown\.",
+              r"rejected, not executed \((INVALID_ARGUMENTS|UNKNOWN_TOOL)\): the (arguments do not match the tool schema|tool name is not on the allowlist)")
+
+
+@pytest.mark.vcase("V34")
+def test_v34_every_tool_argument_is_an_enum_of_the_server_s_result_and_a_rejected_call_shows_fixed_text(shared, baseline):
+    """Fifth pass, re-attack of F-20. (1) No tool offered to the model has a free string, number or nested member: an
+    argument is one of the values the server computed, or absent. (2) A rejected call is shown with two fixed
+    sentences and a count. (3) A call for an unknown tool is not a public step at all."""
+    marker = "ZZ-KEY-BUY-NOW"
+    bad = [("lookup_controversy_evidence", {"issuer_id": "TOTALLY_FAKE_CO"}), ("lookup_controversy_evidence", {"issuer_id": "nvidia"}),
+           ("lookup_controversy_evidence", {"issuer_id": "NVIDIA "}), ("lookup_controversy_evidence", {"issuer_id": None}),
+           ("get_holdings", "SPY"), ("get_holdings", [marker]), ("get_holdings", {f"k{i}-{marker}": i for i in range(200)}), ("get_holdings", {"fund_id": "spy"}),
+           ("get_holdings", {"fund_id": {"enum": marker}}), ("check_rules", {"a": {"b": marker}}), ("check_rules", {marker: marker}), ("max_compliant_amount", {"target": 0.9}),
+           ("simulate_change", {"instrument_id": "NVDA", "target_direct_weight": 0.01}), ("replay_period", {"scenario_id": marker}),
+           (f"buy_now_{marker}", {"x": 1}), ("", {}), ("check_rules ", {})]
+    steps = []
+    for batch in (bad[:9], bad[9:]):  # the worker's own bound on model tool calls is not what is under test here
+        job, _, body = model_final(shared, baseline, answer(), tools=tuple(batch))
+        assert marker not in body and "TOTALLY_FAKE_CO" not in body and "buy_now" not in body
+        steps += [s for s in job["steps"] if s["initiated_by"] == "MODEL"]
+    assert len(steps) == len(bad) - 3, "the three calls for a tool that does not exist are kept in the private trace only"
+    for step in steps:
+        assert step["status"] == "ERROR" and step["tool"] in {name for name, _ in bad}
+        assert re.fullmatch(STEP_TEXTS[0], step["input_summary"]) or re.fullmatch(STEP_TEXTS[1], step["input_summary"]), step["input_summary"]
+        assert re.fullmatch(STEP_TEXTS[2], step["result_summary"]), step["result_summary"]
+    assert job["status"] == "SUCCEEDED" and stable(job["result"]) == stable(baseline["result"]), "rejected calls change no number"
+
+    schemas = {t["toolSpec"]["name"]: t["toolSpec"]["inputSchema"]["json"] for t in shared.bedrock.requests[0]["toolConfig"]["tools"]}
+    issuers = sorted(entry["issuer_id"] for entry in baseline["result"]["exposure"]["issuers"])
+    funds = sorted(entry["fund_id"] for entry in baseline["result"]["data_coverage"])
+    with_arguments = {name: schema["properties"] for name, schema in schemas.items() if schema["properties"]}
+    assert with_arguments == {"get_holdings": {"fund_id": {**with_arguments["get_holdings"]["fund_id"], "type": "string", "enum": funds}},
+                              "lookup_controversy_evidence": {"issuer_id": {**with_arguments["lookup_controversy_evidence"]["issuer_id"], "type": "string", "enum": issuers}}}
+    assert all(schema["type"] == "object" and schema["additionalProperties"] is False for schema in schemas.values())
+    for name, properties in with_arguments.items():
+        for member in properties.values():
+            assert set(member) == {"type", "description", "enum"}, f"{name}: no pattern, no free string"
+
+    # Every accepted value, one call each: the only text echoed is the enum value the server itself supplied.
+    calls = tuple(("lookup_controversy_evidence", {"issuer_id": issuer}) for issuer in issuers) + tuple(("get_holdings", {"fund_id": fund}) for fund in funds)
+    shown = []
+    for start in range(0, len(calls), 6):
+        good, _, _ = model_final(shared, baseline, answer(), tools=calls[start:start + 6])
+        shown += [s["input_summary"] for s in good["steps"] if s["initiated_by"] == "MODEL"]
+    assert shown == [f"Issuer {issuer}." for issuer in issuers] + [f"Fund {fund}." for fund in funds]
+
+
+@pytest.mark.vcase("V34")
+def test_v34_the_three_things_measured_inside_a_fund_are_worded_differently_on_the_real_results(both_results):
+    """Fifth pass, re-judgement of F-21 on the real Robert and Mateo results: a single reported row, the rows of one
+    company added together, and a sector's share of a fund each say what they are; every sentence of both results is
+    distinct from every other one unless subject, state, date and value are all the same."""
+    robert, mateo = _every_sentence(both_results["robert"]), _every_sentence(both_results["mateo"])
+    alphabet = sorted(text[len(PREFIX):] for key, (text, record) in robert.items()
+                      if record["metric_id"] == "fund_constituent_weight" and record["subject"]["id"] == "ALPHABET" and record["subject"].get("via_fund_id") == "SPY")
+    assert len(alphabet) == 3
+    assert alphabet[0].startswith("weight inside the fund of all share classes and reported rows of this company combined, company ALPHABET, through SPY, as of ")
+    assert re.match(r"weight inside the fund of reported row 1 of this company \((GOOGL?)\), as its holdings file reports it, company ALPHABET, through SPY, as of ", alphabet[1])
+    assert re.match(r"weight inside the fund of reported row 2 of this company \((GOOGL?)\), as its holdings file reports it, company ALPHABET, through SPY, as of ", alphabet[2])
+    assert alphabet[1].split("(")[1][:5] != alphabet[2].split("(")[1][:5], "the two rows name two different share classes"
+    energy = [text[len(PREFIX):] for key, (text, _) in mateo.items() if key.startswith("ev-secw-")]
+    assert energy and all(text.startswith("share of the fund in rows carrying the fund-reported sector label 'Energy', as its holdings file reports it, fund ") for text in energy)
+    for sentences in (robert, mateo):
+        texts = [text for text, _ in sentences.values()]
+        assert len(set(texts)) == len(texts), "no two records print the same sentence"
+        for text, record in sentences.values():
+            # names in a sentence come from the engine's record, and a row label is a ticker-like token of the holdings file
+            for label in re.findall(r"of this company \(([^)]*)\)", text):
+                assert re.fullmatch(r"[A-Z0-9][A-Z0-9. /_-]{0,30}", label), f"a row label that is free text would be third-party words in a sentence: {label!r}"
 
 
 @pytest.mark.vcase("V34")
