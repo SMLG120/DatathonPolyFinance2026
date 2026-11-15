@@ -17,7 +17,7 @@ expected value is typed in to make a test pass.
 | `mateo_invariants.py` | The invariants of a `check_result` (SEMANTICS sections 1, 5, 6, 9, 10, 11, 13), restated without `byb_contracts`; shared by the tests and the live script |
 | `mateo_helpers.py` | Loaders, policy builders and the independent look-through (`hand_*`) |
 | `test_mateo_interpreter_inprocess.py` | Mateo's sentence through the real `POST /rules/interpret` and the `CLARIFY_PREFERENCE` challenge with a scripted model: careful, adversarial (omits oil, Energy rule outright with a threshold, invented number, prose), injection appended to the words; the full workflow with `--require-interpreter --compare-local`; both answers compared with the frozen fixtures |
-| `FINDINGS.md` | Failing-input reports (E1, E2, B1 closed; L1 and I1 open), the 1.0.1 to 1.0.8 comparison, the in-process runs, fixture-against-implementation differences (section F), observations |
+| `FINDINGS.md` | Failing-input reports (E1, E2, B1, I1 closed; L1 open), the 1.0.1 to 1.0.8 comparison, the in-process runs, fixture-against-implementation differences (section F), observations |
 
 ## Run
 
@@ -27,8 +27,8 @@ From the repository root (no network, no AWS, no model):
 
 Tests parametrised `[real]` are skipped when `data/processed/{holdings,instruments,market_data}.json` are
 absent (they are git-ignored). `test_real_data_outcome_is_reported` prints Mateo's real-data outcome.
-The `xfail(strict=True)` tests are the open findings; `--runxfail -k "L1 or I1_a_wrong_code"` shows them failing.
-Expected: 241 passed, 4 xfailed (engine `byb-engine-1.0.8`, base `4814500`).
+The `xfail(strict=True)` test is the open finding; `--runxfail -k L1` shows it failing.
+Expected: 254 passed, 1 xfailed (engine `byb-engine-1.0.8`, base `84bd638`).
 
 ## Live check (after deployment)
 
@@ -99,8 +99,8 @@ The in-process run uses the real handler, worker and authorizer code, and nothin
 4. **Lambda asynchronous invocation**: that the worker starts after the 202, its retries on error, its timeout
    against the 150 s job deadline. Here the test delivers the event itself, and time is a fake clock.
 5. **Any model**: Bedrock access and latency; whether the real model calls `submit_interpretation` at all and
-   what it extracts from Mateo's sentence (spans that are in the text, the codes it picks for "oil": finding
-   I1 depends on it); how often the one retry is needed and whether two calls fit the 20 s budget; which
+   what it extracts from Mateo's sentence (spans that are in the text, the codes it picks; for "oil" the
+   server's catalog now decides, see I1 and observations O8 to O10); how often the one retry is needed and whether two calls fit the 20 s budget; which
    evidence the investigator highlights; `agent.mode` (`MODEL` here means the fake Bedrock answered).
    Every model answer in this suite is a script. Run `live_check.py --require-interpreter` first.
 6. **The deployed data**: that the uploaded snapshot is the local `data/processed` (`--compare-local` answers

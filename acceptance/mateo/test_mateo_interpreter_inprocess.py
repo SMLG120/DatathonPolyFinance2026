@@ -192,25 +192,107 @@ MISLABELLED = {
 }
 
 
-@pytest.mark.parametrize("name", sorted(MISLABELLED))
-@pytest.mark.xfail(strict=True, reason="I1: when the model flags 'oil' itself with a valid but wrong code (another sector label, another topic), "
-                                       "the question about 'oil' loses the Energy-label option that LEAD_DECISIONS D7 requires")
-def test_I1_a_wrong_code_from_the_model_does_not_remove_the_energy_option_from_the_oil_question(name):
-    answer = tool(MISLABELLED[name])
-    response = interpret(backend(answer, answer))
-    assert response.status in (200, 502)  # refusing the answer would be acceptable; a question without Energy is not
-    if response.status == 200:
-        assert lc.mateo_oil_clarification_problems(response.body) == []
+MISLABELLED.update({
+    # further wrong codes on Mateo's own sentence (fourth pass)
+    "marked-unsupported": changed(ambiguous=[], unsupported=[{"words": "oil", "reason": "OIL_PRODUCERS"}]),
+    "marked-as-an-instruction": changed(ambiguous=[], unsupported=[{"words": "avoid oil", "reason": "INSTRUCTION"}]),
+    "inside-the-controversy-rule": changed(ambiguous=[], rules=[{"words": "avoid oil and companies involved in significant controversies",
+                                                                 "rule_type": "controversy_exclusion"}]),
+    "as-a-company-cap": changed(ambiguous=[], rules=EXTRACTION["rules"] + [{"words": "avoid oil", "rule_type": "max_issuer_exposure", "issuer_id": None}]),
+    "two-wrong-questions": changed(ambiguous=[{"words": "oil", "topic": "DIVERSIFICATION"}, {"words": "avoid oil", "topic": "EXCLUSION_DEFINITION", "sector": "Financials"}]),
+})
+
+
+def oil_questions(draft, term="oil"):
+    return [c for c in draft["clarifications"] if term in c["about_words"].lower()]
+
+
+def assert_energy_question(clarification):
+    """The D7 question, exactly: Energy label supported with an inactive draft, named companies, two refused definitions."""
+    options = clarification["options"]
+    assert [(o["option_id"], o["supported"]) for o in options] == [
+        ("energy-sector-label", True), ("named-companies", True), ("oil-producers", False), ("fossil-fuels", False)]
+    rule = options[0]["proposed_rule"]
+    assert rule["rule_type"] == "exclusion" and rule["parameters"] == {"definition": {"kind": "fund_reported_sector", "sector": "Energy"}}
+    assert rule["threshold"] is None and rule["status"] == "PROPOSED" and rule["origin"] == "SYSTEM_PROPOSED" and not bc.rule_is_evaluated(rule)
+    assert all(o["proposed_rule"] is None for o in options[1:])
+    assert "cover" in clarification["question"], "the question is not the exclusion-definition question"
 
 
 @pytest.mark.parametrize("name", sorted(MISLABELLED))
-def test_I1_is_bounded_no_number_no_active_rule_no_exclusion_outright(name):
+def test_I1_a_wrong_code_from_the_model_does_not_change_the_oil_question(name):
+    """Finding I1, closed by the interpreter fix 563bb62: the server's catalog decides for "oil"."""
     answer = tool(MISLABELLED[name])
-    draft = interpret(backend(answer, answer)).body
-    assert [c for c in draft["clarifications"] if "oil" in c["about_words"]], "oil is still a question, not a guess"
+    transport = backend(answer, answer)
+    response = interpret(transport)
+    assert response.status == 200 and len(interpreter_calls(transport)) == 1
+    draft = response.body
+    assert_safe_for_mateo(draft)
+    [question] = oil_questions(draft)  # one question for the term, whatever the model flagged and however often
+    assert question["about_words"] == "oil"
+    assert_energy_question(question)
+    sectors = [r["parameters"]["definition"].get("sector") for r in drafts(draft) if r["rule_type"] == "exclusion"]
+    assert sectors == ["Energy"], f"another sector label is offered for oil: {sectors}"
+    assert all(rule["threshold"] is None for rule in drafts(draft))
+    if name in ("another-sector", "another-topic", "another-topic-on-the-clause", "two-wrong-questions"):
+        # the model's own question is dropped, nothing else is lost
+        assert len(draft["clarifications"]) == 1
+        assert [(r["rule_type"], r["original_words"]) for r in draft["proposed_rules"]] == [
+            ("controversy_exclusion", "companies involved in significant controversies")]
+
+
+OTHER_TERMS = "I want to avoid fossil fuels and oil and tobacco. No more than 10% in any one company."
+CAP_10 = {"words": "No more than 10% in any one company", "rule_type": "max_issuer_exposure", "issuer_id": None}
+EMPTY = {"objectives": [], "rules": [], "ambiguous": [], "unsupported": []}
+OTHER_CASES = {
+    "fossil-fuels-wrong-sector": dict(EMPTY, ambiguous=[{"words": "fossil fuels", "topic": "EXCLUSION_DEFINITION", "sector": "Utilities"}]),
+    "fossil-fuels-wrong-topic": dict(EMPTY, ambiguous=[{"words": "fossil fuels", "topic": "LOSS_LIMIT"}]),
+    "wide-span-question": dict(EMPTY, ambiguous=[{"words": "oil and tobacco", "topic": "EXCLUSION_DEFINITION", "sector": "Financials"}]),
+    "wide-span-rule": dict(EMPTY, rules=[{"words": "avoid fossil fuels and oil and tobacco", "rule_type": "exclusion", "sector": "Utilities"}, CAP_10]),
+    "tobacco-on-its-own": dict(EMPTY, ambiguous=[{"words": "tobacco", "topic": "EXCLUSION_DEFINITION", "sector": None}]),
+}
+
+
+@pytest.mark.parametrize("name", sorted(OTHER_CASES))
+def test_I1_each_catalog_term_gets_its_own_energy_question_whatever_the_model_flags(name):
+    answer = tool(OTHER_CASES[name])
+    response = interpret(backend(answer, answer), OTHER_TERMS)
+    assert response.status == 200
+    draft = response.body
+    by_words = {c["about_words"]: c for c in draft["clarifications"]}
+    assert {"fossil fuels", "oil"} <= set(by_words)
+    assert_energy_question(by_words["fossil fuels"])
+    assert_energy_question(by_words["oil"])
+    sectors = {r["parameters"]["definition"].get("sector") for r in drafts(draft) if r["rule_type"] == "exclusion"}
+    assert sectors == {"Energy"}
     assert not [rule for rule in draft["proposed_rules"] if rule["rule_type"] == "exclusion"]
-    for rule in drafts(draft):
-        assert rule["status"] == "PROPOSED" and rule["threshold"] is None and not bc.rule_is_evaluated(rule)
+    if name == "wide-span-rule":  # the investor's own 10% on the other sentence is untouched
+        [cap] = draft["proposed_rules"]
+        assert (cap["rule_type"], cap["threshold"], cap["threshold_quote"], cap["status"]) == ("max_issuer_exposure", 0.10, "10%", "PROPOSED")
+    # Observation O8 (the lead's stated limit): a model span that covers a catalog term and something else is
+    # dropped whole, so "tobacco" is asked about only when the model marks it on its own.
+    assert ("tobacco" in by_words) == (name == "tobacco-on-its-own")
+    assert set(by_words) == {"fossil fuels", "oil"} | ({"tobacco"} if name == "tobacco-on-its-own" else set())
+
+
+@pytest.mark.parametrize("extraction, question", [
+    (dict(EMPTY, ambiguous=[{"words": "Petroleum", "topic": "EXCLUSION_DEFINITION", "sector": "Utilities"}]), "energy"),
+    (dict(EMPTY, ambiguous=[{"words": "Petroleum", "topic": "LOSS_LIMIT"}]), "loss"),
+    (EMPTY, None),
+], ids=["wrong-sector", "wrong-topic", "omitted"])
+def test_O9_petroleum_is_not_a_catalog_term_only_its_sector_is_forced(extraction, question):
+    """Not Mateo's sentence and not a D7 requirement: pinned so the limit is known. "oil" and "fossil fuel(s)" are
+    the catalog; for "petroleum" (and a bare "fossil") the server forces the Energy label but not the topic."""
+    response = interpret(backend(tool(extraction)), "Petroleum is out.")
+    assert response.status == 200
+    clarifications = response.body["clarifications"]
+    if question is None:
+        assert clarifications == []
+    elif question == "energy":
+        assert_energy_question(clarifications[0])
+    else:
+        assert [o["option_id"] for o in clarifications[0]["options"]] == ["replay-loss-budget", "no-loss-guarantee", "keep-qualitative"]
+    assert all(rule["threshold"] is None and rule["status"] == "PROPOSED" for rule in drafts(response.body))
 
 
 REJECTED = {
