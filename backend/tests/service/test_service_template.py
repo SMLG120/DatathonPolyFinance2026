@@ -126,6 +126,9 @@ def test_tp08_cors_allows_the_idempotency_header_and_the_code_is_never_in_the_te
     for route in ("CreateInvestigation", "ChallengeInvestigation"):
         text = block("ApiFunction").split(f"        {route}:", 1)[1].split("PayloadFormatVersion", 1)[1][:400]
         assert "ThrottlingRateLimit: 5" in text and "ThrottlingBurstLimit: 10" in text, route
+    # the interpreter route calls the model: throttled, and no looser than the investigation routes
+    interpret = block("ApiFunction").split("        InterpretRules:", 1)[1].split("        ConfirmRules:", 1)[0]
+    assert "ThrottlingRateLimit: 2" in interpret and "ThrottlingBurstLimit: 5" in interpret
     assert "PublicAccessBlockConfiguration" in block("DataBucket") and block("DataBucket").count(": true") == 4
 
 

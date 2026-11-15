@@ -20,11 +20,26 @@ engine and never produces PASS, FAIL or UNKNOWN.
   descriptions and reasons are server templates. The investor's words are
   echoed from the request, character for character. No sentence written by
   the model reaches the client.
-- **Numbers come from the investor only.** A threshold is set only when the
-  investor's own sentence about that rule contains exactly one percentage
-  (`10%`, `10 %`, `10 percent`, `2,5 %`) between 0 and 100. The rule then
-  carries the literal quote and origin `USER_STATED`. In every other case the
-  threshold is null and the investor is asked for the number.
+- **Numbers come from the investor only, and the model cannot choose among
+  them.** A threshold is set only when all of this holds; otherwise it is null
+  and the investor is asked for the number:
+  - the number lies inside the rule's own words, and it is the only number in
+    that sentence (no second percentage, range or alternative; a calendar
+    year such as 2022 does not count);
+  - it is one plain unsigned percentage (`10%`, `10 %`, `10 percent`,
+    `2,5 %`) between 0 and 100, with at most two decimals;
+  - the sentence has no hedge ("about", "roughly", "maybe", "or so");
+  - the sentence carries a direction cue that agrees with the rule type
+    ("at most", "no more than", "do not want to lose more than", "maximum",
+    "cap", "limit" for a maximum; "at least", "minimum" for a minimum) and
+    none for the other direction; an exclusion needs no cue but must not
+    carry a minimum cue;
+  - no negation remains once those cue phrases are removed ("I do not want a
+    10% limit" gives a question).
+  The rule then carries the literal quote and origin `USER_STATED`.
+- **Which company is meant is not left to the model.** When a sentence names
+  several companies and the model's rule targets only some of them, a cap or
+  minimum is reported as unsupported and an exclusion becomes a question.
 - **"Oil" is always a question.** The words "oil", "petroleum", "fossil" or
   "fossil fuel(s)" always produce a clarification offering the fund-reported
   Energy sector or named companies, and marking "oil producers" and "fossil
@@ -67,6 +82,23 @@ engine and never produces PASS, FAIL or UNKNOWN.
 - **A percentage the investor wrote in a plain sentence can be attached to a
   rule by the model.** It then appears as a `PROPOSED` draft with the
   investor's own quote, and stays inactive until confirmed.
+
+- **Direction, negation and company checks are lexical.** They look for fixed
+  English phrases in the investor's sentence. They can only remove a number or
+  turn a draft into a question. They do not understand meaning: a maximum
+  written without one of the cue phrases ("10% per company is my ceiling for
+  tech" works, "I'd stop at 10%" does not) gets a question; a sentence with
+  one company where the model picks the wrong rule type but a matching cue is
+  present is not caught beyond the cue check; for an exclusion of a single
+  named company, whether the investor wants to avoid or keep it rests on the
+  model's code. Every draft stays `PROPOSED` and shows the investor's own
+  words, so the investor sees and must confirm what was understood.
+- **Any other number in the sentence blocks the threshold**, including a
+  horizon ("over 5 years, at most 10% per company" gets a question). Only a
+  four-digit calendar year is ignored.
+- **Throttling:** `POST /rules/interpret` is limited to 2 requests per second
+  (burst 5); the clarify-preference challenge shares the challenge route's
+  limit (5 per second, burst 10).
 
 ## What has and has not been verified
 
