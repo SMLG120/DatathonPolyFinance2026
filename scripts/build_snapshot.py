@@ -37,7 +37,7 @@ for extra in (REPO_ROOT / "contracts" / "python", REPO_ROOT):
 
 import byb_contracts  # noqa: E402
 
-from backend.common.data import DATA_FILES, PERSONA_IDS, build_manifest  # noqa: E402
+from backend.common.data import DATA_FILES, PERSONA_IDS, DataUnavailable, build_manifest, strict_json, validate_snapshot_documents  # noqa: E402
 
 # Source-registry ids of the market data, so price and FX evidence is labelled FACT with its source.
 DATA_SOURCES = {"prices": "starter_prices_daily", "fx_usdcad": "starter_fx_usdcad"}
@@ -52,7 +52,7 @@ def _read(path: Path) -> tuple[bytes, object]:
         raise SnapshotError(f"refusing to read {path.name}")
     try:
         raw = path.read_bytes()
-        return raw, json.loads(raw.decode("utf-8"))
+        return raw, strict_json(raw)  # refuses NaN, Infinity and numbers that overflow
     except (OSError, ValueError) as error:
         raise SnapshotError(f"{path.relative_to(REPO_ROOT)} cannot be read as JSON ({type(error).__name__}). "
                             "The processed data files are git-ignored: build them with data/scripts/build_processed.py.") from error
@@ -64,19 +64,16 @@ def build(processed: Path, scenarios: Path) -> tuple[dict, dict[str, bytes]]:
     documents: dict[str, object] = {}
     for name in DATA_FILES:
         contents[f"{name}.json"], documents[name] = _read(processed / f"{name}.json")
-    byb_contracts.validate_instrument_registry(documents["instruments"])
-    byb_contracts.validate_holdings_snapshot(documents["holdings"])
-    byb_contracts.validate_market_data(documents["market_data"])
-    byb_contracts.validate_source_registry(documents["sources"])
-    byb_contracts.validate_controversy_registry(documents["controversies"], known_source_ids=documents["sources"]["sources"].keys())
-    for role, source_id in DATA_SOURCES.items():
-        if source_id not in documents["sources"]["sources"]:
-            raise SnapshotError(f"market-data source id {source_id!r} ({role}) is not in sources.json")
+    loaded = {persona_id: _read(scenarios / f"{persona_id}.json") for persona_id in PERSONA_IDS}
+    try:
+        # Exactly the checks the Lambdas repeat when they load the snapshot (backend/common/data.py).
+        validate_snapshot_documents(documents, [scenario for _, scenario in loaded.values()], DATA_SOURCES)
+    except DataUnavailable as error:
+        raise SnapshotError(str(error)) from error
     registry = documents["instruments"]["instruments"]
     valuation_date = documents["market_data"]["valuation_date"]
     for persona_id in PERSONA_IDS:
-        raw, scenario = _read(scenarios / f"{persona_id}.json")
-        byb_contracts.validate_scenario(scenario)
+        raw, scenario = loaded[persona_id]
         if scenario["persona"]["persona_id"] != persona_id:
             raise SnapshotError(f"scenarios/{persona_id}.json describes persona {scenario['persona']['persona_id']!r}")
         if scenario["portfolio"]["valuation_date"] != valuation_date:

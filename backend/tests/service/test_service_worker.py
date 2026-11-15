@@ -15,6 +15,7 @@ import json
 import pytest
 from byb_contracts import investigation_job_errors
 
+from backend.agents import explain
 from backend.common.jobview import job_id_for
 from service_fakes import (
     IDEMPOTENCY_KEY,
@@ -37,7 +38,7 @@ RESULT_KEY = f"results/{JOB_ID}.json"
 TRACE_KEY = f"traces/{JOB_ID}.json"
 EVENT = {"job_id": JOB_ID}
 UNIVERSE = "robert_synthetic_universe"
-GOOD_STATEMENT = ("The largest weight that passes every confirmed rule is [[ev-max-final]] of the portfolio.", ["ev-max-final"])
+GOOD_STATEMENT = ("The boundary calculation for this instrument gives [[ev-max-final]] of the portfolio.", ["ev-max-final"])
 
 
 class Env:
@@ -147,12 +148,71 @@ def test_wk01b_decisive_sentences_are_the_engines_templates_and_model_text_is_on
     # The figure in the kept sentence was printed by the server from the cited record, not typed by the model.
     record = next(r for r in result["evidence"] if r["evidence_id"] == "ev-max-final")
     from backend.engine.text import pct
-    assert model_written[0]["text"] == f"The largest weight that passes every confirmed rule is {pct(record['value'])} of the portfolio."
+    # ...together with what that record measures, in the service's words (metric, subject, state, date).
+    assert model_written[0]["text"] == (
+        f"The boundary calculation for this instrument gives {pct(record['value'])} (final direct weight computed by the boundary calculation, "
+        f"instrument NVDA, after the purchase, as of {result['valuation_date']}) of the portfolio.")
+
     assert view["explanation"][-1]["text"].startswith("This is a simulation") and view["explanation"][-1]["rendered_by"] == "TEMPLATE"
     assert [s["statement_id"] for s in view["explanation"]] == [f"st-{i + 1}" for i in range(len(view["explanation"]))]
     assert len(env.s3.json(TRACE_KEY)["explanation_rejections"]) == 6
     for text in texts:
         assert "recommend" not in text and "https://" not in text and "12%" not in text
+
+
+# Validator finding F-03: model text that contradicts the calculation, gives advice, or attaches a value to the wrong
+# asset, unit or period must not be returned by GET /investigations/{id} - dropped, not flagged and shown.
+CONTRADICTIONS = [
+    ("Every rule passes.", ["ev-max-final"]),
+    ("Every rule passes at [[ev-max-final]].", ["ev-max-final"]),
+    ("All rules are satisfied with [[ev-max-final]].", ["ev-max-final"]),
+    ("This purchase is compliant: [[ev-cash-after]] stays in cash.", ["ev-cash-after"]),
+    ("No rule is broken, cash is [[ev-cash-after]].", ["ev-cash-after"]),
+    ("With [[ev-cash-after]] left this is fine.", ["ev-cash-after"]),
+    ("The exposure of [[ev-max-final]] is within the limit.", ["ev-max-final"]),
+    ("At [[ev-max-final]] the portfolio is safe.", ["ev-max-final"]),
+    ("There is nothing to worry about at [[ev-max-final]].", ["ev-max-final"]),
+    ("You should buy.", ["ev-max-final"]),
+    ("You should buy up to [[ev-max-final]].", ["ev-max-final"]),
+    ("Buy [[ev-max-final]] of it.", ["ev-max-final"]),
+    ("I would go ahead with [[ev-max-final]].", ["ev-max-final"]),
+    ("It will rise, so [[ev-max-final]] is attractive.", ["ev-max-final"]),
+    ("The SPY weight is [[ev-max-final]].", ["ev-max-final"]),                       # wrong asset
+    ("Microsoft would be [[ev-max-final]] of the portfolio.", ["ev-max-final"]),     # wrong company (in the registry, not in the result)
+    ("The position in TSLA is [[ev-max-final]] of the portfolio.", ["ev-max-final"]), # a ticker nothing here is about
+    ("The figure for Tesla is [[ev-max-final]] of the portfolio.", ["ev-max-final"]), # a name nothing here is about
+    ("The price is [[ev-max-final]] dollars.", ["ev-max-final"]),                    # wrong unit
+    ("That is [[ev-max-final]] shares.", ["ev-max-final"]),                          # wrong unit
+    ("Over the last year the figure was [[ev-max-final]].", ["ev-max-final"]),       # wrong period
+    ("In March the weight was [[ev-max-final]].", ["ev-max-final"]),                 # wrong period
+    ("The loss in the replay is [[ev-max-final]], which is 0.", ["ev-max-final"]),   # a typed figure
+    ("Missing holdings mean zero exposure, so [[ev-max-final]] stands.", ["ev-max-final"]),
+    ("The result is unknown but [[ev-max-final]] is acceptable.", ["ev-max-final"]),
+]
+
+
+@pytest.mark.parametrize("statement", CONTRADICTIONS, ids=[text for text, _ in CONTRADICTIONS])
+def test_wk01c_unsupported_model_statements_are_dropped_not_returned(env, statement):
+    env.run([final_response(model_answer(statement))])
+    view = env.view()
+    assert view["status"] == "SUCCEEDED" and view["result"] == env.expected
+    assert all(s["rendered_by"] == "TEMPLATE" for s in view["explanation"])
+    import re
+    longest = max((piece.strip() for piece in re.split(r"\[\[[^\]]*\]\]", statement[0])), key=len)
+    assert len(longest) < 12 or longest not in json.dumps(view, ensure_ascii=False)  # nowhere in the public job
+    assert "verified_against_evidence" not in json.dumps(view)  # there is no "shown but flagged" state
+    # The decisive sentences are still there, from the engine.
+    for entry in view["result"]["rule_results"]:
+        assert any(entry["reason"] in s["text"] for s in view["explanation"])
+
+
+def test_wk01d_free_text_and_wrapped_answers_are_dropped(env):
+    for answer in ["Every rule passes. You should buy.", "```json\n{\"verdict\": \"PASS\"}\n```",
+                   '{"statements": "Every rule passes."}', '{"statements": ["Every rule passes."]}',
+                   '{"statements": [{"text": "Every rule passes.", "evidence_ids": []}]}',
+                   '{"statements": [{"text": "Every rule passes.", "evidence_ids": ["ev-not-real"]}]}']:
+        accepted, _ = explain.accept_model_statements(explain.parse_model_answer(answer), env.expected, 1)
+        assert accepted == []
 
 
 def test_wk02_request_sent_to_bedrock_is_bounded_and_wraps_the_request_as_data(env):

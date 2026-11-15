@@ -378,7 +378,7 @@ class InvestigationWorker:
         templates = explain.template_statements(result)
         accepted: list[dict[str, Any]] = []
         if fallback is None:
-            accepted, rejected = explain.accept_model_statements(candidates, result, len(templates))
+            accepted, rejected = explain.accept_model_statements(candidates, result, len(templates), known_ids=snapshot.subject_ids())
             extras["explanation_rejections"] = rejected
         extras["fallback"] = fallback
         agent = {
