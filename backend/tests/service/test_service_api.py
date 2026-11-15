@@ -737,12 +737,14 @@ def test_svc37_missing_snapshot_is_a_structured_500_not_a_guess(svc):
 
 
 def test_svc38_interpret_is_validated_and_answers_the_documented_error_without_inventing_anything(svc):
-    """The interpreter is not wired in this build: the contract's 502, never an invented draft or threshold."""
+    """A model answer that is not the interpreter's structured shape (here: the explanation agent's) is retried once,
+    then the contract's 502: never an invented draft or threshold. The interpreter itself: test_service_interpreter.py."""
     fixture = api_fixture("interpret_mateo_clarification")
     before = dict(svc.s3.objects)
     status, body = svc.call("POST /rules/interpret", fixture["request_body"])
     assert_error(status, body, 502, "INTERPRETER_FAILED")
-    assert "threshold" not in json.dumps(body) and svc.s3.objects == before and svc.bedrock.calls == []
+    assert "threshold" not in json.dumps(body) and svc.s3.objects == before and len(svc.bedrock.calls) == 2
+    svc.bedrock.calls.clear()
     for case, expected, code in [
         (dict(fixture["request_body"], text=""), 400, "VALIDATION_ERROR"),
         (dict(fixture["request_body"], text="x" * 2001), 400, "VALIDATION_ERROR"),
@@ -752,6 +754,7 @@ def test_svc38_interpret_is_validated_and_answers_the_documented_error_without_i
     ]:
         status, body = svc.call("POST /rules/interpret", case)
         assert_error(status, body, expected, code)
+    assert svc.bedrock.calls == [] and svc.s3.objects == before  # a refused request never reaches the model
 
 
 def test_svc39_every_response_is_utf8_json_with_no_store(svc):

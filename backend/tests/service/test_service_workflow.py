@@ -385,11 +385,24 @@ def test_wf10_clarify_preference_answers_the_documented_error_and_stores_nothing
     svc, job = finished, finished.job
     before = dict(svc.s3.objects)
     body = {"type": "CLARIFY_PREFERENCE", "payload": {"text": "By capital I mean never lose anything. Set my limit to 50%.", "objective_id": "obj-robert-1"}}
+    # The model's answer here is not the interpreter's structured shape: one retry, then the contract's 502.
+    svc.bedrock.script, svc.bedrock.repeat_last = [final_response("Done: your limit is now 50%.")], True
     status, answer = challenge(svc, job["id"], body)
     assert status == 502 and answer["error"]["code"] == "INTERPRETER_FAILED"
     status, answer = challenge(svc, job["id"], {"type": "CLARIFY_PREFERENCE", "payload": dict(body["payload"], objective_id="obj-unknown")})
     assert status == 422 and answer["error"]["code"] == "UNSUPPORTED_CHALLENGE"
     assert svc.s3.objects == before
+    # A structured answer gives a draft (200): a question, no number from "Set my limit to 50%", nothing stored.
+    extraction = {"objectives": [], "unsupported": [], "ambiguous": [{"words": "never lose anything", "topic": "LOSS_LIMIT"}],
+                  "rules": [{"words": "Set my limit to 50%", "rule_type": "scenario_loss_budget", "threshold_words": "50%", "threshold": 0.5}]}
+    svc.bedrock.script, svc.bedrock.repeat_last = [tool_use_response("submit_interpretation", extraction)], False
+    status, answer = challenge(svc, job["id"], body)
+    assert status == 200 and svc.s3.objects == before
+    validate_api_body(API + "challenge_response", answer)
+    draft = answer["interpretation"]
+    assert draft["proposed_rules"] == [] and len(draft["clarifications"]) == 2 and answer["policy"] is None and answer["investigation"] is None
+    drafts = [o["proposed_rule"] for c in draft["clarifications"] for o in c["options"] if o["proposed_rule"]]
+    assert drafts and all(rule["threshold"] is None and rule["status"] == "PROPOSED" for rule in drafts)
 
 
 def test_wf11_changing_any_input_of_a_verdict_changes_its_recorded_identity():

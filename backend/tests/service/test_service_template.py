@@ -6,7 +6,7 @@ Nothing here talks to AWS. The template is not deployed by this change; these te
 import re
 
 import pytest
-from byb_contracts.constants import INVESTIGATION_DEADLINE_SECONDS
+from byb_contracts.constants import INTERPRET_TIMEOUT_SECONDS, INVESTIGATION_DEADLINE_SECONDS
 
 from backend.api.handler import Api
 from service_fakes import REPO_ROOT
@@ -53,7 +53,16 @@ def test_tp03_timeouts_agree_with_the_contract_deadline():
     worker_timeout = int(re.search(r"^      Timeout: (\d+)$", block("WorkerFunction"), re.M).group(1))
     api_timeout = int(re.search(r"^      Timeout: (\d+)$", block("ApiFunction"), re.M).group(1))
     assert worker_timeout >= INVESTIGATION_DEADLINE_SECONDS + 10 and worker_timeout <= 900
-    assert api_timeout < 20 and set(re.findall(r"TimeoutInMillis: (\d+)", TEMPLATE)) == {"20000"}  # under the 30 s integration limit
+    # The API function outlasts the interpreter's 20 s server deadline (so the handler, not Lambda, answers 504) and
+    # stays under the 30 s HTTP API integration limit; only the two interpreter entry points get the longer integration.
+    assert INTERPRET_TIMEOUT_SECONDS < api_timeout < 29
+    integration = {route: int(block("ApiFunction").split(f"        {route}:", 1)[1].split("TimeoutInMillis: ", 1)[1].split("\n", 1)[0])
+                   for route in ("CreateInvestigation", "GetInvestigation", "ChallengeInvestigation", "GetPortfolio", "InterpretRules", "ConfirmRules", "Check")}
+    assert {route for route, millis in integration.items() if millis != 20000} == {"InterpretRules", "ChallengeInvestigation"}
+    assert all(api_timeout * 1000 < integration[route] <= 30000 for route in ("InterpretRules", "ChallengeInvestigation"))
+    from backend.api import handler
+
+    assert handler.INTERPRETER_CALL_BUDGET_SECONDS < INTERPRET_TIMEOUT_SECONDS
     assert "MaximumRetryAttempts: 0" in block("WorkerFunction") and "ReservedConcurrentExecutions: !Ref WorkerReservedConcurrency" in block("WorkerFunction")
 
 
@@ -80,11 +89,19 @@ def test_tp05_snapshots_are_read_only_and_every_write_is_conditional():
 def test_tp06_api_role_reads_and_writes_exactly_what_the_routes_need():
     api = statements("ApiFunctionRole")
     assert set(api) == {"WriteOwnLogs", "ReadJobsResultsPoliciesAndSnapshots", "CreatePolicyVersionOnlyIfAbsent", "CreateJobOnlyIfAbsent",
-                        "UpdateJobOnlyByCompareAndSwap", "ListJobsAndPoliciesPrefixesOnly", "DispatchToWorkerOnly"}
+                        "UpdateJobOnlyByCompareAndSwap", "ListJobsAndPoliciesPrefixesOnly", "DispatchToWorkerOnly",
+                        "InterpreterConverseThroughInferenceProfile", "InterpreterRoutedFoundationModelsOnlyViaThatProfile"}
     assert set(re.findall(r"\$\{DataBucket\.Arn\}/(\w+)/\*", api["ReadJobsResultsPoliciesAndSnapshots"])) == {"jobs", "results", "policies", "snapshots"}
     assert "policies/*" in api["CreatePolicyVersionOnlyIfAbsent"] and "if-none-match" in api["CreatePolicyVersionOnlyIfAbsent"]
     assert re.findall(r"^ {22}- (\S+)$", api["ListJobsAndPoliciesPrefixesOnly"], re.M) == ["jobs/*", "policies/*"]
-    assert "bedrock" not in "".join(api.values()) and "traces" not in "".join(api.values())
+    assert "traces" not in "".join(api.values())
+    # Bedrock for the rule interpreter only: Converse (InvokeModel) through the one inference profile, exactly as the worker.
+    worker = statements("WorkerFunctionRole")
+    for mine, theirs in (("InterpreterConverseThroughInferenceProfile", "ConverseThroughInferenceProfile"),
+                         ("InterpreterRoutedFoundationModelsOnlyViaThatProfile", "RoutedFoundationModelsOnlyViaThatProfile")):
+        assert api[mine].split("\n", 1)[1] == worker[theirs].split("\n", 1)[1]
+    assert sorted(sid for sid, text in api.items() if "bedrock" in text) == ["InterpreterConverseThroughInferenceProfile", "InterpreterRoutedFoundationModelsOnlyViaThatProfile"]
+    assert "InvokeModelWithResponseStream" not in block("ApiFunctionRole") and 'INTERPRETER_ENABLED: "true"' in block("ApiFunction")
     assert "Resource: !GetAtt WorkerFunction.Arn" in api["DispatchToWorkerOnly"]
     put_targets = {target for text in api.values() if "s3:PutObject" in text for target in re.findall(r"\}/(\w+)/\*", text)}
     assert put_targets == {"jobs", "policies"}

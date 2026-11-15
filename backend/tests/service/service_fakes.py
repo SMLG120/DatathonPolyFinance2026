@@ -320,8 +320,19 @@ def confirm_body(persona_id: str = "robert", rules: list[dict[str, Any]] | None 
     return body
 
 
+def build_interpreter(bedrock: "FakeBedrock", clock: FakeClock, **options: Any):
+    """The interpreter wired the way ``backend.api.handler._build_interpreter`` wires it, on the fake Bedrock."""
+    from backend.agents.bedrock_client import BedrockConverse
+    from backend.agents.interpreter import Interpreter
+
+    counter = iter(range(1, 10_000))
+    model = BedrockConverse(bedrock, "test-model", clock, max_attempts=2, base_delay_seconds=0.5, max_delay_seconds=1.0,
+                            min_call_budget_seconds=13.0, rng=lambda: 1.0)
+    return Interpreter(model, clock, new_id=lambda: hashlib.sha256(f"int-{next(counter)}".encode()).hexdigest()[:32], call_budget_seconds=13.0, **options)
+
+
 def build_api(s3: FakeS3, lambda_client: FakeLambda, clock: FakeClock, *, deadline_seconds: int = 150, snapshot_id: str | None = None,
-              ids: list[str] | None = None):
+              ids: list[str] | None = None, bedrock: "FakeBedrock | None" = None):
     from backend.api.handler import Api
     from backend.common.config import ApiConfig
     from backend.common.data import S3SnapshotSource, SnapshotLoader
@@ -340,6 +351,7 @@ def build_api(s3: FakeS3, lambda_client: FakeLambda, clock: FakeClock, *, deadli
         lambda_client=lambda_client,
         config=config,
         clock=clock,
+        interpreter=build_interpreter(bedrock, clock) if bedrock is not None else None,
         # Deterministic and distinct in their first characters, like the uuid4 hex used in production.
         new_id=lambda: queue.pop(0) if queue else hashlib.sha256(str(next(counter)).encode()).hexdigest()[:32],
     )
@@ -378,7 +390,7 @@ class Service:
         self.clock = FakeClock()
         self.bedrock = FakeBedrock(bedrock_script if bedrock_script is not None else [final_response(EMPTY_ANSWER)], repeat_last=bedrock_script is None)
         self.snapshot_id = install_snapshot(self.s3, universe)
-        self.api = build_api(self.s3, self.lambda_client, self.clock, snapshot_id=self.snapshot_id)
+        self.api = build_api(self.s3, self.lambda_client, self.clock, snapshot_id=self.snapshot_id, bedrock=self.bedrock)
         self.worker = build_worker(self.s3, self.bedrock, self.clock, snapshot_id=self.snapshot_id, **worker_options)
         self._context = 0
 
