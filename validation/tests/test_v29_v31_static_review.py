@@ -198,18 +198,133 @@ def test_v29_every_route_is_behind_the_authorizer_and_there_is_no_default_route(
     assert "Events:" not in resources()["WorkerFunction"], "the worker has no public trigger"
 
 
+CANONICAL_ROUTES = {("GET", "/portfolios/{persona_id}"), ("POST", "/rules/interpret"), ("POST", "/rules/confirm"), ("POST", "/check"),
+                    ("POST", "/investigations"), ("GET", "/investigations/{id}"), ("POST", "/investigations/{id}/challenge")}
+
+
 @pytest.mark.vcase("V29")
-def test_v29_declared_routes_are_only_those_this_review_covered():
-    """On the release candidate this fails until the new routes are re-reviewed and added here: every route must keep
-    the authorizer and a throttle (contracts/api.md, Authentication: "Every route requires ...")."""
+def test_v29_declared_routes_are_exactly_the_seven_of_the_contract():
+    """Re-reviewed on the candidate df33dd6: the seven routes of contracts/api.md, all events of ApiFunction, all attached
+    to HttpApi (default authorizer), none with its own Auth block. The two routes that start an investigation carry
+    the tighter throttle."""
     text = TEMPLATE.read_text()
-    routes = set(re.findall(r"Method: (GET|POST|PUT|DELETE|PATCH|ANY)\s*\n\s+Path: (\S+)", text))
-    reviewed = {("POST", "/investigations"), ("GET", "/investigations/{id}")}
-    canonical = reviewed | {("GET", "/portfolios/{persona_id}"), ("POST", "/rules/interpret"), ("POST", "/rules/confirm"), ("POST", "/check"),
-                            ("POST", "/investigations/{id}/challenge")}
-    assert routes <= canonical, f"routes outside contracts/api.md: {sorted(routes - canonical)}"
-    if routes != reviewed:
-        assert routes == canonical, f"a release candidate must declare all seven routes; missing: {sorted(canonical - routes)}"
+    routes = re.findall(r"Method: (GET|POST|PUT|DELETE|PATCH|ANY)\s*\n\s+Path: (\S+)", text)
+    assert len(routes) == len(set(routes)) and set(routes) == CANONICAL_ROUTES, sorted(set(routes) ^ CANONICAL_ROUTES)
+    api_function = resources()["ApiFunction"]
+    assert api_function.count("Type: HttpApi") == 7 and api_function.count("ApiId: !Ref HttpApi") == 7
+    for path in ("/investigations", "/investigations/{id}/challenge"):
+        block = api_function.split(f"Path: {path}\n", 1)[1].split("Type: HttpApi")[0]
+        assert re.search(r"ThrottlingBurstLimit: 10\s*\n\s+ThrottlingRateLimit: 5\b", block), f"{path} starts model work and needs the tight throttle"
+
+
+# Every identity statement of the candidate, read one by one on df33dd6: (action, key prefix or resource, write condition).
+REVIEWED_STATEMENTS = {
+    "ApiFunctionRole": {
+        ("logs:CreateLogStream", "!GetAtt ApiLogGroup.Arn", ""), ("logs:PutLogEvents", "!GetAtt ApiLogGroup.Arn", ""),
+        ("s3:GetObject", "jobs/*", ""), ("s3:GetObject", "results/*", ""), ("s3:GetObject", "policies/*", ""), ("s3:GetObject", "snapshots/*", ""),
+        ("s3:PutObject", "policies/*", "if-none-match"), ("s3:PutObject", "jobs/*", "if-none-match"), ("s3:PutObject", "jobs/*", "if-match"),
+        ("s3:ListBucket", "!GetAtt DataBucket.Arn", "prefix:jobs/*,policies/*"),
+        ("lambda:InvokeFunction", "!GetAtt WorkerFunction.Arn", ""),
+    },
+    "WorkerFunctionRole": {
+        ("logs:CreateLogStream", "!GetAtt WorkerLogGroup.Arn", ""), ("logs:PutLogEvents", "!GetAtt WorkerLogGroup.Arn", ""),
+        ("s3:GetObject", "jobs/*", ""), ("s3:GetObject", "policies/*", ""), ("s3:GetObject", "snapshots/*", ""),
+        ("s3:PutObject", "jobs/*", "if-match"), ("s3:PutObject", "results/*", "if-none-match"), ("s3:PutObject", "traces/*", "if-none-match"),
+        ("bedrock:InvokeModel", "inference-profile", ""), ("bedrock:InvokeModel", "foundation-model", "profile"),
+    },
+    "AuthorizerFunctionRole": {
+        ("logs:CreateLogStream", "!GetAtt AuthorizerLogGroup.Arn", ""), ("logs:PutLogEvents", "!GetAtt AuthorizerLogGroup.Arn", ""),
+        ("ssm:GetParameter", "parameter${AccessCodeParameterName}", ""),
+    },
+}
+
+
+def _grants(role: str) -> set[tuple[str, str, str]]:
+    out = set()
+    for statement in statements(resources()[role]):
+        condition = statement["condition"]
+        if "s3:if-none-match" in condition:
+            kind = "if-none-match"
+        elif "s3:if-match" in condition:
+            kind = "if-match"
+        elif "s3:prefix" in condition:
+            kind = "prefix:" + ",".join(re.findall(r"- (\S+)", condition))
+        elif "bedrock:InferenceProfileArn" in condition:
+            kind = "profile"
+        else:
+            assert condition.strip() == "", f"{role}/{statement['sid']}: unreviewed condition"
+            kind = ""
+        lines = [line.strip().lstrip("- ").strip() for line in statement["resources"].splitlines() if line.strip()]
+        for action in statement["actions"]:
+            for resource in lines:
+                prefix = re.fullmatch(r"!Sub \$\{DataBucket\.Arn\}/(\w+/\*)", resource)
+                if prefix:
+                    resource = prefix.group(1)
+                elif "inference-profile/${BedrockModelId}" in resource:
+                    resource = "inference-profile"
+                elif re.search(r":bedrock:us-(east-1|east-2|west-2)::foundation-model/\$\{BedrockFoundationModelId\}$", resource):
+                    resource = "foundation-model"
+                elif resource.endswith("parameter${AccessCodeParameterName}"):
+                    resource = "parameter${AccessCodeParameterName}"
+                out.add((action, resource, kind))
+    return out
+
+
+@pytest.mark.vcase("V29")
+@pytest.mark.parametrize("role", sorted(ROLES))
+def test_v29_every_grant_is_the_one_reviewed_on_the_candidate(role):
+    """Second pass (df33dd6). New since d36e41f and judged acceptable: the API function reads policies/ and snapshots/
+    (POST /check runs the engine there), creates a policy version only if absent, and lists only jobs/ and policies/;
+    the worker reads policies/ and snapshots/. Nobody can write snapshots/, nobody can delete, the API function cannot
+    write results/ or traces/ or read traces/, the worker cannot write policies/ or list the bucket."""
+    assert _grants(role) == REVIEWED_STATEMENTS[role], sorted(_grants(role) ^ REVIEWED_STATEMENTS[role])
+
+
+@pytest.mark.vcase("V29")
+def test_v29_no_role_can_write_the_data_snapshot_or_overwrite_a_policy_version():
+    for role in ROLES:
+        for action, resource, kind in _grants(role):
+            if action == "s3:PutObject":
+                assert resource != "snapshots/*", f"{role} could change the data a verdict is computed from"
+                assert resource != "policies/*" or (role == "ApiFunctionRole" and kind == "if-none-match"), "a confirmed policy version is write-once"
+                assert resource not in ("results/*", "traces/*") or (role == "WorkerFunctionRole" and kind == "if-none-match")
+
+
+@pytest.mark.vcase("V29")
+def test_v29_a_rotated_access_code_stops_working_within_the_function_cache_only():
+    """Closes F-09: API Gateway no longer caches the authorizer's answer (ReauthorizeEvery 0); the only delay is the
+    function's own cache of the SSM value (30 s)."""
+    api, authorizer = resources()["HttpApi"], resources()["AuthorizerFunction"]
+    assert re.search(r"^\s+ReauthorizeEvery: 0\s*$", api, re.M)
+    seconds = re.search(r'ACCESS_CODE_CACHE_SECONDS: "(\d+)"', authorizer)
+    assert seconds and int(seconds.group(1)) <= 60
+
+
+@pytest.mark.vcase("V29")
+def test_v29_both_functions_are_pinned_to_one_data_snapshot_and_the_packaged_schemas():
+    for name in ("ApiFunction", "WorkerFunction"):
+        body = resources()[name]
+        assert "DATA_SNAPSHOT_ID: !Ref DataSnapshotId" in body and "BYB_SCHEMA_DIR: /var/task/byb_contracts/schemas" in body
+    parameter = "\n".join(_section("Parameters")).split("  DataSnapshotId:", 1)[1].split("\n  WorkerReservedConcurrency:")[0]
+    assert "Default:" not in parameter and "AllowedPattern: ^snap-" in parameter, "the snapshot id has no default: a deployment names its data"
+    assert "BEDROCK" not in "".join(re.findall(r"^          ([A-Z_]+): ", resources()["AuthorizerFunction"], re.M))
+
+
+@pytest.mark.vcase("V29")
+def test_v29_the_deploy_script_refuses_a_wildcard_origin_by_default():
+    """Partial mitigation of F-08, and its limit: the guard is a constant in one script. The template itself still
+    defaults to "*", so any other deployment path (console, CLI, another script, or the constant set to True) gets it."""
+    script = (REPO_ROOT / "scripts" / "mcp" / "02_deploy.py").read_text()
+    assert re.search(r"^ALLOW_WILDCARD_ORIGIN = False\s*$", script, re.M), "the committed default must refuse"
+    guard = script.index('if EXECUTE and report["cors_refusal"]')
+    assert guard < script.index('"ExecuteChangeSet"'), "the refusal is evaluated before the change set is executed"
+    source = script[script.index("def origin_refusal("):script.index("TEMPLATE_URL =")]
+    scope: dict = {}
+    exec(compile(source, "origin_refusal", "exec"), scope)  # a pure function of two arguments, read above
+    refusal = scope["origin_refusal"]
+    assert refusal("*", False) and refusal(" * ", False) and refusal("", False) and refusal(None, False)
+    assert refusal("http://evil.example", False) and refusal("//evil.example", False) and refusal("null", False)
+    assert refusal("https://main.abc123.amplifyapp.com", False) is None and refusal("*", True) is None
 
 
 @pytest.mark.vcase("V29")
@@ -242,8 +357,9 @@ def test_v29_cors_allows_only_the_needed_methods_and_headers_and_no_credentials(
 
 
 @pytest.mark.vcase("V29")
-@pytest.mark.xfail(strict=True, reason="V29a: CORS AllowedOrigin defaults to \"*\" (infra/template.yaml Parameters.AllowedOrigin); "
-                                       "the template's own rule (HttpApi Metadata `must`): temporary, set it to the Amplify origin once known")
+@pytest.mark.xfail(strict=True, reason="F-08 / V29a (LOW, open): CORS AllowedOrigin still defaults to \"*\" in infra/template.yaml; the only guard "
+                                       "is a constant in scripts/mcp/02_deploy.py, which any other deployment path bypasses. The template's own "
+                                       "rule (HttpApi Metadata `must`): a deployment serving a hosted frontend must pass the exact origin")
 def test_v29_cors_origin_is_restricted_to_the_hosted_frontend():
     text = TEMPLATE.read_text()
     default = re.search(r"  AllowedOrigin:\s*\n\s+Type: String\s*\n(\s+Default: (\S+)\s*\n)?", text)
@@ -328,6 +444,9 @@ def test_v30_no_env_file_credential_file_or_restricted_data_is_tracked():
         if re.search(r"\.(xlsx|xls|parquet|zip|sqlite|db)$", name, re.I):
             bad.append(name)
     assert bad == [], f"tracked files that must not be in the repository: {bad}"
+    processed = sorted(name for name in tracked_files() if name.startswith("data/processed/"))
+    assert processed == ["data/processed/controversies.json", "data/processed/sources.json"], (
+        f"only the curated controversy and source registries may be tracked under data/processed (data/.gitignore): {processed}")
     example = (REPO_ROOT / "frontend" / ".env.example").read_text()
     values = [line.split("=", 1)[1].strip() for line in example.splitlines() if "=" in line and not line.lstrip().startswith("#")]
     assert all(len(v) < 100 and not re.search(r"[A-Za-z0-9]{32,}", v) for v in values), ".env.example must not hold a real value"
