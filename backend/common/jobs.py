@@ -42,7 +42,8 @@ ALLOWED_TRANSITIONS = {
     RUNNING: frozenset({SUCCEEDED, FAILED}),
 }
 
-JOB_ID_RE = re.compile(r"inv_[0-9a-f]{32}")
+# The contract id pattern allows no underscore: "inv-" + 32 hexadecimal characters.
+JOB_ID_RE = re.compile(r"inv-[0-9a-f]{32}")
 
 _PRECONDITION_FAILED = {"PreconditionFailed", "412"}
 _CONDITIONAL_CONFLICT = {"ConditionalRequestConflict", "409"}
@@ -102,8 +103,13 @@ def _error_code(error: ClientError) -> str:
     return str(error.response.get("Error", {}).get("Code", ""))
 
 
+def correction_prefix(job_id: str) -> str:
+    return f"jobs/{job_id}/corrections/"
+
+
 def _dumps(document: dict[str, Any]) -> bytes:
-    return json.dumps(document, separators=(",", ":"), sort_keys=True, allow_nan=False).encode("utf-8")
+    # UTF-8 end to end: formula strings contain characters such as "≈".
+    return json.dumps(document, separators=(",", ":"), sort_keys=True, ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 
 class JobStore:
@@ -140,7 +146,7 @@ class JobStore:
             raw = body.read()
         finally:
             body.close()
-        return json.loads(raw), response["ETag"]
+        return json.loads(raw.decode("utf-8")), response["ETag"]
 
     def _exists(self, key: str) -> bool:
         listing = self._s3.list_objects_v2(Bucket=self._bucket, Prefix=key, MaxKeys=1)
@@ -163,7 +169,7 @@ class JobStore:
             "Bucket": self._bucket,
             "Key": key,
             "Body": _dumps(document),
-            "ContentType": "application/json",
+            "ContentType": "application/json; charset=utf-8",
         }
         if if_none_match:
             arguments["IfNoneMatch"] = "*"
@@ -257,3 +263,23 @@ class JobStore:
 
     def put_trace(self, job_id: str, trace: dict[str, Any]) -> bool:
         return self._put_once(trace_key(job_id), trace)
+
+    # ------------------------------------------------------------ corrections
+
+    def put_correction(self, job_id: str, correction: dict[str, Any]) -> bool:
+        """A proposed correction is its own write-once object next to the job.
+
+        The terminal job document is never rewritten: ``proposed_corrections`` is the one member
+        allowed to grow after a terminal state, and it grows by adding objects, not by editing.
+        """
+        return self._put_once(correction_prefix(job_id) + f"{correction['correction_id']}.json", correction)
+
+    def list_corrections(self, job_id: str) -> list[dict[str, Any]]:
+        """Needs ``s3:ListBucket`` on the ``jobs/`` prefix (the API role)."""
+        listing = self._s3.list_objects_v2(Bucket=self._bucket, Prefix=correction_prefix(job_id), MaxKeys=200)
+        corrections = []
+        for item in listing.get("Contents", []):
+            found = self._get_json(item["Key"])
+            if found is not None:
+                corrections.append(found[0])
+        return sorted(corrections, key=lambda c: (c["provenance"]["asserted_at"], c["correction_id"]))

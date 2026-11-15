@@ -15,3 +15,4 @@ simulation only: no advice, no recommendations, no trades, no forecasts.
 - Never commit credentials, `.env` files, `reference/`, `data/raw/` or the
   Yahoo-derived starter prices. See `.gitignore`.
 - Development agents are defined in `.claude/agents/`.
+- Process rules (milestone stops, deadline, cut order, AWS fields, holdings directory): `docs/PLAN.md`. Stop at every milestone and wait for the owner's "continue".

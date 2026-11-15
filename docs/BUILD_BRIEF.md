@@ -37,7 +37,8 @@ map, an additional questionnaire, broad controversy coverage, additional funds
 and assets.
 
 Never add: portfolio recommendations, return forecasting, autonomous trading,
-a general optimizer, a 3D values map.
+a general optimizer, a 3D values map. (A 3D chart of issuer exposure is a
+separate, owner-approved enhancement: see `docs/PLAN.md` P9.)
 
 ## 2. Financial meanings
 
@@ -153,8 +154,12 @@ Mateo:
 - Record controversy dates, allegation vs finding, source and coverage.
 - Absence from the registry is UNKNOWN, not proof of no controversy.
 
-`build_dataset.py` is referenced by the starter README but was **not
-supplied**. Write a documented acquisition script instead of assuming it exists.
+`build_dataset.py`: not located in the current checkout; user reports it
+exists in `alphaforge_starter`. See `docs/PLAN.md` P5. When it is available,
+inspect it and reuse or adapt it, preserving its behaviour.
+
+Fund holdings come from issuer files placed locally by the team
+(`docs/PLAN.md` P6). The demo never depends on live issuer access.
 
 ## 5. Historical scenarios
 

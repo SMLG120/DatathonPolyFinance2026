@@ -2,13 +2,14 @@
   "fixture": true,
   "fixture_id": "M1",
   "synthetic": true,
-  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data.",
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. In this universe the three controversy records are fixture records that copy only the issuer, the event date and the nature of the records in the project's registry; they are not sources.",
   "title": "Mateo-shaped: SPY to 15% with an Energy-label exclusion and a controversy exclusion",
   "tests": [
     "starting portfolio finding",
     "missing holdings",
-    "proven failure plus unknown checks",
-    "registry absence is unknown"
+    "unlabelled constituents are unknown, not zero",
+    "controversy record match",
+    "purchase effect kept apart from an existing breach"
   ],
   "universe": "mateo_synthetic_universe.json",
   "hand_calc": "M1",
@@ -151,8 +152,50 @@
         "rule_id": "mateo-excl-energy-1",
         "status": "FAIL",
         "measured": {
+          "lower": 0.014,
+          "upper": 0.318
+        },
+        "limit": 0.0,
+        "gap": 0.014,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ENBRIDGE",
+            "lower": 0.008,
+            "upper": 0.162
+          },
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "CANADIAN_NATURAL_RESOURCES",
+            "lower": 0.006,
+            "upper": 0.16
+          }
+        ],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS",
+          "UNCLASSIFIED_SECTOR"
+        ],
+        "starting": {
+          "status": "FAIL",
+          "measured": {
+            "lower": 0.014,
+            "upper": 0.168
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.25
+          }
+        ]
+      },
+      {
+        "rule_id": "mateo-controversy-1",
+        "status": "FAIL",
+        "measured": {
           "lower": 0.017,
-          "upper": 0.171
+          "upper": 0.65
         },
         "limit": 0.0,
         "gap": 0.017,
@@ -178,41 +221,13 @@
         ],
         "unknown_causes": [
           "MISSING_HOLDINGS",
-          "PARTIAL_HOLDINGS"
+          "PARTIAL_HOLDINGS",
+          "REGISTRY_ABSENCE"
         ],
         "starting": {
           "status": "FAIL",
           "measured": {
             "lower": 0.014,
-            "upper": 0.168
-          }
-        },
-        "out_of_scope": [
-          {
-            "instrument_id": "XBB.TO",
-            "weight": 0.25
-          }
-        ]
-      },
-      {
-        "rule_id": "mateo-controversy-1",
-        "status": "UNKNOWN",
-        "measured": {
-          "lower": 0.0,
-          "upper": 0.65
-        },
-        "limit": 0.0,
-        "gap": null,
-        "breaching_subjects": [],
-        "unknown_causes": [
-          "MISSING_HOLDINGS",
-          "PARTIAL_HOLDINGS",
-          "REGISTRY_ABSENCE"
-        ],
-        "starting": {
-          "status": "UNKNOWN",
-          "measured": {
-            "lower": 0.0,
             "upper": 0.5
           }
         },
@@ -250,8 +265,36 @@
           }
         ],
         "purchase_effect": {
+          "lower_change": 0.0,
+          "upper_change": 0.15
+        }
+      },
+      {
+        "rule_id": "mateo-controversy-1",
+        "status": "FAIL",
+        "measured": {
+          "lower": 0.014,
+          "upper": 0.5
+        },
+        "limit": 0.0,
+        "gap": 0.014,
+        "breaching_subjects": [
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "ENBRIDGE",
+            "lower": 0.008,
+            "upper": 0.162
+          },
+          {
+            "subject_kind": "ISSUER",
+            "subject_id": "CANADIAN_NATURAL_RESOURCES",
+            "lower": 0.006,
+            "upper": 0.16
+          }
+        ],
+        "purchase_effect": {
           "lower_change": 0.003,
-          "upper_change": 0.003
+          "upper_change": 0.15
         }
       }
     ],
@@ -276,7 +319,7 @@
         "fund_id": "SPY",
         "portfolio_weight": 0.15,
         "coverage_fraction": 1.0,
-        "sector_labelled_fraction": 1.0,
+        "sector_labelled_fraction": 0.0,
         "uncovered_portfolio_weight": 0.0,
         "status": "COVERED"
       }
@@ -296,12 +339,12 @@
       "headline": "HAS_FAIL",
       "counts": {
         "pass": 0,
-        "fail": 1,
-        "unknown": 1
+        "fail": 2,
+        "unknown": 0
       },
       "rules_evaluated": 2,
       "rules_not_evaluated": 0,
-      "starting_portfolio_breaches": 1,
+      "starting_portfolio_breaches": 2,
       "feasibility_status": "FEASIBLE"
     }
   }

@@ -1,7 +1,7 @@
 """API example bodies: one envelope per file in contracts/fixtures/api (see fixture.schema.json#/$defs/api_fixture).
 
 Every numeric result here comes from the hand-entered engine expectations in
-engine_cases.py (HAND_CALCS.md R1, R2, M1), completed by api_results.py.
+engine_cases.py (HAND_CALCS.md R1, R2, M1, M2), completed by api_results.py.
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ SYNTHETIC = (
     "SYNTHETIC: the fund constituent weights, fund coverage, 2022 prices and FX rates behind the numbers in this body are "
     "invented (contracts/fixtures/engine/robert_synthetic_universe.json and mateo_synthetic_universe.json) so that every "
     "figure can be checked by hand in contracts/fixtures/engine/HAND_CALCS.md. They are NOT the real holdings or prices of "
-    "SPY, XIU.TO, NVDA or any other instrument. Portfolio weights and thresholds are fictional-scenario values."
+    "SPY, XIU.TO, NVDA or any other instrument. Controversy records cited here are synthetic fixture records, not sources. "
+    "Portfolio weights and thresholds are fictional-scenario values."
 )
 NO_MARKET_NUMBERS = (
     "No market or fund numbers in this body. Portfolio weights and thresholds, where present, are fictional-scenario values "
@@ -70,6 +71,8 @@ def all_fixtures():
                "payload": sd.mateo()["demo_challenge"]["payload"], "created_at": "2026-11-14T15:16:00Z"}
     draft_cap = max_issuer("robert-issuer-cap-1", 0.20, status="PROPOSED", origin="USER_STATED", threshold_source="USER_ENTERED",
                            words="What if my single-company limit were 20%?", objective_id="obj-robert-1")
+    mateo_draft_cap = max_issuer(ec.MATEO_CAP_RULE_ID, 0.20, status="PROPOSED", origin="USER_STATED", threshold_source="USER_ENTERED",
+                                 words=ec.MATEO_CAP_WORDS)
     key = lambda job: {**JSON_HEADERS, "Idempotency-Key": job["idempotency_key"]}  # noqa: E731
     get = "GET /investigations/{id}"
     challenge_route = "POST /investigations/{id}/challenge"
@@ -96,6 +99,12 @@ def all_fixtures():
            "policy_version are null in the result and the stored policy is not modified. HAND_CALCS.md R1 with the cap limit changed to 0.20.",
            request={"persona_id": "robert", "policy_id": "pol-robert-demo", "policy_version": 1, "purchase_request": aj.ROBERT_REQUEST,
                     "draft_rules": [draft_cap, ec.robert_rules_v1()[1]]}),
+        fx("check_mateo_preview_unknown", "POST /check", 200, "check_result.schema.json", ar.mateo_cap_preview_result(),
+           "A rule whose status is UNKNOWN. Preview of one draft rule on Mateo's portfolio (no single company above 0.20): the known exposure "
+           "is below the limit, but ESGV has no holdings file, so the upper bound is above it. Neither PASS nor FAIL; headline "
+           "NO_FAIL_BUT_UNKNOWN; the maximum compliant weight is WITHHELD. No policy context is sent, so goal_context is empty. HAND_CALCS.md M2.",
+           request={"persona_id": "mateo", "policy_id": None, "policy_version": None, "purchase_request": aj.MATEO_REQUEST,
+                    "draft_rules": [mateo_draft_cap]}),
         fx("check_invalid_request", "POST /check", 200, "check_result.schema.json", ar.invalid_request_result(),
            "A well-formed request the engine cannot execute (the target is below the current direct weight, which would mean selling). "
            "HTTP 200 with execution.status INVALID_REQUEST: no rule is evaluated and nothing is defaulted.",
@@ -135,8 +144,9 @@ def all_fixtures():
            "produce oil' is reported as an unsupported definition and no stored rule changes.",
            request={"type": "CLARIFY_PREFERENCE", "payload": clarify["payload"]}, synthetic=False),
         fx("investigation_mateo_succeeded", get, 200, "investigation_job.schema.json", aj.mateo_job(),
-           "Mateo: the Energy-label exclusion is already breached by the STARTING portfolio (a starting-portfolio finding), ESGV has no holdings "
-           "file (coverage MISSING) and the controversy rule is UNKNOWN because registry absence is not a pass. HAND_CALCS.md M1."),
+           "Mateo: both rules are already breached by the STARTING portfolio through XIU.TO (two starting-portfolio findings). The purchase is "
+           "proven to add Exxon Mobil to the controversy rule; what it adds to the Energy-label rule is unresolved (0 proven, up to 0.15 "
+           "possible) because the SPY rows carry no sector label. ESGV has no holdings file (coverage MISSING). HAND_CALCS.md M1."),
         fx("investigation_amira_clarification", get, 200, "investigation_job.schema.json", aj.amira_clarification_job(),
            "A free-text request ('Add 5% Nvidia.') that is ambiguous: the job SUCCEEDS with a clarification and no result. The client answers "
            "by posting a new investigation with the chosen option's purchase_request and parent_investigation_id.", synthetic=False),

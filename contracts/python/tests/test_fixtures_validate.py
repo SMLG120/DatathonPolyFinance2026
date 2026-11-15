@@ -18,7 +18,7 @@ from paths import API, API_FIXTURES, CASES, ENGINE, REQUEST_SCHEMAS, SCENARIOS, 
 def test_the_expected_files_exist():
     """Guards against a glob that silently matches nothing."""
     assert [p.stem for p in UNIVERSES] == ["mateo_synthetic_universe", "robert_synthetic_universe", "synthetic_universe"]
-    assert [p.stem for p in CASES] == [f"E{i:02d}" for i in range(1, 23)] + ["M1", "R1", "R2"]
+    assert [p.stem for p in CASES] == [f"E{i:02d}" for i in range(1, 23)] + ["M1", "M2", "R1", "R2"]
     assert [p.stem for p in SCENARIOS] == ["amira", "mateo", "robert"]
     assert len(API_FIXTURES) >= 20
     assert (ENGINE / "HAND_CALCS.md").is_file()
@@ -170,19 +170,35 @@ def test_the_lead_s_required_examples_are_present():
     assert statuses["scenario_loss_budget"]["status"] == "FAIL" and statuses["scenario_loss_budget"]["gap"] > 0
     assert after["policy_version"] == 2 and after["parent_investigation_id"] == first["id"]
     assert job("investigation_failed")["status"] == "FAILED"
+    # Mateo (HAND_CALCS.md M1): missing holdings, both rules proven FAIL on the starting portfolio, and what the
+    # purchase adds to the sector rule left unresolved (nothing proven, the whole purchase possible).
     mateo = job("investigation_mateo_succeeded")["result"]
-    assert any(c["status"] == "MISSING" for c in mateo["data_coverage"]) and any(r["status"] == "UNKNOWN" for r in mateo["rule_results"])
-    assert len(mateo["starting_portfolio_findings"]) == 1
+    assert any(c["status"] == "MISSING" for c in mateo["data_coverage"])
+    assert [(r["rule_type"], r["status"], r["starting"]["status"]) for r in mateo["rule_results"]] == [
+        ("exclusion", "FAIL", "FAIL"), ("controversy_exclusion", "FAIL", "FAIL")]
+    sector, controversy = mateo["starting_portfolio_findings"]
+    assert sector["purchase_effect"] == {"lower_change": 0.0, "upper_change": 0.15}
+    assert controversy["purchase_effect"] == {"lower_change": 0.003, "upper_change": 0.15}
+    assert "UNCLASSIFIED_SECTOR" in mateo["rule_results"][0]["unknown_causes"] and "unresolved" in mateo["rule_results"][0]["reason"]
+    assert "unresolved" in sector["reason"]
+    # A rule whose status is UNKNOWN stays visible in the API examples (HAND_CALCS.md M2).
+    unknown = load(API / "check_mateo_preview_unknown.json")["response_body"]
+    assert [r["status"] for r in unknown["rule_results"]] == ["UNKNOWN"] and unknown["rule_results"][0]["gap"] is None
+    assert unknown["rule_results"][0]["unknown_causes"] and unknown["starting_portfolio_findings"] == []
+    assert unknown["summary"]["headline"] == "NO_FAIL_BUT_UNKNOWN" and unknown["max_compliant"]["status"] == "WITHHELD"
+    assert unknown["preview"] is True and unknown["policy_version"] is None
     assert job("interpret_mateo_clarification")["clarifications"]
     assert "error" in job("error_validation")
 
 
 def test_the_api_results_are_the_hand_calculated_ones():
-    """The Robert and Mateo API examples carry exactly the numbers of engine fixtures R1, R2 and M1."""
-    pairs = (("R1", "investigation_robert_succeeded"), ("R2", "investigation_robert_after_challenge_succeeded"), ("M1", "investigation_mateo_succeeded"))
+    """The Robert and Mateo API examples carry exactly the numbers of engine fixtures R1, R2, M1 and M2."""
+    pairs = (("R1", "investigation_robert_succeeded"), ("R2", "investigation_robert_after_challenge_succeeded"),
+             ("M1", "investigation_mateo_succeeded"), ("M2", "check_mateo_preview_unknown"))
     for case_id, fixture_id in pairs:
         expected = load(ENGINE / f"{case_id}.json")["expected"]
-        result = load(API / f"{fixture_id}.json")["response_body"]["result"]
+        body = load(API / f"{fixture_id}.json")["response_body"]
+        result = body["result"] if "result" in body else body  # a job carries the result; POST /check returns it directly
         assert byb.subset_mismatches(expected, result) == []
         broken = json.loads(json.dumps(result))
         broken["rule_results"][0]["measured"]["lower"] += 1e-6
@@ -203,7 +219,7 @@ def test_no_confirmed_rule_has_a_null_threshold_and_no_system_proposed_rule_has_
                 assert rule["threshold"] is None and rule["threshold_source"] is None, f"{path.name} {where}: SYSTEM_PROPOSED rule carries a number"
             if rule["threshold"] is not None:
                 assert 0 <= rule["threshold"] <= 1 and rule["unit"] == "fraction", f"{path.name} {where}: thresholds are fractions"
-    # Counted from the specs when this was written: 30 rules in engine cases, 7 in scenarios, 15 in API fixtures.
+    # Counted on 2026-11-14: 35 rules in engine cases, 7 in scenarios, 16 in API fixtures.
     assert seen >= 50, f"the rule walker found only {seen} rules; it should find every rule in every fixture"
 
 

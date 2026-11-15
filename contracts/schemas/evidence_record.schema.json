@@ -10,7 +10,7 @@
     "evidence_id": { "$ref": "common.schema.json#/$defs/id", "description": "Unique within one check_result." },
     "label": { "$ref": "common.schema.json#/$defs/evidence_label" },
     "metric_id": { "$ref": "common.schema.json#/$defs/metric_id" },
-    "value": { "type": ["number", "string", "null"], "description": "Number for numeric units; string for unit 'date' or 'text'; null only when the value could not be computed." },
+    "value": { "type": ["number", "string", "null"], "description": "Number for numeric units; string for unit 'date' or 'text'; null only when the value could not be computed or the source reports none (a sector_label the holdings file does not give)." },
     "unit": { "$ref": "common.schema.json#/$defs/evidence_unit", "description": "'fraction' for every weight, exposure, limit, return and gap. Never a percentage." },
     "currency": { "anyOf": [{ "$ref": "common.schema.json#/$defs/currency" }, { "type": "null" }], "description": "Set only when unit is 'price'." },
     "subject": {

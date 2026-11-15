@@ -20,7 +20,7 @@ from .derive import (
     status_from_bounds,
 )
 from .matching import subset_mismatches
-from .schema import SchemaUsageError, load_schema, schema_dir, schema_errors, schema_files
+from .schema import SchemaUsageError, load_schema, non_finite_errors, schema_dir, schema_errors, schema_files
 from .validators import (
     ContractError,
     instrument_errors,

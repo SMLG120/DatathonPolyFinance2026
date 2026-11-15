@@ -1,0 +1,196 @@
+{
+  "fixture": true,
+  "fixture_id": "M2",
+  "synthetic": true,
+  "synthetic_note": "SYNTHETIC: every fund weight, price, FX rate and controversy record in this fixture is invented so the result can be checked by hand. None of it is real market, issuer or fund data. In this universe the three controversy records are fixture records that copy only the issuer, the event date and the nature of the records in the project's registry; they are not sources.",
+  "title": "Mateo-shaped: a 20% single-company limit is UNKNOWN because ESGV has no holdings file",
+  "tests": [
+    "missing holdings",
+    "unknown is neither pass nor fail",
+    "maximum withheld without a proof"
+  ],
+  "universe": "mateo_synthetic_universe.json",
+  "hand_calc": "M2",
+  "inputs": {
+    "portfolio": {
+      "schema_version": "1.0.0",
+      "portfolio_id": "pf-m2",
+      "persona_id": "mateo",
+      "fictional": true,
+      "valuation_date": "2026-11-12",
+      "base_currency": "CAD",
+      "cash_weight": 0.25,
+      "positions": [
+        {
+          "instrument_id": "XBB.TO",
+          "weight": 0.25
+        },
+        {
+          "instrument_id": "XIU.TO",
+          "weight": 0.2
+        },
+        {
+          "instrument_id": "ESGV",
+          "weight": 0.15
+        },
+        {
+          "instrument_id": "MSFT",
+          "weight": 0.05
+        },
+        {
+          "instrument_id": "CNR.TO",
+          "weight": 0.05
+        },
+        {
+          "instrument_id": "FTS.TO",
+          "weight": 0.05
+        }
+      ]
+    },
+    "policy": {
+      "schema_version": "1.0.0",
+      "policy_id": "pol-m2",
+      "persona_id": "mateo",
+      "version": 1,
+      "parent_version": null,
+      "created_at": "2026-11-14T15:00:00Z",
+      "objectives": [
+        {
+          "objective_id": "obj-mateo-1",
+          "original_words": "Balanced growth over 8 to 12 years; ESG matters to me; I want to avoid oil and companies involved in significant controversies.",
+          "kind": "goal",
+          "source": "FICTIONAL_SCENARIO",
+          "case_reference": "Case p.6"
+        }
+      ],
+      "rules": [
+        {
+          "rule_id": "mateo-issuer-cap-draft",
+          "rule_type": "max_issuer_exposure",
+          "parameters": {
+            "issuer_scope": "any"
+          },
+          "threshold": 0.2,
+          "threshold_kind": "max_fraction",
+          "threshold_source": "USER_ENTERED",
+          "threshold_quote": null,
+          "unit": "fraction",
+          "status": "CONFIRMED",
+          "origin": "USER_STATED",
+          "original_words": "No single company above 20% of my portfolio, funds included.",
+          "objective_id": null,
+          "scope_description": "Maximum total equity exposure to any single company: direct holdings plus look-through via equity funds, share classes of one company added together. Bond funds, commodity funds and crypto assets are outside this rule's scope and are not assessed.",
+          "confirmed_at": "2026-11-14T15:00:00Z",
+          "confirmed_by": "demo_user",
+          "supersedes_rule_id": null,
+          "superseded_by_rule_id": null
+        }
+      ],
+      "change_note": "Synthetic test policy.",
+      "content_hash": "sha256:fb7d7823862cddda712e13abdcc7052fcb40ad8bcbc82474aaf3b8ae1c74546a"
+    },
+    "purchase_request": {
+      "instrument_id": "SPY",
+      "target_direct_weight": 0.15,
+      "funding": "CASH",
+      "original_words": "Buy SPY so that it is 15% of my portfolio."
+    }
+  },
+  "expected": {
+    "execution": {
+      "status": "OK",
+      "code": null
+    },
+    "feasibility": {
+      "funding": "CASH",
+      "starting_direct_weight": 0.0,
+      "target_direct_weight": 0.15,
+      "additional_purchase": 0.15,
+      "cash_before": 0.25,
+      "cash_after": 0.1,
+      "status": "FEASIBLE"
+    },
+    "policy_consistency": {
+      "status": "CONSISTENT",
+      "conflicts": []
+    },
+    "rule_results": [
+      {
+        "rule_id": "mateo-issuer-cap-draft",
+        "status": "UNKNOWN",
+        "measured": {
+          "lower": 0.059,
+          "upper": 0.213
+        },
+        "limit": 0.2,
+        "gap": null,
+        "breaching_subjects": [],
+        "unknown_causes": [
+          "MISSING_HOLDINGS",
+          "PARTIAL_HOLDINGS"
+        ],
+        "starting": {
+          "status": "UNKNOWN",
+          "measured": {
+            "lower": 0.056,
+            "upper": 0.21
+          }
+        },
+        "out_of_scope": [
+          {
+            "instrument_id": "XBB.TO",
+            "weight": 0.25
+          }
+        ]
+      }
+    ],
+    "rules_not_evaluated": [],
+    "starting_portfolio_findings": [],
+    "data_coverage": [
+      {
+        "fund_id": "XIU.TO",
+        "portfolio_weight": 0.2,
+        "coverage_fraction": 0.98,
+        "sector_labelled_fraction": 0.98,
+        "uncovered_portfolio_weight": 0.004,
+        "status": "PARTIAL"
+      },
+      {
+        "fund_id": "ESGV",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 0.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.15,
+        "status": "MISSING"
+      },
+      {
+        "fund_id": "SPY",
+        "portfolio_weight": 0.15,
+        "coverage_fraction": 1.0,
+        "sector_labelled_fraction": 0.0,
+        "uncovered_portfolio_weight": 0.0,
+        "status": "COVERED"
+      }
+    ],
+    "scenario": null,
+    "max_compliant": {
+      "status": "WITHHELD",
+      "final_direct_weight": null,
+      "additional_purchase": null,
+      "binding_constraint": null,
+      "verified_by_rerun": false
+    },
+    "summary": {
+      "headline": "NO_FAIL_BUT_UNKNOWN",
+      "counts": {
+        "pass": 0,
+        "fail": 0,
+        "unknown": 1
+      },
+      "rules_evaluated": 1,
+      "rules_not_evaluated": 0,
+      "starting_portfolio_breaches": 0,
+      "feasibility_status": "FEASIBLE"
+    }
+  }
+}

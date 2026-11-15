@@ -117,7 +117,7 @@ def mateo():
             step(2, "GOALS_RULES", "Interpret his sentence: the interpreter asks what 'oil' means. Mateo picks the Energy sector label as reported by funds and sets the tolerated exposure to 0; the controversy exclusion is confirmed separately."),
             step(3, "PROPOSED_PURCHASE", "Request SPY at a final direct weight of 0.15, funded from cash."),
             step(4, "INVESTIGATION", "The investigation looks up holdings, sector labels and the controversy registry; no 2022 replay because no scenario rule exists."),
-            step(5, "VERDICT_EVIDENCE", "The Energy exclusion is already breached by the starting portfolio through XIU.TO (a finding about the starting portfolio, kept apart from the effect of the purchase). ESGV is unknown because its holdings were not acquired. The controversy rule reports only what dated registry records support; every company without a record stays 'not assessed', never 'clean'."),
+            step(5, "VERDICT_EVIDENCE", "Both rules are already breached by the starting portfolio through XIU.TO: two findings about the starting portfolio, kept apart from the effect of the purchase. The controversy rule fails on dated registry records (Enbridge and Canadian Natural Resources before the purchase; Exxon Mobil is added by SPY); every company without a record stays 'not assessed', never 'clean'. What SPY adds to the Energy exclusion is shown as unresolved, because the SPY holdings file has no sector labels. ESGV is unknown because its holdings were not acquired."),
             step(6, "CHALLENGE", "Mateo clarifies his preference; the reply is a new draft interpretation, with 'oil producers' reported as an unsupported definition."),
         ],
     )

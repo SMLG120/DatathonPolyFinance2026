@@ -1,6 +1,6 @@
 """Independent checks of what the API example results add around the hand-calculated core.
 
-The engine fixtures (R1, R2, M1) assert verdicts, bounds, gaps and boundaries.
+The engine fixtures (R1, R2, M1, M2) assert verdicts, bounds, gaps and boundaries.
 The API examples also carry chart rows, coverage rows, a concentration context
 and evidence records with formulas. They are re-derived here with the plain
 reference implementation, and every arithmetic formula is evaluated.
@@ -22,7 +22,11 @@ RESULTS = {
     "robert_v1": ("investigation_robert_succeeded", "R1"),
     "robert_v2": ("investigation_robert_after_challenge_succeeded", "R2"),
     "mateo": ("investigation_mateo_succeeded", "M1"),
+    "mateo_preview": ("check_mateo_preview_unknown", "M2"),
 }
+WITH_GOAL_CONTEXT = ["mateo", "robert_v1", "robert_v2"]  # the preview is sent without a policy, so it has no goal context
+# Fewest arithmetic formulas a result must contain for the formula check to mean something (counted by hand for the small preview).
+MIN_FORMULAS = {"mateo_preview": 7}
 OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul, ast.Div: operator.truediv}
 
 
@@ -30,9 +34,15 @@ def close(a, b):
     return abs(a - b) <= TOL
 
 
+def result_of(fixture_id):
+    """An investigation job carries the result; POST /check returns the result itself."""
+    body = load(API / f"{fixture_id}.json")["response_body"]
+    return body["result"] if "result" in body else body
+
+
 def setup(name):
     fixture_id, case_id = RESULTS[name]
-    result = load(API / f"{fixture_id}.json")["response_body"]["result"]
+    result = result_of(fixture_id)
     case = load(ENGINE / f"{case_id}.json")
     universe = load(ENGINE / case["universe"])
     portfolio, request = case["inputs"]["portfolio"], case["inputs"]["purchase_request"]
@@ -121,7 +131,11 @@ def test_coverage_rows_follow_the_look_through(name):
         assert close(entry["sector_labelled_fraction"], labelled) and close(entry["uncovered_portfolio_weight"], gap)
 
 
-@pytest.mark.parametrize("name", sorted(RESULTS))
+def test_a_preview_without_policy_context_has_no_goal_context():
+    assert result_of("check_mateo_preview_unknown")["goal_context"] == []
+
+
+@pytest.mark.parametrize("name", WITH_GOAL_CONTEXT)
 def test_concentration_context_cites_the_largest_single_company_exposure(name):
     result, _case, _universe, states = setup(name)
     context = [c for c in result["goal_context"] if c["context_type"] == "CONCENTRATION"]
@@ -140,10 +154,7 @@ def test_concentration_context_cites_the_largest_single_company_exposure(name):
 
 @pytest.mark.parametrize("name", sorted(RESULTS) + ["preview"])
 def test_every_arithmetic_formula_in_the_evidence_is_correct(name):
-    if name == "preview":
-        result = load(API / "check_robert_preview.json")["response_body"]
-    else:
-        result = load(API / f"{RESULTS[name][0]}.json")["response_body"]["result"]
+    result = result_of("check_robert_preview" if name == "preview" else RESULTS[name][0])
     checked = 0
     for record in result["evidence"]:
         formula = record["formula"]
@@ -157,7 +168,7 @@ def test_every_arithmetic_formula_in_the_evidence_is_correct(name):
         stated = float(right.strip())
         assert abs(value - stated) <= 1e-9, f"{record['evidence_id']}: {left.strip()} is {value}, the formula says {stated}"
         assert abs(record["value"] - stated) <= 1e-9, f"{record['evidence_id']}: value {record['value']} differs from its formula result {stated}"
-    assert checked >= 10, f"only {checked} formulas were arithmetic; the check would be close to vacuous"
+    assert checked >= MIN_FORMULAS.get(name, 10), f"only {checked} formulas were arithmetic; the check would be close to vacuous"
 
 
 def test_the_formula_evaluator_catches_a_wrong_formula():

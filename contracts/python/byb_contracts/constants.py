@@ -138,9 +138,12 @@ ERROR_CODES = (
     "RATE_LIMITED", "INTERNAL_ERROR",
 )
 
-# API timing defaults (contracts/api.md). The job document carries the binding values.
+# API timing (contracts/api.md). The job document carries the binding server values.
 POLL_INTERVAL_MS = 1500
-INVESTIGATION_DEADLINE_SECONDS = 120
+# Server side: deadline_at = created_at + this. A job not terminal by then is FAILED with DEADLINE_EXCEEDED.
+INVESTIGATION_DEADLINE_SECONDS = 150
+# Client side: stop polling this long after the 202. It must outlast the job deadline.
+POLL_DEADLINE_SECONDS = 180
 INVESTIGATION_EXPIRY_SECONDS = 86400
 INTERPRET_TIMEOUT_SECONDS = 20
 CHECK_TIMEOUT_SECONDS = 5

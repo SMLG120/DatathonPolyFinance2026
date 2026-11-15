@@ -521,35 +521,75 @@ def mateo_policy():
 
 
 def mateo_expected():
+    """HAND_CALCS.md M1. Both rules are proven FAIL before and after the purchase; what the purchase adds differs per rule."""
     out = [("XBB.TO", 0.25)]
+    held_flagged = [("ENBRIDGE", 0.008, 0.162), ("CANADIAN_NATURAL_RESOURCES", 0.006, 0.160)]
     return {
         "execution": OK, "feasibility": feas(0.0, 0.15, 0.15, 0.25, 0.10), "policy_consistency": CONSISTENT,
         "rule_results": [
-            rr("mateo-excl-energy-1", "FAIL", b(0.017, 0.171), 0.0, 0.017, "FAIL", b(0.014, 0.168),
-               breaching=[("ENBRIDGE", 0.008, 0.162), ("CANADIAN_NATURAL_RESOURCES", 0.006, 0.160), ("EXXON_MOBIL", 0.003, 0.157)],
-               causes=["MISSING_HOLDINGS", "PARTIAL_HOLDINGS"], out_of_scope=out),
-            rr("mateo-controversy-1", "UNKNOWN", b(0.0, 0.65), 0.0, None, "UNKNOWN", b(0.0, 0.50),
+            rr("mateo-excl-energy-1", "FAIL", b(0.014, 0.318), 0.0, 0.014, "FAIL", b(0.014, 0.168),
+               breaching=held_flagged, causes=["MISSING_HOLDINGS", "PARTIAL_HOLDINGS", "UNCLASSIFIED_SECTOR"], out_of_scope=out),
+            rr("mateo-controversy-1", "FAIL", b(0.017, 0.65), 0.0, 0.017, "FAIL", b(0.014, 0.50),
+               breaching=held_flagged + [("EXXON_MOBIL", 0.003, 0.157)],
                causes=["MISSING_HOLDINGS", "PARTIAL_HOLDINGS", "REGISTRY_ABSENCE"], out_of_scope=out),
         ],
         "rules_not_evaluated": [],
         "starting_portfolio_findings": [
-            finding("mateo-excl-energy-1", b(0.014, 0.168), 0.0, 0.014,
-                    [("ENBRIDGE", 0.008, 0.162), ("CANADIAN_NATURAL_RESOURCES", 0.006, 0.160)], 0.003, 0.003)],
-        "data_coverage": [cov("XIU.TO", 0.20, 0.98, 0.98, 0.004, "PARTIAL"), cov("ESGV", 0.15, 0.0, 0.0, 0.15, "MISSING"),
-                          cov("SPY", 0.15, 1.0, 1.0, 0.0, "COVERED")],
+            finding("mateo-excl-energy-1", b(0.014, 0.168), 0.0, 0.014, held_flagged, 0.0, 0.15),
+            finding("mateo-controversy-1", b(0.014, 0.50), 0.0, 0.014, held_flagged, 0.003, 0.15),
+        ],
+        "data_coverage": mateo_coverage(),
         "scenario": None,
         "max_compliant": maxc("NO_FEASIBLE_PURCHASE", binding="mateo-excl-energy-1"),
-        "summary": summ("HAS_FAIL", 0, 1, 1, breaches=1),
+        "summary": summ("HAS_FAIL", 0, 2, 0, breaches=2),
+    }
+
+
+def mateo_coverage():
+    """XIU.TO lists 98% of its weight (all labelled), ESGV has no file, SPY lists 100% with no sector label."""
+    return [cov("XIU.TO", 0.20, 0.98, 0.98, 0.004, "PARTIAL"), cov("ESGV", 0.15, 0.0, 0.0, 0.15, "MISSING"),
+            cov("SPY", 0.15, 1.0, 0.0, 0.0, "COVERED")]
+
+
+MATEO_CAP_RULE_ID = "mateo-issuer-cap-draft"
+MATEO_CAP_WORDS = "No single company above 20% of my portfolio, funds included."
+
+
+def mateo_cap_expected():
+    """HAND_CALCS.md M2. A 0.20 single-company limit can be neither proven nor refuted while ESGV has no holdings file."""
+    return {
+        "execution": OK, "feasibility": feas(0.0, 0.15, 0.15, 0.25, 0.10), "policy_consistency": CONSISTENT,
+        "rule_results": [
+            rr(MATEO_CAP_RULE_ID, "UNKNOWN", b(0.059, 0.213), 0.20, None, "UNKNOWN", b(0.056, 0.21),
+               causes=["MISSING_HOLDINGS", "PARTIAL_HOLDINGS"], out_of_scope=[("XBB.TO", 0.25)]),
+        ],
+        "rules_not_evaluated": [],
+        "starting_portfolio_findings": [],
+        "data_coverage": mateo_coverage(),
+        "scenario": None,
+        "max_compliant": maxc("WITHHELD"),
+        "summary": summ("NO_FAIL_BUT_UNKNOWN", 0, 0, 1),
     }
 
 
 def mateo_cases():
+    spy = purchase("SPY", 0.15, "Buy SPY so that it is 15% of my portfolio.")
     m1 = case("M1", "Mateo-shaped: SPY to 15% with an Energy-label exclusion and a controversy exclusion",
-              ["starting portfolio finding", "missing holdings", "proven failure plus unknown checks", "registry absence is unknown"], "M1",
-              MATEO_PORTFOLIO, mateo_rules(), purchase("SPY", 0.15, "Buy SPY so that it is 15% of my portfolio."), mateo_expected(),
+              ["starting portfolio finding", "missing holdings", "unlabelled constituents are unknown, not zero",
+               "controversy record match", "purchase effect kept apart from an existing breach"], "M1",
+              MATEO_PORTFOLIO, mateo_rules(), spy, mateo_expected(),
               universe="mateo_synthetic_universe.json", persona="mateo", objectives=[MATEO_OBJECTIVE])
     m1["inputs"]["policy"] = mateo_policy()
-    return [m1]
+    cap = [max_issuer(MATEO_CAP_RULE_ID, 0.20, status="CONFIRMED", origin="USER_STATED", words=MATEO_CAP_WORDS)]
+    m2 = case("M2", "Mateo-shaped: a 20% single-company limit is UNKNOWN because ESGV has no holdings file",
+              ["missing holdings", "unknown is neither pass nor fail", "maximum withheld without a proof"], "M2",
+              MATEO_PORTFOLIO, cap, spy, mateo_cap_expected(),
+              universe="mateo_synthetic_universe.json", persona="mateo", objectives=[MATEO_OBJECTIVE])
+    for fixture in (m1, m2):
+        fixture["synthetic_note"] += (
+            " In this universe the three controversy records are fixture records that copy only the issuer, the event date "
+            "and the nature of the records in the project's registry; they are not sources.")
+    return [m1, m2]
 
 
 def all_cases():

@@ -42,6 +42,9 @@ class ApiConfig:
     worker_function_name: str
     job_deadline_seconds: int = 150
     poll_interval_ms: int = 1500
+    job_expiry_seconds: int = 86400
+    snapshot_id: str = ""
+    model_id: str | None = None
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "ApiConfig":
@@ -50,7 +53,10 @@ class ApiConfig:
             data_bucket=_required(env, "DATA_BUCKET"),
             worker_function_name=_required(env, "WORKER_FUNCTION_NAME"),
             job_deadline_seconds=_integer(env, "JOB_DEADLINE_SECONDS", 150, 10, 840),
-            poll_interval_ms=_integer(env, "POLL_INTERVAL_MS", 1500, 250, 30000),
+            poll_interval_ms=_integer(env, "POLL_INTERVAL_MS", 1500, 500, 30000),
+            job_expiry_seconds=_integer(env, "JOB_EXPIRY_SECONDS", 86400, 600, 259200),
+            snapshot_id=_required(env, "DATA_SNAPSHOT_ID"),
+            model_id=env.get("BEDROCK_MODEL_ID", "").strip() or None,
         )
 
 
@@ -62,6 +68,7 @@ class WorkerConfig:
     max_tool_calls: int = 16
     max_tokens: int = 4096
     code_artifact: str = "unknown"
+    snapshot_id: str = ""
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "WorkerConfig":
@@ -73,18 +80,20 @@ class WorkerConfig:
             max_tool_calls=_integer(env, "MAX_TOOL_CALLS", 16, 1, 64),
             max_tokens=_integer(env, "BEDROCK_MAX_TOKENS", 4096, 256, 16000),
             code_artifact=env.get("CODE_ARTIFACT", "unknown").strip() or "unknown",
+            snapshot_id=_required(env, "DATA_SNAPSHOT_ID"),
         )
 
 
 @dataclass(frozen=True)
 class AuthorizerConfig:
     parameter_name: str
-    cache_ttl_seconds: int = 60
+    cache_ttl_seconds: int = 30
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "AuthorizerConfig":
         env = os.environ if env is None else env
         return cls(
             parameter_name=_required(env, "ACCESS_CODE_PARAMETER_NAME"),
-            cache_ttl_seconds=_integer(env, "ACCESS_CODE_CACHE_SECONDS", 60, 0, 900),
+            # Upper bound 300 s: this is the whole delay before a rotated code stops working (API Gateway caches nothing).
+            cache_ttl_seconds=_integer(env, "ACCESS_CODE_CACHE_SECONDS", 30, 0, 300),
         )
