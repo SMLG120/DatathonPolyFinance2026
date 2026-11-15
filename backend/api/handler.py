@@ -576,54 +576,97 @@ class Api:
             raise self._unsupported("", "the investigation has no result")
         child_id = job_id_for("challenge", job["id"], key)
         request_hash = body_hash({"investigation_id": job["id"], "body": body})
+        job_policy = self._policies.get(job["policy_id"], job["policy_version"])
+        if job_policy is None:
+            raise ApiError(500, "INTERNAL_ERROR", "The policy version of this investigation could not be read.")
 
         existing = self._store.get(child_id)
         if existing is not None:
-            # Replay: the same key and body give the same policy version and the same child investigation.
             child = existing[0]
-            if (child.get("internal") or {}).get("request_hash") != request_hash:
-                raise ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.",
-                               [detail("headers.Idempotency-Key", "already used with a different body")])
-            policy = self._policies.get(child["policy_id"], child["policy_version"])
-            if policy is None:
-                raise ApiError(500, "INTERNAL_ERROR", "The policy version of this challenge could not be read.")
         else:
-            job_policy = self._policies.get(job["policy_id"], job["policy_version"])
-            if job_policy is None:
-                raise ApiError(500, "INTERNAL_ERROR", "The policy version of this investigation could not be read.")
             now = self._clock.time()
-            policy = None
-            for _ in range(3):  # a concurrent confirmation may take the next number first
-                new_version = (self._policies.latest_version(job["policy_id"]) or job["policy_version"]) + 1
-                try:
-                    policy = build_changed_rule_version(job_policy=job_policy, rule_id=payload["rule_id"], new_threshold=payload["new_threshold"],
-                                                        user_note=payload["user_note"], new_version=new_version, now_iso=to_iso(now))
-                except InvalidConfirmation as error:
-                    raise self._unsupported(error.path, error.issue) from error
-                try:
-                    self._policies.create(policy)
-                    break
-                except PolicyVersionExists:
-                    policy = None
-            if policy is None:
-                raise ApiError(500, "INTERNAL_ERROR", "The new policy version could not be stored.")
-            log.info("policy_version_created", policy_id=policy["policy_id"], version=policy["version"], content_hash=policy["content_hash"],
-                     challenged_investigation=job["id"])
             challenge = {"challenge_id": "ch-" + child_id[4:16], "investigation_id": job["id"], "type": "CHANGE_RULE", "payload": payload,
                          "created_at": to_iso(now)}
-            # A fresh investigation under the new version. The earlier job, its result and the earlier
-            # policy version are separate immutable objects and are not touched.
+            new_version = (self._policies.latest_version(job["policy_id"]) or job["policy_version"]) + 1
+            # Validate before reserving anything. The reserved job fixes the timestamp, request
+            # and proposed version, so every retry can reproduce the very same policy bytes.
+            self._build_challenge_policy(job_policy, challenge, new_version)
             child = new_job(
                 job_id=child_id, now=now, deadline_seconds=self._config.job_deadline_seconds, expiry_seconds=self._config.job_expiry_seconds,
-                idempotency_key=key, persona_id=job["persona_id"], policy_id=policy["policy_id"], policy_version=policy["version"],
+                idempotency_key=key, persona_id=job["persona_id"], policy_id=job["policy_id"], policy_version=new_version,
                 request=dict(job["resolved_request"]), parent_investigation_id=job["id"], challenge=challenge, model_id=self._config.model_id,
                 request_hash=request_hash, snapshot_id=self._snapshot().snapshot_id, api_request_id=request_id,
             )
+            child["internal"]["policy_ready"] = False
+            child, _etag, _created = self._store.create(child)
+        if child["internal"].get("request_hash") != request_hash:
+            raise ApiError(409, "IDEMPOTENCY_KEY_REUSED", "This idempotency key was already used with a different request.",
+                           [detail("headers.Idempotency-Key", "already used with a different body")])
+        child = self._prepare_challenge_policy(child, job_policy)
         log.add_context(child_job_id=child_id)
         accepted = self._store_and_dispatch(child)
         stored = self._store.get(child_id)
-        return json_response(202, {"schema_version": SCHEMA_VERSION, "challenge": (stored[0] if stored else child)["challenge"],
+        child = stored[0] if stored else child
+        policy = self._policies.get(child["policy_id"], child["policy_version"])
+        if policy is None:
+            raise ApiError(500, "INTERNAL_ERROR", "The policy version of this challenge could not be read.")
+        return json_response(202, {"schema_version": SCHEMA_VERSION, "challenge": child["challenge"],
                                    "proposed_correction": None, "interpretation": None, "policy": policy, "investigation": accepted})
+
+    def _build_challenge_policy(self, base: dict, challenge: dict, version: int) -> dict:
+        payload = challenge["payload"]
+        try:
+            return build_changed_rule_version(
+                job_policy=base, rule_id=payload["rule_id"], new_threshold=payload["new_threshold"],
+                user_note=payload["user_note"], new_version=version, now_iso=challenge["created_at"],
+                challenge_id=challenge["challenge_id"],
+            )
+        except InvalidConfirmation as error:
+            raise self._unsupported(error.path, error.issue) from error
+
+    def _prepare_challenge_policy(self, child: dict, base: dict) -> dict:
+        """Resume a reserved challenge; dispatch is forbidden until its policy is durable.
+
+        An existing identical policy is a successful replay of a write whose response
+        was lost. A different policy at that version is another operation: advance the
+        reservation using CAS, then retry. No lease can expire underneath a writer.
+        """
+        for _ in range(6):
+            if child["internal"].get("policy_ready", True):  # also supports jobs from older deployments
+                return child
+            if child["status"] != QUEUED:
+                raise ApiError(410, "INVESTIGATION_EXPIRED", "The challenge expired before its policy was ready. Retry with a new key.")
+            version = child["policy_version"]
+            policy = self._build_challenge_policy(base, child["challenge"], version)
+            next_version = None
+            try:
+                self._policies.create(policy)
+                log.info("policy_version_created", policy_id=policy["policy_id"], version=policy["version"],
+                         content_hash=policy["content_hash"], challenged_investigation=child["parent_investigation_id"])
+            except PolicyVersionExists:
+                stored = self._policies.get(child["policy_id"], version)
+                if stored is None:
+                    # A 409 can mean a write is still in flight. Do not allocate another
+                    # version until a different, durable policy actually occupies this one.
+                    continue
+                if stored != policy:
+                    next_version = max(version, self._policies.latest_version(child["policy_id"]) or 0) + 1
+
+            def prepare(draft: dict) -> None:
+                if draft["status"] != QUEUED or draft["policy_version"] != version or draft["internal"].get("policy_ready"):
+                    raise StateConflict("another request prepared this challenge", draft)
+                if next_version is None:
+                    draft["internal"]["policy_ready"] = True
+                else:
+                    draft["policy_version"] = next_version
+
+            try:
+                child = self._store.update(child["id"], prepare)
+            except (StateConflict, TerminalStateError) as error:
+                child = error.job
+            if child["internal"].get("policy_ready", True):
+                return child
+        raise ApiError(500, "INTERNAL_ERROR", "The challenge policy could not be prepared. Retry with the same key.")
 
 
 InvestigationApi = Api  # the phase 1 name, kept for callers that import it

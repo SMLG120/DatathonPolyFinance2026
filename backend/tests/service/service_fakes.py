@@ -96,10 +96,14 @@ class FakeS3:
         self.bodies.append(body)
         return {"Body": body, "ETag": self._etag(self.objects[Key])}
 
-    def list_objects_v2(self, *, Bucket: str, Prefix: str, MaxKeys: int = 1000) -> dict[str, Any]:
+    def list_objects_v2(self, *, Bucket: str, Prefix: str, MaxKeys: int = 1000, ContinuationToken: str | None = None) -> dict[str, Any]:
         assert Bucket == BUCKET
-        keys = sorted(key for key in self.objects if key.startswith(Prefix))[:MaxKeys]
-        return {"Contents": [{"Key": key} for key in keys], "KeyCount": len(keys)}
+        keys = sorted(key for key in self.objects if key.startswith(Prefix))
+        offset = int(ContinuationToken or 0)
+        page = keys[offset:offset + MaxKeys]
+        truncated = offset + MaxKeys < len(keys)
+        return {"Contents": [{"Key": key} for key in page], "KeyCount": len(page), "IsTruncated": truncated,
+                **({"NextContinuationToken": str(offset + MaxKeys)} if truncated else {})}
 
     # helpers for assertions
     def json(self, key: str) -> dict[str, Any]:

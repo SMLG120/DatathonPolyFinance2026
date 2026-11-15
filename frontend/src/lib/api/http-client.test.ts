@@ -280,6 +280,27 @@ describe("live HTTP client", () => {
     beforeEach(() => vi.useFakeTimers());
     afterEach(() => vi.useRealTimers());
 
+    it.each(["timeout", "aborted"] as const)("keeps %s protection while reading the body after headers arrive", async (kind) => {
+      let requestSignal: AbortSignal | null | undefined;
+      const fetchImpl = vi.fn(async (_url: string, init: RequestInit) => {
+        requestSignal = init.signal;
+        return new Response(new ReadableStream({
+          start(controller) {
+            // Model fetch's cancellation of an unfinished response stream.
+            init.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")));
+          },
+        }), { status: 200 });
+      });
+      const caller = new AbortController();
+      const pending = failure(client(fetchImpl as unknown as typeof fetch, { timeoutMs: 5_000 }).getPortfolio("robert", { signal: caller.signal }));
+      await vi.advanceTimersByTimeAsync(0); // headers have arrived; response.text() is pending
+      if (kind === "timeout") await vi.advanceTimersByTimeAsync(5_000);
+      else caller.abort();
+      expect((await pending).kind).toBe(kind);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(vi.getTimerCount()).toBe(0);
+    });
+
     it("gives up with a timeout error when the service does not answer", async () => {
       const fetchImpl = vi.fn(
         (_url: string, init: RequestInit) =>

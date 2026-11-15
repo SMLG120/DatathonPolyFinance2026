@@ -856,9 +856,20 @@ section 6.
   retrievable, which is what the old/new comparison uses.
 - Idempotency: the same key with the same body returns the same response (same policy version, same
   child `id`); with a different body, 409 `IDEMPOTENCY_KEY_REUSED`.
+  The service first reserves the child job with a fixed challenge timestamp and version candidate.
+  It then writes the policy and marks the reservation ready before dispatching the worker.
+  Concurrent retries resume this reservation; an interrupted policy write is recovered by comparing
+  the stored policy with the reserved operation. A version occupied by another operation advances
+  the reservation using a conditional write. The response always reads the child's stored policy.
+  Jobs from earlier deployments remain readable without a readiness marker.
 - If the worker cannot be started the route answers 503 `WORKER_INVOCATION_FAILED`. The client
   retries the challenge with a **new** key; a policy version left unused by the failed attempt is
   harmless, because a `CHANGE_RULE` always derives from the challenged job's version.
+
+The worker requires its data snapshot to match the snapshot recorded when a job was accepted.
+A deployment mismatch ends the job as `FAILED / DATA_UNAVAILABLE`, with no calculated result;
+it never silently replaces the accepted snapshot identifier. Retry as a new investigation once
+the API and worker are configured consistently.
 
 ## 9. Example index (`fixtures/api/`)
 

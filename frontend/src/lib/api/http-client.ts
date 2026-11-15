@@ -94,57 +94,61 @@ export function createHttpClient(options: HttpClientOptions): ApiClient {
     if (callerSignal?.aborted) controller.abort();
     else callerSignal?.addEventListener("abort", onCallerAbort, { once: true });
 
-    let response: Response;
     try {
-      response = await fetchImpl(`${options.baseUrl}${path}`, {
-        method,
-        headers,
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: controller.signal,
-        // The access code travels in a header we set ourselves; no cookies.
-        credentials: "omit",
-        cache: "no-store",
-      });
-    } catch {
-      // The thrown value is deliberately not forwarded: it can echo the request.
-      if (timedOut) throw new ApiError("timeout", fallbackMessage("timeout"));
-      if (controller.signal.aborted) throw new ApiError("aborted", fallbackMessage("aborted"));
-      throw new ApiError("network", fallbackMessage("network"));
+      let response: Response;
+      try {
+        response = await fetchImpl(`${options.baseUrl}${path}`, {
+          method,
+          headers,
+          body: body === undefined ? undefined : JSON.stringify(body),
+          signal: controller.signal,
+          // The access code travels in a header we set ourselves; no cookies.
+          credentials: "omit",
+          cache: "no-store",
+        });
+      } catch {
+        // The thrown value is deliberately not forwarded: it can echo the request.
+        if (timedOut) throw new ApiError("timeout", fallbackMessage("timeout"));
+        if (controller.signal.aborted) throw new ApiError("aborted", fallbackMessage("aborted"));
+        throw new ApiError("network", fallbackMessage("network"));
+      }
+
+      let text = "";
+      try {
+        text = await response.text();
+      } catch {
+        // A successful answer that broke off on the way is a connection failure, not an answer in the wrong shape.
+        // A refusal is still acted on by its status.
+        if (timedOut) throw new ApiError("timeout", fallbackMessage("timeout"));
+        if (controller.signal.aborted) throw new ApiError("aborted", fallbackMessage("aborted"));
+        if (response.ok) throw new ApiError("network", fallbackMessage("network"));
+      }
+      let parsed: unknown = undefined;
+      let parseFailed = false;
+      try {
+        parsed = text === "" ? undefined : JSON.parse(text);
+      } catch {
+        parseFailed = true;
+      }
+
+      if (!response.ok) {
+        const kind = kindForStatus(response.status);
+        if (kind === "unauthorized") {
+          // contracts/api.md, Authentication: 401 and 403 are treated alike, whoever answered, and their body is not read.
+          options.onUnauthorized?.();
+          throw new ApiError(kind, fallbackMessage(kind), { status: response.status });
+        }
+        const { code, message, details, requestId } = readErrorBody(parsed);
+        throw new ApiError(kind, message ?? fallbackMessage(kind), { status: response.status, code, details, requestId });
+      }
+      if (parseFailed || parsed === undefined) {
+        throw new ApiError("invalid_response", fallbackMessage("invalid_response"), { status: response.status });
+      }
+      return read(parsed, response.status);
     } finally {
       clearTimeout(timer);
       callerSignal?.removeEventListener("abort", onCallerAbort);
     }
-
-    let text = "";
-    try {
-      text = await response.text();
-    } catch {
-      // A successful answer that broke off on the way is a connection failure, not an answer in the wrong shape.
-      // A refusal is still acted on by its status.
-      if (response.ok) throw new ApiError(controller.signal.aborted ? "aborted" : "network", fallbackMessage(controller.signal.aborted ? "aborted" : "network"));
-    }
-    let parsed: unknown = undefined;
-    let parseFailed = false;
-    try {
-      parsed = text === "" ? undefined : JSON.parse(text);
-    } catch {
-      parseFailed = true;
-    }
-
-    if (!response.ok) {
-      const kind = kindForStatus(response.status);
-      if (kind === "unauthorized") {
-        // contracts/api.md, Authentication: 401 and 403 are treated alike, whoever answered, and their body is not read.
-        options.onUnauthorized?.();
-        throw new ApiError(kind, fallbackMessage(kind), { status: response.status });
-      }
-      const { code, message, details, requestId } = readErrorBody(parsed);
-      throw new ApiError(kind, message ?? fallbackMessage(kind), { status: response.status, code, details, requestId });
-    }
-    if (parseFailed || parsed === undefined) {
-      throw new ApiError("invalid_response", fallbackMessage("invalid_response"), { status: response.status });
-    }
-    return read(parsed, response.status);
   }
 
   const segment = (value: string) => encodeURIComponent(value);

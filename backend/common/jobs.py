@@ -276,10 +276,15 @@ class JobStore:
 
     def list_corrections(self, job_id: str) -> list[dict[str, Any]]:
         """Needs ``s3:ListBucket`` on the ``jobs/`` prefix (the API role)."""
-        listing = self._s3.list_objects_v2(Bucket=self._bucket, Prefix=correction_prefix(job_id), MaxKeys=200)
         corrections = []
-        for item in listing.get("Contents", []):
-            found = self._get_json(item["Key"])
-            if found is not None:
-                corrections.append(found[0])
+        arguments = {"Bucket": self._bucket, "Prefix": correction_prefix(job_id), "MaxKeys": 200}
+        while True:
+            listing = self._s3.list_objects_v2(**arguments)
+            for item in listing.get("Contents", []):
+                found = self._get_json(item["Key"])
+                if found is not None:
+                    corrections.append(found[0])
+            if not listing.get("IsTruncated"):
+                break
+            arguments["ContinuationToken"] = listing["NextContinuationToken"]
         return sorted(corrections, key=lambda c: (c["provenance"]["asserted_at"], c["correction_id"]))
