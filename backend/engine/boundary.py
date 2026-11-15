@@ -267,8 +267,12 @@ def max_compliant_amount(
     ``evidence_ids`` is empty here; ``check_rules`` attaches the evidence.
     """
     from .check import analyse
+    from .guard import data_problems
     if policy is None and draft_rules is None:
         raise ValueError("max_compliant_amount needs a policy, or draft_rules for a preview")
+    problems = data_problems(instruments, holdings, market_data, controversies)
+    if problems:
+        raise ValueError("the data cannot be trusted, so nothing was calculated: " + "; ".join(problems))
     analysis = analyse(portfolio, policy, purchase_request, instruments, holdings, market_data, controversies, draft_rules)
     if not analysis["ok"]:
         execution = analysis["sim"]["execution"]

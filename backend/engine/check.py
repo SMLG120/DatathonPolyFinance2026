@@ -13,6 +13,7 @@ import re
 from typing import Any, Optional
 
 from byb_contracts import (
+    ContractError,
     DEFAULT_VALUATION_DATE,
     EXPOSURE_TOP_N,
     SCENARIOS,
@@ -35,6 +36,7 @@ from .core import (
     replay_state,
     simulate_change,
 )
+from .guard import data_problems, non_finite_paths
 from .text import eq, num, pct, points, span, total
 from .version import CALCULATION_VERSION
 
@@ -738,18 +740,34 @@ def check_rules(
     re-run: the section is then WITHHELD with a reason saying so.
     """
     validate_purchase_request(purchase_request)
+    not_finite = non_finite_paths(purchase_request, "purchase_request")
+    if not_finite:
+        raise ContractError("purchase request", [f"{path}: is not a finite number" for path in not_finite])
     if policy is None and draft_rules is None:
         raise ValueError("check_rules needs a policy, or draft_rules for a preview")
     analysis: dict = {"preview": draft_rules is not None}
     try:
+        if include_max_compliant:  # the boundary re-run reuses data this call has already checked
+            problems = data_problems(instruments, holdings, market_data, controversies)
+            if problems:
+                execution = {"status": "ERROR", "code": "ENGINE_ERROR",
+                             "message": "The check was not run because the data cannot be trusted: " + "; ".join(problems) + ". Nothing was calculated."}
+                return _invalid_result(analysis, portfolio, policy, purchase_request, execution)
         analysis = analyse(portfolio, policy, purchase_request, instruments, holdings, market_data, controversies, draft_rules)
         if not analysis["ok"]:
             return _invalid_result(analysis, portfolio, policy, purchase_request, analysis["sim"]["execution"])
-        return _build(analysis, portfolio, policy, purchase_request, instruments, holdings, market_data, controversies,
-                      draft_rules, data_sources, include_max_compliant)
-    except Exception as error:  # SEMANTICS section 4: an unexpected failure is reported, never raised to the caller
-        execution = {"status": "ERROR", "code": "ENGINE_ERROR", "message": f"The check could not be completed ({type(error).__name__}: {error})."}
-        return _invalid_result(analysis, portfolio, policy, purchase_request, execution)
+        result = _build(analysis, portfolio, policy, purchase_request, instruments, holdings, market_data, controversies,
+                        draft_rules, data_sources, include_max_compliant)
+        if non_finite_paths(result, "result", 1):  # last line of defence: no NaN or infinity ever leaves the engine
+            raise ArithmeticError("a computed value is not finite")
+        return result
+    except ContractError:
+        raise  # an invalid purchase request: documented above, no result can carry it
+    except Exception:  # SEMANTICS section 4: an unexpected failure is reported, never raised to the caller
+        # The message is fixed text: exception text can hold internal detail and is not for the user.
+        execution = {"status": "ERROR", "code": "ENGINE_ERROR",
+                     "message": "The check could not be completed because of an internal error. Nothing was calculated."}
+        return _invalid_result({"preview": draft_rules is not None}, portfolio, policy, purchase_request, execution)
 
 
 def _build(analysis, portfolio, policy, request, instruments, holdings, market_data, controversies, draft_rules, data_sources, include_max) -> dict:

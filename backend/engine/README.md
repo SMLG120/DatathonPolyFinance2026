@@ -22,7 +22,23 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.5`.
+`CALCULATION_VERSION` is `byb-engine-1.0.6`.
+
+Change from 1.0.5 (input guards, `guard.py`; no result for valid input changed). A number that is not finite, or
+data that contradicts itself, is refused before any calculation and never yields a verdict:
+
+- NaN or infinity in the portfolio, the policy or the draft rules: `execution` `INVALID_REQUEST`
+  (`INVALID_PORTFOLIO` / `INVALID_POLICY`). Before, a NaN position weight was dropped and the rest could PASS.
+- NaN or infinity in the purchase request: `ContractError` (no result can carry the request).
+- NaN or infinity anywhere in the instrument registry, holdings, market data or controversy registry; a fund whose
+  declared `coverage_fraction` differs from the sum of its reported rows (tolerance `COVERAGE_SUM_TOLERANCE`); a
+  holdings row or an instrument without an `issuer_id`; a negative row weight: `execution` `ERROR`
+  (`ENGINE_ERROR`), nothing calculated. `max_compliant_amount` raises `ValueError` for the same data.
+- A result holding a non-finite number is replaced by `execution` `ERROR` (last line of defence).
+- The `ERROR` message is fixed text and no longer contains the exception class or message.
+
+The data check costs about 35 ms per call on the real data set (measured locally) and is skipped in the boundary
+re-run. Tests: `backend/tests/engine/test_engine_input_guards.py`.
 
 Change from 1.0.4 (citations only): a `max_compliant` of `NO_FEASIBLE_PURCHASE` now cites its proof in
 `evidence_ids` - for a binding rule, the bound measured on the starting portfolio and the rule's threshold; for

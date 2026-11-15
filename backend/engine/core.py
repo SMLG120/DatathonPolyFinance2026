@@ -13,6 +13,7 @@ from typing import Any, Iterable, Optional
 
 from byb_contracts import (
     EPS,
+    ContractError,
     FUNDING,
     MAX_PRICE_AGE_DAYS,
     SCENARIOS,
@@ -23,6 +24,8 @@ from byb_contracts import (
     rule_errors,
     validate_purchase_request,
 )
+
+from .guard import non_finite_paths
 
 OUT_OF_SCOPE_REASONS = {
     "etf_bond": "Bond fund: outside the scope of the company-exposure rules; not assessed.",
@@ -81,10 +84,13 @@ def simulate_change(
     no valid result can carry it.
     """
     validate_purchase_request(purchase_request)
+    not_finite = non_finite_paths(purchase_request, "purchase_request")
+    if not_finite:  # NaN passes a schema bound; the result would carry it and could not be serialized
+        raise ContractError("purchase request", [f"{path}: is not a finite number" for path in not_finite])
     registry = registry_of(instruments)
     invalid = {"feasibility": None, "starting_portfolio": None, "proposed_portfolio": None}
 
-    errors = portfolio_errors(portfolio)
+    errors = [f"{path} is not a finite number" for path in non_finite_paths(portfolio, "portfolio")] or portfolio_errors(portfolio)
     if not errors:
         errors = [
             f"position {p['instrument_id']!r} is not in the instrument registry"
@@ -94,8 +100,11 @@ def simulate_change(
     if errors:
         return {"execution": _execution("INVALID_REQUEST", "INVALID_PORTFOLIO", "The portfolio is not valid: " + "; ".join(errors[:3])), **invalid}
 
-    errors = []
-    if draft_rules is not None:
+    errors = [f"{path} is not a finite number" for path in
+              non_finite_paths(draft_rules, "draft_rules") + (non_finite_paths(policy, "policy") if draft_rules is None else [])]
+    if errors:
+        pass
+    elif draft_rules is not None:
         seen = set()
         for i, rule in enumerate(draft_rules):
             errors.extend(f"draft_rules[{i}]: {e}" for e in rule_errors(rule))
