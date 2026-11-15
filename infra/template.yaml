@@ -512,6 +512,12 @@ Resources:
             # The handler enforces the contract's 20 s deadline itself and answers 504; the integration must outlast it
             # (HTTP API maximum: 30000).
             TimeoutInMillis: 29000
+            RouteSettings:
+              # Each request can start several Bedrock calls (retries included) and the API function has no reserved
+              # concurrency, so this route is throttled below the investigation routes. A CLARIFY_PREFERENCE challenge
+              # runs the same interpreter and is covered by the challenge route's own limit (5 rps, burst 10).
+              ThrottlingBurstLimit: 5
+              ThrottlingRateLimit: 2
         ConfirmRules:
           Type: HttpApi
           Properties:

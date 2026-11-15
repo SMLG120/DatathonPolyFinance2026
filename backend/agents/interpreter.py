@@ -24,7 +24,8 @@ The model cannot supply a number: there is no numeric member in the tool schema.
 server, from the request text alone, and only when all of this holds:
 
 * the rule's span lies inside one sentence of the investor's text;
-* the span the number is read from (``threshold_words``, else the rule's own span) lies in that same sentence;
+* the span the number is read from (``threshold_words``, else the rule's own span) lies inside the rule's own words;
+* that sentence holds no other number, no hedge, a direction cue that agrees with the rule type, and no negation;
 * that span contains exactly one number written as a percentage ("10%", "10 %", "10 percent", "2,5 %"), between
   0 and 100;
 * the sentence does not address the system ("ignore ...", "confirm ...", "set the threshold ...").
@@ -92,7 +93,26 @@ _RULE_SLUG = {"max_issuer_exposure": "issuer-cap", "min_issuer_exposure": "issue
               "controversy_exclusion": "controversy", "scenario_loss_budget": "loss"}
 
 # One number written as a percentage. The look-behind keeps "110%" from being read as "10%".
-_PERCENT_RE = re.compile(r"(?<![\w.,])(\d{1,3}(?:[.,]\d{1,4})?)\s*(?:%|percent\b|per cent\b|pct\b|pour cent\b)", re.IGNORECASE)
+# Only a plain unsigned percentage is read: no sign, range dash, comparison or currency before it, at most two
+# decimals (so "1,000%" is not read as 1%), and nothing like "+", "-" or "~" straight after it.
+_PERCENT_RE = re.compile(r"(?<![\w.,\-\u2212\u2013\u2014+~\u2248<>=$\u20ac\u00a3/])(\d{1,3}(?:[.,]\d{1,2})?)\s*(?:%|percent\b|per cent\b|pct\b|pour cent\b)"
+                         r"(?!\s*[+\-\u2212\u2013~\u2248])", re.IGNORECASE)
+# Any written number. A sentence with a second one (a range, an alternative, another percentage, a year) gives no threshold.
+_NUMBER_TOKEN_RE = re.compile(r"\d[\d.,]*")
+_YEAR_RE = re.compile(r"(?:19|20)\d\d[.,]?")  # a calendar year ("a year like 2022") is not a second quantity
+# Words that make a number approximate, a range or an alternative. Used ONLY to refuse a number (safe direction).
+_HEDGE_RE = re.compile(r"\b(roughly|about|around|approximately|approx|maybe|perhaps|probably|possibly|somewhere|between|or so|or more|or less|"
+                       r"give or take|more or less|ish)\b|[~\u2248]", re.IGNORECASE)
+# Direction cues, looked for in the investor's sentence. A maximum-type rule needs a maximum cue and no minimum cue, and the reverse.
+# "I do not want to lose more than 10%" is a maximum: a negation followed closely by "more than", with no number between.
+_MAX_CUE_RE = re.compile(r"\b(?:do not|don['\u2019]t|not|no|never)\b[^.;%\d]{0,30}?\bmore than\b|"
+                         r"\b(at most|no greater than|not exceed|never exceed|maximum|max|cap|capped|limit|limited|up to|ceiling)\b", re.IGNORECASE)
+_MIN_CUE_RE = re.compile(r"\b(at least|no less than|not less than|no fewer than|minimum|min|floor)\b", re.IGNORECASE)
+# A negation left in the sentence once the cue phrases are removed ("I do not want a 10% limit").
+_NEGATION_RE = re.compile(r"\b(not|no|never|without|neither|nor|none|cannot)\b|n['\u2019]t\b", re.IGNORECASE)
+_LIMIT_TYPES = ("max_issuer_exposure", "min_issuer_exposure", "scenario_loss_budget")
+_SEVERAL_COMPANIES = ("UNSUPPORTED_DEFINITION", "These words are in a sentence that names more than one company, so no rule was drafted for one of them. "
+                      "Write one company per sentence.")
 # Something that looks like a quantity, so a missing percentage deserves a question instead of silence.
 _NUMBERISH_RE = re.compile(r"\d|%|\b(percent|per cent|pct|pour cent|half|third|quarter)\b", re.IGNORECASE)
 # A sentence that talks to the system rather than about the portfolio. Used ONLY to refuse a number (safe direction).
@@ -326,15 +346,36 @@ def _sentence_of(text: str, start: int, end: int) -> tuple[int, int] | None:
     return begin, (following.start() if following else len(text))
 
 
-def user_number(text: str, rule_span: tuple[int, int], number_span: tuple[int, int]) -> tuple[float, str] | None:
-    """``(fraction, quote)`` when the investor's own text states exactly one percentage for this rule, else None.
+def negated(sentence: str) -> bool:
+    """A negation remains in the sentence once the direction cue phrases ("no more than", "never exceed") are removed."""
+    return _NEGATION_RE.search(_MIN_CUE_RE.sub(" ", _MAX_CUE_RE.sub(" ", sentence))) is not None
 
-    The value is computed from the characters of the request text; no number from the model is involved.
+
+def direction_agrees(sentence: str, rule_type: str) -> bool:
+    """The sentence carries a cue for the rule type's direction and none for the opposite one."""
+    has_max, has_min = _MAX_CUE_RE.search(sentence) is not None, _MIN_CUE_RE.search(sentence) is not None
+    if rule_type == "min_issuer_exposure":
+        return has_min and not has_max
+    if rule_type in ("exclusion", "controversy_exclusion"):
+        return not has_min  # avoiding is a maximum by nature ("Exclude Energy completely, 0%")
+    return has_max and not has_min
+
+
+def user_number(text: str, rule_span: tuple[int, int], number_span: tuple[int, int], rule_type: str) -> tuple[float, str] | None:
+    """``(fraction, quote)`` when the investor's own text states exactly one plain percentage for this rule, else None.
+
+    The value is computed from the characters of the request text; no number from the model is involved, and the model
+    cannot choose among numbers: the number lies inside the rule's own words and is the only number of its sentence.
     """
     sentence = _sentence_of(text, *rule_span)
-    if sentence is None or not (sentence[0] <= number_span[0] and number_span[1] <= sentence[1]):
+    if sentence is None or not (rule_span[0] <= number_span[0] and number_span[1] <= rule_span[1]):
         return None
-    if _ADDRESSES_SYSTEM_RE.search(text[sentence[0]:sentence[1]]):
+    sentence_text = text[sentence[0]:sentence[1]]
+    if _ADDRESSES_SYSTEM_RE.search(sentence_text) or _HEDGE_RE.search(sentence_text):
+        return None
+    if len([token for token in _NUMBER_TOKEN_RE.findall(sentence_text) if not _YEAR_RE.fullmatch(token)]) != 1:
+        return None  # a second number: another percentage, a range, an alternative, a year
+    if not direction_agrees(sentence_text, rule_type) or negated(sentence_text):
         return None
     matches = list(_PERCENT_RE.finditer(text, number_span[0], number_span[1]))
     if len(matches) != 1:
@@ -550,10 +591,24 @@ class _Builder:
 
             if rule_type != "controversy_exclusion" and self._in_catalog(span):
                 continue  # words about a catalog term are answered by the catalog's question only (after the item was validated)
+            sentence = _sentence_of(self.text, *span)
+            around = words if sentence is None else self.text[sentence[0]:sentence[1]]
+            # Which written company is meant is not left to the model: several companies in the sentence means asking.
+            named = set(self.reference.companies_in(around))
+            if rule_type == "exclusion" and issuer_ids and len(named) > 1 and named != set(issuer_ids):
+                self.ask("EXCLUSION_DEFINITION", words, objective_id)
+                continue
+            if rule_type in ("max_issuer_exposure", "min_issuer_exposure") and parameters.get("issuer_scope", "") != "any" and len(named) > 1:
+                self.unsupported.append({"words": words, "code": _SEVERAL_COMPANIES[0],
+                                         "reason": _SEVERAL_COMPANIES[1] + (_CLARIFICATION_SUFFIX if self.clarification_mode else "")})
+                continue
             claimed = item.get("threshold_words")
             number_span = span if claimed in (None, "") else _span(self.text, claimed, "threshold")
-            number = user_number(self.text, span, number_span)
-            if number is None and (claimed not in (None, "") or _NUMBERISH_RE.search(words)):
+            number = user_number(self.text, span, number_span, rule_type)
+            # "I do not want a limit on any company": a negated limit is never drafted outright ("Not too much ..." has no cue and is).
+            refused_wish = (rule_type in _LIMIT_TYPES and negated(around)
+                            and (_MAX_CUE_RE.search(around) is not None or _MIN_CUE_RE.search(around) is not None))
+            if number is None and (refused_wish or claimed not in (None, "") or _NUMBERISH_RE.search(words)):
                 # A number seems intended but cannot be traced literally: no number, and a question instead.
                 self.ask(_NUMBER_NEEDED, words, objective_id, pending=(rule_type, parameters))
                 continue
