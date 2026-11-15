@@ -25,7 +25,7 @@ from byb_contracts import (
     validate_purchase_request,
 )
 
-from .guard import non_finite_paths
+from .guard import non_finite_paths, portfolio_problems, target_problem, threshold_problems
 
 OUT_OF_SCOPE_REASONS = {
     "etf_bond": "Bond fund: outside the scope of the company-exposure rules; not assessed.",
@@ -63,6 +63,15 @@ def held_positions(portfolio: dict) -> list[tuple[str, float]]:
 
 # --------------------------------------------------------------------------- purchase simulation
 
+def refuse_unusable_request(purchase_request: Any) -> None:
+    """Raise ContractError for a request no result can carry: a target that is not a finite number, or any NaN."""
+    why = target_problem(purchase_request)
+    problems = [f"purchase_request.target_direct_weight: {why}"] if why else []
+    problems += [f"{path}: is not a finite number" for path in non_finite_paths(purchase_request, "purchase_request")]
+    if problems:  # NaN passes a schema bound; the result would carry it and could not be serialized
+        raise ContractError("purchase request", list(dict.fromkeys(problems)))
+
+
 def _execution(status: str, code: Optional[str], message: Optional[str]) -> dict:
     return {"status": status, "code": code, "message": message}
 
@@ -83,14 +92,15 @@ def simulate_change(
     A purchase request that does not match its schema raises ``ContractError``:
     no valid result can carry it.
     """
+    refuse_unusable_request(purchase_request)
     validate_purchase_request(purchase_request)
-    not_finite = non_finite_paths(purchase_request, "purchase_request")
-    if not_finite:  # NaN passes a schema bound; the result would carry it and could not be serialized
-        raise ContractError("purchase request", [f"{path}: is not a finite number" for path in not_finite])
     registry = registry_of(instruments)
     invalid = {"feasibility": None, "starting_portfolio": None, "proposed_portfolio": None}
 
-    errors = [f"{path} is not a finite number" for path in non_finite_paths(portfolio, "portfolio")] or portfolio_errors(portfolio)
+    # The engine's own checks first (guard.py); the contract validators second. Neither replaces the other.
+    errors = (portfolio_problems(portfolio)
+              or [f"{path} is not a finite number" for path in non_finite_paths(portfolio, "portfolio")]
+              or portfolio_errors(portfolio))
     if not errors:
         errors = [
             f"position {p['instrument_id']!r} is not in the instrument registry"
@@ -100,8 +110,11 @@ def simulate_change(
     if errors:
         return {"execution": _execution("INVALID_REQUEST", "INVALID_PORTFOLIO", "The portfolio is not valid: " + "; ".join(errors[:3])), **invalid}
 
-    errors = [f"{path} is not a finite number" for path in
-              non_finite_paths(draft_rules, "draft_rules") + (non_finite_paths(policy, "policy") if draft_rules is None else [])]
+    if draft_rules is not None:
+        errors = threshold_problems(draft_rules, "draft_rules") or [f"{path} is not a finite number" for path in non_finite_paths(draft_rules, "draft_rules")]
+    else:
+        rules = policy.get("rules") if isinstance(policy, dict) else None
+        errors = threshold_problems(rules, "policy.rules") or [f"{path} is not a finite number" for path in non_finite_paths(policy, "policy")]
     if errors:
         pass
     elif draft_rules is not None:

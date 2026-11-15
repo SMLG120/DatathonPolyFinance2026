@@ -22,7 +22,23 @@ from backend.engine import (CALCULATION_VERSION, check_rules, compute_exposure,
 `draft_rules` makes the result a preview. `data_sources={"prices": id, "fx_usdcad": id}`
 labels price and FX evidence as FACT; without it they are labelled ASSUMPTION.
 
-`CALCULATION_VERSION` is `byb-engine-1.0.6`.
+`CALCULATION_VERSION` is `byb-engine-1.0.7`.
+
+Change from 1.0.6 (the engine's own range checks, `guard.py`; no result for valid input changed). The checks below
+are made by the engine itself, before and independently of the contract validators (the tests replace every
+validator by one that accepts anything and the engine still refuses):
+
+- cash weight and every position weight: a finite number in [0, 1], otherwise `INVALID_REQUEST / INVALID_PORTFOLIO`.
+  A position is never dropped because its weight is unusable;
+- rule and draft-rule thresholds: null, or a finite number in [0, 1], otherwise `INVALID_REQUEST / INVALID_POLICY`;
+- purchase target: not a finite number raises `ContractError`; below 0 or above 1 stays `TARGET_NEGATIVE` /
+  `TARGET_ABOVE_ONE`;
+- holdings row weights in [0, 1]; coverage fractions in [0, 1.01] (published weights are rounded, so a sum slightly
+  above 1 is accepted, as in the contract) and equal to the sum of the rows; prices and USD/CAD rates above 0:
+  otherwise `ERROR / ENGINE_ERROR`, nothing calculated.
+
+Regression for the reported false PASS (a NaN-weight position holding 20% of an issuer under a 10% cap):
+`test_the_reported_false_pass_...` in `backend/tests/engine/test_engine_input_guards.py`.
 
 Change from 1.0.5 (input guards, `guard.py`; no result for valid input changed). A number that is not finite, or
 data that contradicts itself, is refused before any calculation and never yields a verdict:

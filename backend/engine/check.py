@@ -32,6 +32,7 @@ from .core import (
     held_positions,
     public_row,
     records_of,
+    refuse_unusable_request,
     registry_of,
     replay_state,
     simulate_change,
@@ -739,10 +740,8 @@ def check_rules(
     labelled FACT. ``include_max_compliant=False`` is used by the boundary
     re-run: the section is then WITHHELD with a reason saying so.
     """
+    refuse_unusable_request(purchase_request)
     validate_purchase_request(purchase_request)
-    not_finite = non_finite_paths(purchase_request, "purchase_request")
-    if not_finite:
-        raise ContractError("purchase request", [f"{path}: is not a finite number" for path in not_finite])
     if policy is None and draft_rules is None:
         raise ValueError("check_rules needs a policy, or draft_rules for a preview")
     analysis: dict = {"preview": draft_rules is not None}
