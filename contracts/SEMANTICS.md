@@ -27,6 +27,12 @@ registry, the holdings snapshot, market data and the controversy registry.
   never rescaled. A fund absent from `funds` has no holdings file.
 - **Market data**: `[date, adj_close]` rows, no forward fill; `fx_usdcad` rows are CAD per 1 USD.
 - **Controversy registry**: dated, sourced records. An issuer without a record is not assessed.
+- **Finite numbers**: every number in every input and output document is a finite IEEE-754 double. `NaN`,
+  `+Infinity` and `-Infinity` are invalid input: they are rejected before any calculation, with the path of the
+  offending value, never treated as missing data (missing data is an explicit `null` or an absent record, and
+  yields UNKNOWN) and never coerced to zero. Every `validate_*` function of `byb_contracts` rejects them
+  anywhere in a document, and the engine rejects them independently of the validators. A boolean or a numeric
+  string is not a number.
 
 ## 3. Rules and policies
 
@@ -142,8 +148,13 @@ Max-type: FAIL `lower - limit`, PASS `upper - limit`. Min-type: FAIL `limit - up
 Base date 2021-12-31, end date 2022-12-30 (`SCENARIOS`). The evaluated weights are applied at the base date and
 held; cash earns 0.
 
-- Value of an instrument on a date `t`: the latest `adj_close` on or before `t`, converted for USD instruments
-  with the latest `fx_usdcad` rate on or before `t`. The FX rate is matched to `t`, not to the price date (E12).
+- **Value of an instrument as of a date `t`**: the price is the latest `adj_close` on or before `t`; for a USD
+  instrument it is converted with the latest `fx_usdcad` rate on or before **`t`** (a backward match on the as-of
+  date, not on the price observation date; never a later rate, never interpolated) (E12). This one definition
+  holds for every as-of valuation: the base date, the end date and every in-period date of this replay, and the
+  valuation date wherever a position is valued for current weights (portfolio weights themselves are inputs as
+  of `valuation_date`). Both observation dates and their ages in days relative to `t` are reported. Matching
+  the rate to `t` and matching it to the price date give the same rate whenever a price exists on `t`.
 - **Usable history**: at the base date and at the end date the price, and the FX rate for a USD instrument,
   must exist and be at most `MAX_PRICE_AGE_DAYS = 7` calendar days old. Otherwise the instrument is listed in
   `missing_instruments`. No proxy is ever substituted.

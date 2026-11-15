@@ -177,8 +177,10 @@ Terms: section 6. Limitations: sections 5, 7, 8 and 9.
   was reported. `series` is `[date, adj_close]` in the listing currency, strictly ascending.
 - `adj_close` already includes splits and dividends. `corporate_actions.csv` is never applied to it.
 - "Price on date D" means the last observation on or before D. Consumers report the observation date.
-- `fx_usdcad` is CAD per 1 USD (Bank of Canada). A USD value is converted with the latest rate on or before the
-  price date (backward match) and the rate's age in days is reported. Never a later rate, never interpolation.
+- `fx_usdcad` is CAD per 1 USD (Bank of Canada). A USD value as of date D is converted with the latest rate on
+  or before D, the as-of date (backward match), not the date of the price observation; the two coincide
+  whenever a price exists on D. The rate's date and age in days are reported. Never a later rate, never
+  interpolation. Normative definition: `contracts/SEMANTICS.md` section 7.
 - Crypto rows are UTC calendar days, seven days a week; weekend rows use a rate up to 4 days old.
 - Valuation date: 2026-11-12, the last date of every price series and of the FX series.
 
