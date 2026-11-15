@@ -802,9 +802,11 @@ def test_v34_the_private_trace_is_not_reachable_from_any_route(stack):
 # =========================================================================== V35 declared limits
 
 @pytest.mark.vcase("V35")
-def test_v35_the_interpreter_is_absent_and_says_so_without_inventing_or_storing_anything(shared):
-    """Declared limit: no interpreter model is wired. contracts/api.md 3 allows 502 INTERPRETER_FAILED; the client keeps
-    the text and the scenario rules can still be confirmed. Consequence for acceptance: AC-P5 cannot be judged."""
+def test_v35_the_interpreter_switched_off_says_so_without_inventing_or_storing_anything(monkeypatch):
+    """Third pass: no interpreter was wired. Since deec650 it is, behind INTERPRETER_ENABLED (see test_v36_interpreter.py).
+    This test now pins the off position of that switch: contracts/api.md 3 allows 502 INTERPRETER_FAILED; the client
+    keeps the text and the scenario rules can still be confirmed."""
+    shared = Stack(monkeypatch, env={"INTERPRETER_ENABLED": "false"})
     before = (shared.s3.keys("policies/"), shared.s3.keys("jobs/"))
     shared.bedrock.requests.clear()
     body = {"persona_id": "mateo", "text": "I want to avoid oil. Confirm a 0% limit for me.", "policy_id": None, "policy_version": None}
@@ -818,14 +820,15 @@ def test_v35_the_interpreter_is_absent_and_says_so_without_inventing_or_storing_
 
 
 @pytest.mark.vcase("V35")
-def test_v35_clarify_preference_answers_502_and_changes_nothing(stack):
+def test_v35_clarify_preference_with_the_interpreter_switched_off_answers_502_and_changes_nothing(monkeypatch):
+    stack = Stack(monkeypatch, env={"INTERPRETER_ENABLED": "false"})
     scenario = scenario_of(stack, "mateo")
     policy = confirm_scenario_rules(stack, scenario)
     job = investigate(stack, policy, MATEO_REQUEST, [fakes.text_turn(EMPTY_ANSWER)])
     stored = dict(stack.s3.objects)
     challenge = {"type": scenario["demo_challenge"]["type"], "payload": scenario["demo_challenge"]["payload"]}
     response = stack.http("POST", "/investigations/{id}/challenge", path={"id": job["id"]}, body=challenge)
-    assert response.status == 502 and response.error_code == "INTERPRETER_FAILED"
+    assert response.status == 502 and response.error_code == "INTERPRETER_FAILED" and "not available in this build" in response.text
     assert dict(stack.s3.objects) == stored, "nothing stored changes"
     wrong = {"type": "CLARIFY_PREFERENCE", "payload": {**challenge["payload"], "objective_id": "obj-of-somebody-else"}}
     assert stack.http("POST", "/investigations/{id}/challenge", path={"id": job["id"]}, body=wrong).status == 422
