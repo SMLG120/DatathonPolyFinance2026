@@ -539,9 +539,11 @@ Server rules:
 1. Order: validate the request, store the job as `QUEUED`, invoke the worker asynchronously, and
    answer 202 **only after the invocation was accepted**. The 202 is sent before any model call.
 2. Idempotency. The same key with the same body (equal after canonical JSON serialization) returns
-   202 with the **same** `id`; `status` is the job's current status; no second job and no second
-   worker are created. The same key with a different body is 409. Keys are remembered until the job
-   expires.
+   202 with the **same** `id`; `status` is the job's current status; no second job is created and
+   no second result is ever produced. If the replayed job is still `QUEUED`, the service may invoke
+   the worker again to recover a first invocation that was lost; a delivery for a job that is
+   already claimed or terminal does nothing (no model call, no state change). The same key with a
+   different body is 409. Keys are remembered until the job expires.
 3. A structured request is checked against the persona's portfolio before the job is stored. If the
    engine would answer `INVALID_REQUEST`, the route answers 422 and `details[0].issue` starts with
    the execution code (for example `TARGET_BELOW_CURRENT_WEIGHT: ...`).
