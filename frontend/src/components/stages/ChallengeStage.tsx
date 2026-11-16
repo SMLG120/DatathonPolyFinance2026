@@ -19,6 +19,7 @@ import { assessResult } from "@/lib/result";
 import { verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 const LEAD = "Disagree with a figure, with how your preference was read, or with one of your own rules? Each path keeps the earlier report exactly as it was.";
 
@@ -53,14 +54,14 @@ export function ChallengeStage() {
     return (
       <StageFrame stage="challenge" lead={LEAD}>
         <EmptyBlock
-          title="There is no report to challenge yet"
+          title={t("There is no report to challenge yet")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
               Go to Test an idea
             </LinkButton>
           }
         >
-          <p>A challenge is made against a report whose checks ran. Run an investigation first.</p>
+          <p>{t("A challenge is made against a report whose checks ran. Run an investigation first.")}</p>
         </EmptyBlock>
         {state.comparison ? <ComparisonPanel /> : null}
       </StageFrame>
@@ -77,12 +78,12 @@ export function ChallengeStage() {
 
   return (
     <StageFrame stage="challenge" lead={LEAD}>
-      <Panel title="Report being challenged" tone="sunken" figures>
+      <Panel title={t("Report being challenged")} tone="sunken" figures>
         <Facts className="sm:grid-cols-3">
-          <Fact label="Result">
+          <Fact label={t("Result")}>
             <span data-testid="challenged-headline">{headline.title}</span>
           </Fact>
-          <Fact label="Request">
+          <Fact label={t("Request")}>
             <span className="tabular">{describePurchase(result.purchase_request)}</span>
           </Fact>
           <Fact label="Checked against">
@@ -99,14 +100,13 @@ export function ChallengeStage() {
         </Facts>
         <div className="mt-4">
           <LinkButton href={stageHref("verdict")} size="sm">
-            Open this report
-          </LinkButton>
+            {t("Open this report")}</LinkButton>
         </div>
       </Panel>
 
-      <Panel id="challenge-forms" title="What do you want to challenge?" description="Choose one of three paths. Each has its own form.">
+      <Panel id="challenge-forms" title={t("What do you want to challenge?")} description={t("Choose one of three paths. Each has its own form.")}>
         <Tabs
-          label="Ways to challenge this report"
+          label={t("Ways to challenge this report")}
           value={tab}
           onValueChange={(next) => {
             actions.clearChallengeError();
@@ -136,11 +136,10 @@ export function ChallengeStage() {
                     title={`This report was checked against policy version ${job.policy_version}, which is no longer the one in force`}
                     action={
                       <Button size="sm" onClick={() => actions.viewReport(null)}>
-                        Use the latest report instead
-                      </Button>
+                        {t("Use the latest report instead")}</Button>
                     }
                   >
-                    <p>A rule is changed starting from the version in force{current ? ` (version ${current.version})` : ""}.</p>
+                    <p>{t("A rule is changed starting from the version in force")}{current ? ` (version ${current.version})` : ""}.</p>
                   </Notice>
                 ),
             },
@@ -148,13 +147,13 @@ export function ChallengeStage() {
         />
         {state.challenge.status === "error" ? (
           state.challenge.kind === "no_fixture" ? (
-            <Notice tone="info" role="status" title="The test data holds no answer to this challenge" className="mt-5">
+            <Notice tone="info" role="status" title={t("The test data holds no answer to this challenge")} className="mt-5">
               <p data-testid="challenge-not-recorded">{state.challenge.error}</p>
-              <p>Nothing was changed: no correction, no rule and no report.</p>
+              <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </Notice>
           ) : (
-            <ErrorBlock className="mt-5" title="Your challenge could not be recorded" message={state.challenge.error ?? "The request failed."}>
-              <p>Nothing was changed: no correction, no rule and no report.</p>
+            <ErrorBlock className="mt-5" title={t("Your challenge could not be recorded")} message={state.challenge.error ?? "The request failed."}>
+              <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </ErrorBlock>
           )
         ) : null}

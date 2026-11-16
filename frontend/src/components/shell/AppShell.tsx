@@ -4,6 +4,7 @@ import { useMemo, type ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { formatDate } from "@/lib/format";
+import { t, useLocale } from "@/lib/i18n";
 import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
 import { type StageId, useStage } from "@/state/stage";
@@ -26,11 +27,11 @@ function useValuationDateText(): string {
     case "ready":
       return formatDate(state.portfolio.data?.scenario.portfolio.valuation_date);
     case "loading":
-      return "loading…";
+      return t("loading…");
     case "error":
-      return "unavailable";
+      return t("unavailable");
     case "idle":
-      return "shown once a portfolio is loaded";
+      return t("shown once a portfolio is loaded");
   }
 }
 
@@ -53,6 +54,7 @@ function useCompletedStages(): ReadonlySet<StageId> {
  * the header with the stepper, the main region and the footer.
  */
 export function AppShell({ children }: { children: ReactNode }) {
+  const [locale, setLocale] = useLocale();
   const { config, needsAccessCode, forgetAccessCode } = useRuntime();
   const stage = useStage();
   const valuationDate = useValuationDateText();
@@ -69,22 +71,22 @@ export function AppShell({ children }: { children: ReactNode }) {
         }}
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:text-accent focus:shadow-lg"
       >
-        Skip to main content
+        {t("Skip to main content")}
       </a>
 
       {/* Always on screen, on every stage and at every scroll position. */}
-      <section aria-label="Simulation notice" className="on-dark sticky top-0 z-30 bg-[linear-gradient(90deg,#1d4ed8_0%,#2f5bdb_28%,#4f46e5_62%,#7c3aed_100%)] text-on-banner">
+      <section aria-label={t("Simulation notice")} className="on-dark sticky top-0 z-30 bg-[linear-gradient(90deg,#1d4ed8_0%,#2f5bdb_28%,#4f46e5_62%,#7c3aed_100%)] text-on-banner">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6">
           <p className="font-semibold" data-testid="simulation-label">
-            {SIMULATION_LABEL}
+            {t(SIMULATION_LABEL)}
           </p>
           <p className="sr-only" data-testid="valuation-date">
-            Valuation date: <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
+            {t("Valuation date:")} <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
           </p>
           {config.mode === "fixtures" ? (
             <p data-testid="fixtures-label" title={config.fixturesReason ? FIXTURES_REASONS[config.fixturesReason] : undefined}>
               <Badge tone="unknown" dashed className="py-0 leading-5">
-                {FIXTURES_LABEL}
+                {t(FIXTURES_LABEL)}
               </Badge>
             </p>
           ) : null}
@@ -128,16 +130,15 @@ export function AppShell({ children }: { children: ReactNode }) {
           </p>
           {config.mode === "fixtures" && config.fixturesReason ? (
             <p>
-              <span className="font-semibold text-ink">{FIXTURES_LABEL}.</span> {FIXTURES_REASONS[config.fixturesReason]} Every figure shown is a
-              recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked &ldquo;Test data&rdquo;.
+              <span className="font-semibold text-ink">{t(FIXTURES_LABEL)}.</span> {t(FIXTURES_REASONS[config.fixturesReason])} {t("Every figure shown is a recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked “Test data”.")}
             </p>
           ) : null}
           </details>
           {config.mode === "live" && !needsAccessCode ? (
             <p>
-              The access code is kept for this browser tab only.{" "}
+              {t("The access code is kept for this browser tab only.")}{" "}
               <Button variant="quiet" size="sm" onClick={forgetAccessCode} className="min-h-6 py-0">
-                Forget the access code
+                {t("Forget the access code")}
               </Button>
             </p>
           ) : null}

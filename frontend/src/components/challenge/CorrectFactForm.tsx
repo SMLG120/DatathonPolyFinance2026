@@ -12,6 +12,7 @@ import { formatEvidenceValue, formatValueInUnit, metricLabel, subjectText } from
 import { formatDateTime, fractionToPercentInput, percentInputToFraction } from "@/lib/format";
 import { findEvidence } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 /** How the asserted value is typed for each unit, and how the text is read. A share is typed as a percentage and stored as a fraction. */
 const VALUE_FIELD: Record<EvidenceUnit, { label: string; hint: string; error: string }> = {
@@ -72,7 +73,7 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
               </>
             ) : (
               <>
-                Evidence <span className="font-mono text-sm">{correction.evidence_id}</span>:{" "}
+                {t("Evidence")} <span className="font-mono text-sm">{correction.evidence_id}</span>:{" "}
                 <span className="tabular font-semibold">{formatValueInUnit(correction.original_value, correction.original_unit)}</span>
               </>
             )}
@@ -84,27 +85,26 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
           ) : null}
         </div>
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Value proposed</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Value proposed")}</dt>
           <dd className="tabular font-semibold text-ink" data-testid="correction-proposed">
             {formatValueInUnit(correction.asserted_value, correction.asserted_unit)}
           </dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">Reason given</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Reason given")}</dt>
           <dd className="whitespace-pre-line text-ink">{correction.provenance.user_note}</dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">Source named</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Source named")}</dt>
           <dd className="whitespace-pre-line text-ink">{correction.provenance.user_source ?? "None"}</dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">Provenance</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Provenance")}</dt>
           <dd className="text-ink">
-            Asserted by the user on <span className="tabular">{formatDateTime(correction.provenance.asserted_at)}</span>. No source has confirmed it.
-          </dd>
+            {t("Asserted by the user on")} <span className="tabular">{formatDateTime(correction.provenance.asserted_at)}</span>{t(". No source has confirmed it.")}</dd>
         </div>
       </dl>
-      <p className="mt-3 text-sm font-semibold text-ink">Not used in any calculation. Every figure of the report is still based on the recorded value.</p>
+      <p className="mt-3 text-sm font-semibold text-ink">{t("Not used in any calculation. Every figure of the report is still based on the recorded value.")}</p>
     </li>
   );
 }
@@ -183,22 +183,20 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-ink">Correct a fact</h3>
+      <h3 className="text-lg font-semibold text-ink">{t("Correct a fact")}</h3>
       <p className="max-w-prose text-ink">
-        If a figure looks wrong, say what you believe it should be. Your value is stored as a claim from you. It is not checked against a source, it
-        is not used in any calculation, and the recorded evidence stays as it is.
-      </p>
+        {t("If a figure looks wrong, say what you believe it should be. Your value is stored as a claim from you. It is not checked against a source, it is not used in any calculation, and the recorded evidence stays as it is.")}</p>
 
       {exampleRecord && example ? (
         <p>
           <Button size="sm" onClick={fillExample} data-testid="fill-example-fact">
-            Fill in the scenario&apos;s example: {example.label}
+            {t("Fill in the scenario&apos;s example:")} {example.label}
           </Button>
         </p>
       ) : null}
 
       <form onSubmit={onSubmit} noValidate className="space-y-5" data-testid="correct-fact-form">
-        <Field htmlFor={evidenceFieldId} label="Which figure?" hint="Every figure of this report, by its evidence record." error={show(errors.evidence)}>
+        <Field htmlFor={evidenceFieldId} label={t("Which figure?")} hint={t("Every figure of this report, by its evidence record.")} error={show(errors.evidence)}>
           <Select
             id={evidenceFieldId}
             value={evidenceId}
@@ -209,7 +207,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
             aria-invalid={show(errors.evidence) ? true : undefined}
             aria-describedby={describedBy(evidenceFieldId, { hint: true, error: Boolean(show(errors.evidence)) })}
           >
-            <option value="">Choose a figure</option>
+            <option value="">{t("Choose a figure")}</option>
             {result.evidence.map((record) => (
               <option key={record.evidence_id} value={record.evidence_id}>
                 {recordName(record)}: {formatEvidenceValue(record)}
@@ -221,7 +219,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
         {selected ? (
           <div className="rounded-md border border-line bg-canvas p-3 sm:p-4" data-testid="original-evidence" data-figures="true">
             <div className="flex flex-wrap items-start justify-between gap-2">
-              <p className="text-sm font-semibold text-ink-muted">Recorded in the report</p>
+              <p className="text-sm font-semibold text-ink-muted">{t("Recorded in the report")}</p>
               <TestDataTag />
             </div>
             <p className="text-ink">
@@ -244,7 +242,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
               aria-describedby={describedBy(valueId, { hint: true, error: Boolean(show(errors.value)) })}
             />
           </Field>
-          <Field htmlFor={sourceId} label="Where your value comes from (optional)" hint="For example a document and its date. It is recorded as named by you, not retrieved.">
+          <Field htmlFor={sourceId} label={t("Where your value comes from (optional)")} hint={t("For example a document and its date. It is recorded as named by you, not retrieved.")}>
             <TextInput
               id={sourceId}
               value={source}
@@ -254,7 +252,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
             />
           </Field>
         </div>
-        <Field htmlFor={noteId} label="Why you believe the recorded value is wrong" hint="Stored word for word with the correction." error={show(errors.note)}>
+        <Field htmlFor={noteId} label={t("Why you believe the recorded value is wrong")} hint={t("Stored word for word with the correction.")} error={show(errors.note)}>
           <TextArea
             id={noteId}
             rows={2}
@@ -266,13 +264,12 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
         </Field>
 
         <Button type="submit" variant="primary" busy={busy} busyLabel="Recording…" data-testid="submit-correction">
-          Record my correction as unverified
-        </Button>
+          {t("Record my correction as unverified")}</Button>
       </form>
 
       <div>
         <h3 ref={listHeadingRef} tabIndex={-1} className="text-lg font-semibold text-ink">
-          Proposed corrections to this report ({corrections.length})
+          {t("Proposed corrections to this report (")}{corrections.length})
         </h3>
         {corrections.length > 0 ? (
           <ul className="mt-3 space-y-3">
@@ -281,7 +278,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
             ))}
           </ul>
         ) : (
-          <p className="mt-1 text-ink-muted">None yet.</p>
+          <p className="mt-1 text-ink-muted">{t("None yet.")}</p>
         )}
       </div>
     </div>

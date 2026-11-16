@@ -1,5 +1,6 @@
 import type { AssetClass, Instrument, InstrumentId, Portfolio, PurchaseRequest } from "@/lib/contracts";
 import { formatFraction } from "@/lib/format";
+import { t } from "@/lib/i18n";
 
 /**
  * Read-only helpers over a portfolio and the purchase form.
@@ -33,7 +34,7 @@ const ASSET_CLASS_LABELS: Record<AssetClass, string> = {
 };
 
 export function assetClassLabel(assetClass: AssetClass): string {
-  return ASSET_CLASS_LABELS[assetClass];
+  return t(ASSET_CLASS_LABELS[assetClass]);
 }
 
 /** The registry name of an instrument, or its id when the registry has no entry for it. */
@@ -43,11 +44,11 @@ export function instrumentName(instruments: InstrumentRegistry, instrumentId: In
 
 function instrumentKind(instruments: InstrumentRegistry, instrumentId: InstrumentId): string {
   const instrument = instruments[instrumentId];
-  return instrument ? assetClassLabel(instrument.asset_class) : "Not in the registry";
+  return instrument ? assetClassLabel(instrument.asset_class) : t("Not in the registry");
 }
 
 export function cashRowName(portfolio: Portfolio): string {
-  return `Cash (${portfolio.base_currency})`;
+  return `${t("Cash")} (${portfolio.base_currency})`;
 }
 
 /** The direct weight held now, or null when the instrument is not held. Read from the portfolio, never computed. */
@@ -126,5 +127,5 @@ export function readPurchaseForm(purchasableIds: InstrumentId[], input: Purchase
 
 /** "NVDA at a final direct weight of 25.0%" */
 export function describePurchase(purchase: PurchaseRequest): string {
-  return `${purchase.instrument_id} at a final direct weight of ${formatFraction(purchase.target_direct_weight)}`;
+  return `${purchase.instrument_id} ${t("at a final direct weight of")} ${formatFraction(purchase.target_direct_weight)}`;
 }

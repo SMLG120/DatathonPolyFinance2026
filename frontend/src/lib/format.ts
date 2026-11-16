@@ -7,6 +7,7 @@
  */
 
 import { EPS } from "@/lib/contracts";
+import { getLocale, t } from "@/lib/i18n";
 
 /** The contract's tolerance. Used here for wording only, never for a verdict. */
 export { EPS };
@@ -18,6 +19,11 @@ export const NOT_SET_TEXT = "Not set";
 const MINUS = "−";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"] as const;
+const FRENCH_MONTHS = ["janv.", "févr.", "mars", "avr.", "mai", "juin", "juill.", "août", "sept.", "oct.", "nov.", "déc."] as const;
+
+function localizePercent(text: string): string {
+  return getLocale() === "fr" ? text.replace(".", ",").replace(/%$/, "\u00a0%") : text;
+}
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -73,15 +79,15 @@ function scaleFraction(value: number, decimals: number, rounding: FormatFraction
  * reads "0.0%". This is wording only: the value itself is never changed.
  */
 export function formatFraction(value: number | null | undefined, options: FormatFractionOptions = {}): string {
-  if (!isFiniteNumber(value)) return UNKNOWN_TEXT;
+  if (!isFiniteNumber(value)) return t(UNKNOWN_TEXT);
   const decimals = options.decimals ?? 1;
   const scaled = scaleFraction(value, decimals, options.rounding);
   if (scaled === 0 && Math.abs(value) > EPS) {
-    const smallestShown = `${scaledToText(1, decimals)}%`;
+    const smallestShown = localizePercent(`${scaledToText(1, decimals)}%`);
     return value < 0 ? `> ${MINUS}${smallestShown}` : `< ${options.signed ? "+" : ""}${smallestShown}`;
   }
   const sign = scaled < 0 ? MINUS : options.signed && scaled > 0 ? "+" : "";
-  return `${sign}${scaledToText(scaled, decimals)}%`;
+  return localizePercent(`${sign}${scaledToText(scaled, decimals)}%`);
 }
 
 /**
@@ -94,13 +100,13 @@ export function formatFractionRange(
   upper: number | null | undefined,
   options: FormatFractionOptions = {},
 ): string {
-  if (!isFiniteNumber(lower) || !isFiniteNumber(upper)) return UNKNOWN_TEXT;
+  if (!isFiniteNumber(lower) || !isFiniteNumber(upper)) return t(UNKNOWN_TEXT);
   if (Math.abs(upper - lower) <= EPS) return formatFraction(lower, options);
   const decimals = decimalsToDistinguish(lower, upper, options.decimals ?? 1);
   const from = formatFraction(lower, { ...options, decimals });
   const to = formatFraction(upper, { ...options, decimals });
   // Two bounds that read the same even at the most decimals shown are worded once, not as "X to X".
-  return from === to ? from : `${from} to ${to}`;
+  return from === to ? from : `${from} ${t("to")} ${to}`;
 }
 
 /** True when a measured interval is a real range rather than one number. */
@@ -133,7 +139,8 @@ export function formatPoints(value: number | null | undefined, decimals = 1): st
   if (!isFiniteNumber(value)) return UNKNOWN_TEXT;
   const scaled = Math.abs(roundHalfAwayFromZero(shiftDecimal(value, 2 + decimals)));
   const text = scaledToText(scaled, decimals);
-  return `${text} ${Number(text) === 1 ? "point" : "points"}`;
+  const display = getLocale() === "fr" ? text.replace(".", ",") : text;
+  return `${display} ${getLocale() === "fr" ? "point(s)" : Number(text) === 1 ? "point" : "points"}`;
 }
 
 /**
@@ -141,8 +148,8 @@ export function formatPoints(value: number | null | undefined, decimals = 1): st
  * 0.25 -> "+25.0 points", -0.25 -> "−25.0 points", 0 -> "No change".
  */
 export function formatChange(delta: number | null | undefined, decimals = 1): string {
-  if (!isFiniteNumber(delta)) return UNKNOWN_TEXT;
-  if (Math.abs(delta) <= EPS) return "No change";
+  if (!isFiniteNumber(delta)) return t(UNKNOWN_TEXT);
+  if (Math.abs(delta) <= EPS) return t("No change");
   return `${delta > 0 ? "+" : MINUS}${formatPoints(delta, decimals)}`;
 }
 
@@ -174,24 +181,24 @@ export function formatGap(
   noun: string = direction === "max" ? "limit" : "minimum",
   startDecimals = 1,
 ): string {
-  if (!isFiniteNumber(gap)) return "Cannot be determined";
-  if (Math.abs(gap) <= EPS) return `Exactly at the ${noun}`;
+  if (!isFiniteNumber(gap)) return t("Cannot be determined");
+  if (Math.abs(gap) <= EPS) return `${t("Exactly at the")} ${noun}`;
   let decimals = startDecimals;
   while (decimals < MAX_DECIMALS && Number(formatPoints(gap, decimals).split(" ")[0]) === 0) decimals += 1;
   const points = formatPoints(gap, decimals);
-  if (direction === "max") return gap > 0 ? `${points} over the ${noun}` : `${points} under the ${noun}`;
-  return gap > 0 ? `${points} below the ${noun}` : `${points} above the ${noun}`;
+  if (direction === "max") return gap > 0 ? `${points} ${t("over the")} ${noun}` : `${points} ${t("under the")} ${noun}`;
+  return gap > 0 ? `${points} ${t("below the")} ${noun}` : `${points} ${t("above the")} ${noun}`;
 }
 
 /** "12 Nov 2026" from "2026-11-12". Parsed as text so no time zone can shift the day. */
 export function formatDate(iso: string | null | undefined): string {
-  if (typeof iso !== "string") return UNKNOWN_TEXT;
+  if (typeof iso !== "string") return t(UNKNOWN_TEXT);
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
-  if (!match) return UNKNOWN_TEXT;
+  if (!match) return t(UNKNOWN_TEXT);
   const [, year, month, day] = match;
-  const monthName = MONTHS[Number(month) - 1];
+  const monthName = getLocale() === "fr" ? FRENCH_MONTHS[Number(month) - 1] : MONTHS[Number(month) - 1];
   const dayNumber = Number(day);
-  if (!monthName || dayNumber < 1 || dayNumber > 31) return UNKNOWN_TEXT;
+  if (!monthName || dayNumber < 1 || dayNumber > 31) return t(UNKNOWN_TEXT);
   return `${dayNumber} ${monthName} ${year}`;
 }
 
@@ -199,15 +206,15 @@ export function formatDate(iso: string | null | undefined): string {
 export function formatDateTime(iso: string | null | undefined): string {
   const time = formatTime(iso);
   const date = formatDate(iso);
-  if (time === UNKNOWN_TEXT || date === UNKNOWN_TEXT) return UNKNOWN_TEXT;
+  if (time === t(UNKNOWN_TEXT) || date === t(UNKNOWN_TEXT)) return t(UNKNOWN_TEXT);
   return `${date}, ${time}`;
 }
 
 /** "15:02:11 UTC" from an ISO timestamp. Always UTC so a recording reads the same everywhere. */
 export function formatTime(iso: string | null | undefined): string {
-  if (typeof iso !== "string") return UNKNOWN_TEXT;
+  if (typeof iso !== "string") return t(UNKNOWN_TEXT);
   const parsed = new Date(iso);
-  if (Number.isNaN(parsed.getTime()) || !/T\d{2}:\d{2}/.test(iso)) return UNKNOWN_TEXT;
+  if (Number.isNaN(parsed.getTime()) || !/T\d{2}:\d{2}/.test(iso)) return t(UNKNOWN_TEXT);
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${pad(parsed.getUTCHours())}:${pad(parsed.getUTCMinutes())}:${pad(parsed.getUTCSeconds())} UTC`;
 }

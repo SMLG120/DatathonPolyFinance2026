@@ -3,6 +3,7 @@ import type { CoverageStatus, JobStatus, RuleStatus, VerdictStatus } from "@/lib
 import { cn } from "@/lib/cn";
 import { ruleStatusLabel } from "@/lib/rules";
 import { coverageText, jobStatusText, statusText } from "@/lib/verdict";
+import { t } from "@/lib/i18n";
 import {
   CheckIcon,
   ClockIcon,
@@ -68,7 +69,7 @@ export function StatusBadge({ status, className, prefix }: { status: VerdictStat
   return (
     <span data-status={status} className="inline-flex">
       <Badge tone={tone} dashed={dashed} icon={<Icon size={16} />} className={className}>
-        {prefix ? `${prefix} ${statusText(status)}` : statusText(status)}
+        {prefix ? `${t(prefix)} ${statusText(status)}` : statusText(status)}
       </Badge>
     </span>
   );

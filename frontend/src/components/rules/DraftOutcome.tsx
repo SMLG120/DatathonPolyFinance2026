@@ -4,6 +4,7 @@ import type { ClarificationOption, Rule } from "@/lib/contracts";
 import { measureKey, ruleParametersText, ruleTypeLabel } from "@/lib/rules";
 import { activeRules } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 /** "Maximum exposure to a single company — any single company" */
 export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)}: ${ruleParametersText(rule)}`;
@@ -23,33 +24,31 @@ export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "
   if (state.proposedRules.some((rule) => rule.rule_id === draft.rule_id && measureKey(rule) === measureKey(draft))) {
     return (
       <>
-        <span className="font-semibold">Listed under {list}, without a number.</span> Enter the number you want there, then confirm.
-      </>
+        <span className="font-semibold">{t("Listed under")} {list}{t(", without a number.")}</span> {t("Enter the number you want there, then confirm.")}</>
     );
   }
   const same = state.proposedRules.find((rule) => measureKey(rule) === measureKey(draft));
   if (same) {
     return (
       <>
-        <span className="font-semibold">Already listed under {list}:</span> {ruleName(same)}. Check its number there, then confirm.
-      </>
+        <span className="font-semibold">{t("Already listed under")} {list}:</span> {ruleName(same)}{t(". Check its number there, then confirm.")}</>
     );
   }
   const inForce = activeRules(policy).find((rule) => measureKey(rule) === measureKey(draft));
   if (inForce) {
     return (
       <>
-        <span className="font-semibold">Already in force</span> in policy version <span className="tabular">{policy?.version}</span>: {ruleName(inForce)}.
+        <span className="font-semibold">{t("Already in force")}</span> {t("in policy version")} <span className="tabular">{policy?.version}</span>: {ruleName(inForce)}.
         {place === "here" ? " Change its number by reviewing the result." : " Its number can be changed under “Change a rule”."}
       </>
     );
   }
-  return <>This draft could not be listed.</>;
+  return <>{t("This draft could not be listed.")}</>;
 }
 
 /** What choosing a definition led to. A supported option carries the draft rule it leads to, or none. */
 export function OptionOutcome({ option, place = "here" }: { option: ClarificationOption | undefined; place?: "here" | "elsewhere" }) {
   if (!option) return null;
-  if (!option.proposed_rule) return <>Recorded. {option.description}</>;
+  if (!option.proposed_rule) return <>{t("Recorded.")} {option.description}</>;
   return <DraftOutcome draft={option.proposed_rule} place={place} />;
 }

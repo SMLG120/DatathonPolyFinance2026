@@ -26,6 +26,7 @@ import { usePurchaseForm } from "@/state/purchase";
 import { useRuntime } from "@/state/runtime";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 /** The label of every figure shown before the investigation has run. */
 export const PURCHASE_PREVIEW_LABEL = "Preview: computed by the service for the request above";
@@ -77,13 +78,13 @@ export function PurchaseStage() {
 
   if (state.portfolio.status !== "ready" || !data || !startingPortfolio) {
     return (
-      <StageFrame stage="purchase" lead="Describe the purchase to check: which instrument, and the final weight it should have in the portfolio.">
+      <StageFrame stage="purchase" lead={t("Describe the purchase to check: which instrument, and the final weight it should have in the portfolio.")}>
         {state.portfolio.status === "error" ? (
-          <ErrorBlock title="The portfolio could not be loaded" message={state.portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
-            <p>A purchase is described relative to a portfolio, so this stage needs it.</p>
+          <ErrorBlock title={t("The portfolio could not be loaded")} message={state.portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
+            <p>{t("A purchase is described relative to a portfolio, so this stage needs it.")}</p>
           </ErrorBlock>
         ) : (
-          <LoadingBlock label="Loading the portfolio this purchase applies to…" />
+          <LoadingBlock label={t("Loading the portfolio this purchase applies to…")} />
         )}
       </StageFrame>
     );
@@ -128,14 +129,14 @@ export function PurchaseStage() {
   return (
     <StageFrame
       stage="purchase"
-      lead="Choose an investment and its target share. We’ll check it against your confirmed limits."
+      lead={t("Choose an investment and its target share. We’ll check it against your confirmed limits.")}
     >
       {!policy ? (
-        <Notice tone="info" title="First, confirm your limits" action={<LinkButton href={stageHref("goals")} variant="primary">Set my limits</LinkButton>}>
-          <p>Choose what matters to you before checking an idea.</p>
+        <Notice tone="info" title={t("First, confirm your limits")} action={<LinkButton href={stageHref("goals")} variant="primary">{t("Set my limits")}</LinkButton>}>
+          <p>{t("Choose what matters to you before checking an idea.")}</p>
         </Notice>
-      ) : <p className="text-sm text-ink-muted">{active.length} confirmed limits · <LinkButton href={stageHref("goals")} variant="quiet" size="sm">Review limits</LinkButton></p>}
-      <Panel title="What would you like to try?" figures>
+      ) : <p className="text-sm text-ink-muted">{active.length} {t("confirmed limits ·")} <LinkButton href={stageHref("goals")} variant="quiet" size="sm">{t("Review limits")}</LinkButton></p>}
+      <Panel title={t("What would you like to try?")} figures>
         <div className="space-y-5">
           {customPortfolio ? (
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink" data-testid="purchase-portfolio-note">
@@ -152,18 +153,18 @@ export function PurchaseStage() {
           ) : null}
           {scenario.demo_requests.length > 0 ? (
             <details className="rounded-md border border-line bg-canvas p-3" data-testid="scenario-requests">
-              <summary className="cursor-pointer text-sm font-semibold text-ink-muted">Try an example</summary>
+              <summary className="cursor-pointer text-sm font-semibold text-ink-muted">{t("Try an example")}</summary>
               <ul className="mt-1 space-y-2">
                 {scenario.demo_requests.map((demo) => {
                   const inForm = request?.instrument_id === demo.purchase_request.instrument_id && request.target_direct_weight === demo.purchase_request.target_direct_weight;
                   return (
                     <li key={demo.request_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
                       <span className="text-ink">
-                        {demo.purchase_request.original_words ? <>&ldquo;{demo.purchase_request.original_words}&rdquo; </> : null}
+                        {demo.purchase_request.original_words ? <>{t("&ldquo;")}{demo.purchase_request.original_words}{t("&rdquo;")} </> : null}
                         <span className="text-sm text-ink-muted">{demo.label}.</span>
                       </span>
                       {inForm ? (
-                        <span className="text-sm font-semibold text-accent-strong">In the form below</span>
+                        <span className="text-sm font-semibold text-accent-strong">{t("In the form below")}</span>
                       ) : (
                         <Button
                           size="sm"
@@ -174,8 +175,7 @@ export function PurchaseStage() {
                             })
                           }
                         >
-                          Fill in this request
-                        </Button>
+                          {t("Fill in this request")}</Button>
                       )}
                     </li>
                   );
@@ -185,7 +185,7 @@ export function PurchaseStage() {
           ) : null}
 
           <div className="grid gap-5 md:grid-cols-2">
-            <Field htmlFor={instrumentId} label="Which investment?" hint="Only supported investments are listed." error={instrumentError}>
+            <Field htmlFor={instrumentId} label={t("Which investment?")} hint={t("Only supported investments are listed.")} error={instrumentError}>
               <Select
                 id={instrumentId}
                 ref={instrumentRef}
@@ -194,7 +194,7 @@ export function PurchaseStage() {
                 aria-invalid={instrumentError ? true : undefined}
                 aria-describedby={describedBy(instrumentId, { hint: true, error: Boolean(instrumentError) })}
               >
-                <option value="">Choose an investment</option>
+                <option value="">{t("Choose an investment")}</option>
                 {purchasable.map((id) => {
                   const instrument = instruments[id];
                   return (
@@ -209,13 +209,12 @@ export function PurchaseStage() {
 
             <div className="space-y-1.5">
               <label htmlFor={targetId} className="block font-semibold text-ink">
-                Share of the portfolio after buying
-              </label>
+                {t("Share of the portfolio after buying")}</label>
               <p id={`${targetId}-hint`} className="text-sm text-ink-muted">
-                Total share <strong className="font-semibold text-ink">after</strong> buying, including what you already hold.{" "}
+                {t("Total share")} <strong className="font-semibold text-ink">{t("after")}</strong> {t("buying, including what you already hold.")}{" "}
                 {state.purchase.instrumentId === "" ? null : (
                   <span data-testid="held-now">
-                    Held directly now: {held === null ? "nothing" : <span className="tabular">{formatFraction(held)}</span>}.
+                    {t("Held directly now:")} {held === null ? "nothing" : <span className="tabular">{formatFraction(held)}</span>}.
                   </span>
                 )}
               </p>
@@ -248,17 +247,17 @@ export function PurchaseStage() {
             </div>
           </div>
 
-          <p className="text-sm text-ink-muted" data-testid="funding-statement">{FUNDING_STATEMENT}</p>
+          <p className="text-sm text-ink-muted" data-testid="funding-statement">{t(FUNDING_STATEMENT)}</p>
       <div className="space-y-3">
         {state.start.status === "error" ? (
           state.start.kind === "no_fixture" ? (
-            <Notice tone="info" role="alert" title="The test data holds no investigation of this request">
+            <Notice tone="info" role="alert" title={t("The test data holds no investigation of this request")}>
               <p data-testid="start-not-recorded">{state.start.error}</p>
-              <p>No investigation was created.</p>
+              <p>{t("No investigation was created.")}</p>
             </Notice>
           ) : (
             <ErrorBlock
-              title="The investigation could not be started"
+              title={t("The investigation could not be started")}
               message={state.start.error ?? "The request failed."}
               onRetry={startRefused ? undefined : () => void start()}
             >
@@ -269,18 +268,16 @@ export function PurchaseStage() {
                   ))}
                 </ul>
               ) : null}
-              <p>No investigation was created.</p>
+              <p>{t("No investigation was created.")}</p>
               {startRefused ? (
-                <p data-testid="start-refused">The service refused the request as it was sent, so sending it again unchanged would be refused again. Change it above, then start again.</p>
+                <p data-testid="start-refused">{t("The service refused the request as it was sent, so sending it again unchanged would be refused again. Change it above, then start again.")}</p>
               ) : null}
             </ErrorBlock>
           )
         ) : null}
         {state.investigationIds.length > 0 ? (
           <p className="text-ink-muted">
-            {state.investigationIds.length === 1 ? "One investigation has" : `${state.investigationIds.length} investigations have`} already run in this
-            session. Starting again creates a new one; earlier reports stay available.
-          </p>
+            {state.investigationIds.length === 1 ? "One investigation has" : `${state.investigationIds.length} investigations have`} {t("already run in this session. Starting again creates a new one; earlier reports stay available.")}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -292,14 +289,11 @@ export function PurchaseStage() {
             onClick={() => void start()}
             data-testid="start-investigation"
           >
-            Check my idea
-          </Button>
+            {t("Check my idea")}</Button>
           <p className="text-sm text-ink-muted" role="status">
             {canStart && previewRefusal ? (
               <span data-testid="start-preview-refusal">
-                The preview above says this request cannot be evaluated{previewRefusal.code ? ` (${previewRefusal.code})` : ""}. Started as it is, it is refused for the
-                same reason and no investigation is created. Change the request first.
-              </span>
+                {t("The preview above says this request cannot be evaluated")}{previewRefusal.code ? ` (${previewRefusal.code})` : ""}{t(". Started as it is, it is refused for the same reason and no investigation is created. Change the request first.")}</span>
             ) : canStart
               ? "Checks your limits. No trade is placed."
               : !policy
@@ -313,19 +307,19 @@ export function PurchaseStage() {
         </div>
       </Panel>
 
-      <Panel collapsible title="Preview cash and exposures" eyebrow="Preview" figures={previewed !== null} description={FUNDING_STATEMENT}>
+      <Panel collapsible title={t("Preview cash and exposures")} eyebrow={t("Preview")} figures={previewed !== null} description={t(FUNDING_STATEMENT)}>
         <div role="status" aria-live="polite" className="space-y-4" data-testid="purchase-preview" data-preview-status={preview.status}>
           {!request ? (
-            <EmptyBlock title="Nothing to preview yet">
-              <p>The figures appear once the request above is complete.</p>
+            <EmptyBlock title={t("Nothing to preview yet")}>
+              <p>{t("The figures appear once the request above is complete.")}</p>
             </EmptyBlock>
           ) : !policy ? (
-            <EmptyBlock title="No preview without a confirmed policy">
-              <p>The service checks a purchase against a confirmed policy. Confirm at least one rule first; the figures also appear in the report after the check.</p>
+            <EmptyBlock title={t("No preview without a confirmed policy")}>
+              <p>{t("The service checks a purchase against a confirmed policy. Confirm at least one rule first; the figures also appear in the report after the check.")}</p>
             </EmptyBlock>
           ) : null}
 
-          {preview.status === "waiting" || preview.status === "loading" ? <LoadingBlock label="Asking the service what this purchase does to the position and to cash…" /> : null}
+          {preview.status === "waiting" || preview.status === "loading" ? <LoadingBlock label={t("Asking the service what this purchase does to the position and to cash…")} /> : null}
 
           {previewed?.feasibility ? (
             <>
@@ -338,18 +332,14 @@ export function PurchaseStage() {
                 instrumentName={instrumentName(instruments, previewed.purchase_request.instrument_id)}
               />
               {previewed.feasibility.status === "INSUFFICIENT_CASH" ? (
-                <Notice tone="caution" title="Not feasible with cash alone">
+                <Notice tone="caution" title={t("Not feasible with cash alone")}>
                   <p>
-                    The service reports that this purchase needs more cash than the portfolio holds: cash after the purchase would be{" "}
-                    <span className="tabular font-semibold">{formatFraction(previewed.feasibility.cash_after)}</span>. This is a feasibility result,
-                    reported separately from the rule results. Selling other positions is not part of this simulation.
-                  </p>
+                    {t("The service reports that this purchase needs more cash than the portfolio holds: cash after the purchase would be")}{" "}
+                    <span className="tabular font-semibold">{formatFraction(previewed.feasibility.cash_after)}</span>{t(". This is a feasibility result, reported separately from the rule results. Selling other positions is not part of this simulation.")}</p>
                 </Notice>
               ) : (
                 <p className="text-sm text-ink-muted">
-                  The service reports enough cash for this purchase. Whether it respects your rules is the result of the investigation, not of this
-                  preview.
-                </p>
+                  {t("The service reports enough cash for this purchase. Whether it respects your rules is the result of the investigation, not of this preview.")}</p>
               )}
             </>
           ) : null}
@@ -357,22 +347,22 @@ export function PurchaseStage() {
           {assessment?.kind === "not_executed" ? <ExecutionState execution={assessment.result.execution} context="preview" /> : null}
 
           {assessment?.kind === "unreadable" ? (
-            <Notice tone="caution" title="The preview could not be read">
-              <p>The service sent an answer this page does not understand. Nothing is shown in its place.</p>
+            <Notice tone="caution" title={t("The preview could not be read")}>
+              <p>{t("The service sent an answer this page does not understand. Nothing is shown in its place.")}</p>
             </Notice>
           ) : null}
 
           {notRecorded ? (
-            <Notice tone="info" title="No preview for this request in the test data">
+            <Notice tone="info" title={t("No preview for this request in the test data")}>
               <p data-testid="purchase-preview-not-recorded">{describeError(preview.error)}</p>
-              <p>The figures appear in the report after the check.</p>
+              <p>{t("The figures appear in the report after the check.")}</p>
             </Notice>
           ) : null}
 
           {previewError !== null ? (
             <Notice
               tone="error"
-              title="The preview could not be calculated"
+              title={t("The preview could not be calculated")}
               action={
                 request && policy && !previewRefused ? (
                   <Button size="sm" onClick={() => schedule({ request, policy, customPortfolio })}>
@@ -404,7 +394,7 @@ export function PurchaseStage() {
         <PurchaseExposureExplorerSlot result={previewed} />
       </Panel>
 
-      <Panel collapsible title="Review your confirmed limits"  figures={policy !== null}>
+      <Panel collapsible title={t("Review your confirmed limits")}  figures={policy !== null}>
         {policy ? (
           <ul className="list-disc space-y-1 pl-5 text-ink" data-testid="purchase-policy-rules">
             {active.map((rule) => (
@@ -415,14 +405,14 @@ export function PurchaseStage() {
           </ul>
         ) : (
           <EmptyBlock
-            title="No confirmed rule yet"
+            title={t("No confirmed rule yet")}
             action={
               <LinkButton href={stageHref("goals")} size="sm">
                 Set your limits
               </LinkButton>
             }
           >
-            <p>A purchase is checked against confirmed rules only. Confirm at least one rule first.</p>
+            <p>{t("A purchase is checked against confirmed rules only. Confirm at least one rule first.")}</p>
           </EmptyBlock>
         )}
       </Panel>

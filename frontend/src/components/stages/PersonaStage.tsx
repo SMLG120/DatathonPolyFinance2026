@@ -16,6 +16,7 @@ import type { Persona } from "@/lib/contracts";
 import { CUSTOMIZED_LABEL } from "@/lib/customize";
 import { formatDate, formatFraction } from "@/lib/format";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; selected: boolean; onSelect: () => void }) {
   const headingId = `persona-${persona.persona_id}`;
@@ -37,23 +38,23 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
 
       </div>
       <p className="text-ink-muted">{persona.objective}</p>
-      <details className="text-sm"><summary className="cursor-pointer font-medium text-ink-muted">Full profile</summary>
+      <details className="text-sm"><summary className="cursor-pointer font-medium text-ink-muted">{t("Full profile")}</summary>
       {/* Each group is a direct child of the list: a <dl> may hold <div> groups, but not groups nested in a layout wrapper. */}
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <div className="basis-full">
-          <dt className="font-semibold text-ink-muted">Objective in the case</dt>
+          <dt className="font-semibold text-ink-muted">{t("Objective in the case")}</dt>
           <dd className="text-ink">{persona.objective}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Horizon</dt>
+          <dt className="font-semibold text-ink-muted">{t("Horizon")}</dt>
           <dd className="text-ink">{persona.horizon}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Risk profile</dt>
+          <dt className="font-semibold text-ink-muted">{t("Risk profile")}</dt>
           <dd className="text-ink">{persona.risk_profile}</dd>
         </div>
         <div className="basis-full">
-          <dt className="font-semibold text-ink-muted">What it demonstrates</dt>
+          <dt className="font-semibold text-ink-muted">{t("What it demonstrates")}</dt>
           <dd className="text-ink">{persona.demonstrates}</dd>
         </div>
       </dl>
@@ -63,15 +64,13 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
           selected ? (
             <p className="flex min-h-11 items-center gap-2 font-semibold text-accent-strong" data-testid="persona-selected">
               <CheckIcon />
-              Selected
-            </p>
+              {t("Selected")}</p>
           ) : (
             <Button onClick={onSelect} aria-describedby={headingId}>
-              Use {persona.name}&rsquo;s portfolio
-            </Button>
+              {t("Use")} {persona.name}{t("&rsquo;s portfolio")}</Button>
           )
         ) : (
-          <p className="text-sm text-ink-muted">Not available in this build. It is added once the two demonstrations above work end to end.</p>
+          <p className="text-sm text-ink-muted">{t("Not available in this build. It is added once the two demonstrations above work end to end.")}</p>
         )}
       </div>
     </li>
@@ -83,7 +82,7 @@ function CaseFacts({ persona }: { persona: Persona }) {
   return (
     <details className="rounded-md border border-line bg-canvas p-3" data-testid="case-facts">
       <summary className="min-h-6 cursor-pointer font-semibold text-ink">
-        What the case says about {persona.display_name} ({persona.case_reference})
+        {t("What the case says about")} {persona.display_name} ({persona.case_reference})
       </summary>
       <dl className="mt-3 grid gap-3 sm:grid-cols-2">
         {persona.facts.map((fact) => (
@@ -95,7 +94,7 @@ function CaseFacts({ persona }: { persona: Persona }) {
           </div>
         ))}
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">What this persona tests</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("What this persona tests")}</dt>
           <dd className="text-ink">
             {persona.what_this_persona_tests.text} <span className="text-sm text-ink-muted">({persona.what_this_persona_tests.case_reference})</span>
           </dd>
@@ -120,7 +119,7 @@ export function PersonaStage() {
     <BrandHero />
     <StageFrame
       stage="persona"
-      lead="Pick a fictional investor to try a portfolio decision."
+      lead={t("Pick a fictional investor to try a portfolio decision.")}
     >
       <section aria-labelledby="how-it-works-title" className="rounded-xl border border-line bg-surface p-5" data-testid="how-it-works">
         <h2 id="how-it-works-title" className="text-lg font-semibold text-ink">
@@ -164,13 +163,12 @@ export function PersonaStage() {
         </ul>
         {hasWork ? (
           <p className="mt-4 text-sm text-ink-muted">
-            Choosing another persona starts a new session: the rules and reports of the current one are cleared from this page.
-          </p>
+            {t("Choosing another persona starts a new session: the rules and reports of the current one are cleared from this page.")}</p>
         ) : null}
       </Panel>
 
       <Panel
-        title="View the fictional portfolio"
+        title={t("View the fictional portfolio")}
         collapsible={portfolio.status === "ready"}
         eyebrow="Fictional simulation"
         figures
@@ -189,16 +187,16 @@ export function PersonaStage() {
           </>
         }
       >
-        {portfolio.status === "idle" ? <LoadingBlock label="Preparing the portfolio…" /> : null}
+        {portfolio.status === "idle" ? <LoadingBlock label={t("Preparing the portfolio…")} /> : null}
         {portfolio.status === "loading" ? <LoadingBlock label={`Loading ${personaName(personaId)}’s portfolio…`} /> : null}
         {portfolio.status === "error" ? (
-          <ErrorBlock title="The portfolio could not be loaded" message={portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
-            <p>Nothing was changed. No figure is shown rather than a guessed one.</p>
+          <ErrorBlock title={t("The portfolio could not be loaded")} message={portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
+            <p>{t("Nothing was changed. No figure is shown rather than a guessed one.")}</p>
           </ErrorBlock>
         ) : null}
         {portfolio.status === "ready" && portfolio.data && scenario && shown ? (
           <div className="space-y-5">
-            <Notice tone="info" title="These holdings are invented">
+            <Notice tone="info" title={t("These holdings are invented")}>
               <p data-testid="fiction-notice">{scenario.fiction_notice}</p>
             </Notice>
             {customized ? (

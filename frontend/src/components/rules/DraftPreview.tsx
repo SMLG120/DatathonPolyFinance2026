@@ -15,6 +15,7 @@ import { describePurchase } from "@/lib/portfolio";
 import { assessResult } from "@/lib/result";
 import { limitNoun, ruleTypeLabel, validateThreshold } from "@/lib/rules";
 import { useRuntime } from "@/state/runtime";
+import { t } from "@/lib/i18n";
 
 /** The label every preview carries. A preview is never the confirmed result. */
 export const PREVIEW_LABEL = "Preview with draft threshold: not your confirmed policy";
@@ -132,7 +133,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
 
       {preview.status === "waiting" || preview.status === "loading" ? (
         <p className="mt-1 text-sm text-ink-muted" data-testid="draft-preview-pending">
-          Asking the service for a preview with a draft {noun} of <span className="tabular font-semibold text-ink">{draftText}</span>…
+          {t("Asking the service for a preview with a draft")} {noun} {t("of")} <span className="tabular font-semibold text-ink">{draftText}</span>…
         </p>
       ) : null}
 
@@ -144,7 +145,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
               <p className="flex flex-wrap items-center gap-x-3 gap-y-1">
                 <StatusBadge status={ruleResult.status} prefix="Preview:" />
                 <span className="text-ink">
-                  draft {noun} <span className="tabular font-semibold">{draftText}</span>
+                  {t("draft")} {noun} <span className="tabular font-semibold">{draftText}</span>
                   {purchase ? `, after ${describePurchase(purchase)}` : ""}
                 </span>
               </p>
@@ -159,7 +160,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
               <p className="text-sm text-ink-muted">{ruleResult.reason}</p>
             </div>
           ) : (
-            <p className="mt-1 text-sm text-ink">The preview returned no result for this rule, so nothing can be shown for this draft.</p>
+            <p className="mt-1 text-sm text-ink">{t("The preview returned no result for this rule, so nothing can be shown for this draft.")}</p>
           )
         ) : null}
 
@@ -167,7 +168,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
           <p className="mt-2 flex items-start gap-1.5 text-sm text-ink" data-testid="draft-preview-not-executed">
             <InfoIcon size={16} className="mt-0.5 flex-none text-ink-muted" />
             <span>
-              <span className="font-semibold">The service could not evaluate this request, so there is no preview.</span>{" "}
+              <span className="font-semibold">{t("The service could not evaluate this request, so there is no preview.")}</span>{" "}
               {assessment.result.execution.message}
             </span>
           </p>
@@ -175,17 +176,14 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
 
         {assessment?.kind === "unreadable" ? (
           <p className="mt-2 text-sm text-ink" data-testid="draft-preview-unreadable">
-            The service sent a preview this page could not read. Nothing is shown in its place.
-          </p>
+            {t("The service sent a preview this page could not read. Nothing is shown in its place.")}</p>
         ) : null}
 
         {notRecorded ? (
           <p className="mt-2 flex items-start gap-1.5 text-sm text-ink" data-testid="draft-preview-not-recorded">
             <InfoIcon size={16} className="mt-0.5 flex-none text-ink-muted" />
             <span>
-              <span className="font-semibold">No preview for this draft value in the test data.</span> {describeError(preview.error)} Your confirmed
-              rules and reports are unchanged.
-            </span>
+              <span className="font-semibold">{t("No preview for this draft value in the test data.")}</span> {describeError(preview.error)} {t("Your confirmed rules and reports are unchanged.")}</span>
           </p>
         ) : null}
 
@@ -193,9 +191,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
           <p className="mt-2 flex items-start gap-1.5 text-sm text-ink" data-testid="draft-preview-error">
             <ErrorIcon size={16} className="mt-0.5 flex-none text-fail" />
             <span>
-              <span className="font-semibold">The preview could not be calculated.</span> {describeError(preview.error)} Your confirmed rules and
-              reports are unchanged.
-            </span>
+              <span className="font-semibold">{t("The preview could not be calculated.")}</span> {describeError(preview.error)} {t("Your confirmed rules and reports are unchanged.")}</span>
           </p>
         ) : null}
       </div>

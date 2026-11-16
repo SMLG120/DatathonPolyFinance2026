@@ -17,6 +17,7 @@ import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 const LEAD = "Each step below is one the investigation actually completed. Steps appear as the job reports them; nothing is scripted in advance.";
 
@@ -34,9 +35,8 @@ function HowItIsRun({ job }: { job: InvestigationJob }) {
       {agent.mode === "MODEL"
         ? "A model chooses which tool to call next; the final checks are always run by the service."
         : "The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools."}{" "}
-      Either way, every number comes from the deterministic engine and every sentence of the report is written by the service.
-      <span className="mt-0.5 block text-sm text-ink-muted" data-testid="agent-mode" data-agent-mode={agent.mode}>
-        {agent.mode === "MODEL" ? `Model: ${agent.model_id ?? "not reported"}` : "Deterministic fallback"} · tool rounds:{" "}
+      {t("Either way, every number comes from the deterministic engine and every sentence of the report is written by the service.")}<span className="mt-0.5 block text-sm text-ink-muted" data-testid="agent-mode" data-agent-mode={agent.mode}>
+        {agent.mode === "MODEL" ? `Model: ${agent.model_id ?? "not reported"}` : "Deterministic fallback"} {t("· tool rounds:")}{" "}
         <span className="tabular">{agent.tool_rounds}</span>
         {agent.note ? ` · ${agent.note}` : ""}
       </span>
@@ -56,14 +56,14 @@ export function InvestigationStage() {
     return (
       <StageFrame stage="investigation" lead={LEAD}>
         <EmptyBlock
-          title="No investigation has been started"
+          title={t("No investigation has been started")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
               Go to Test an idea
             </LinkButton>
           }
         >
-          <p>Describe a purchase and start the investigation to see its steps here.</p>
+          <p>{t("Describe a purchase and start the investigation to see its steps here.")}</p>
         </EmptyBlock>
       </StageFrame>
     );
@@ -82,14 +82,14 @@ export function InvestigationStage() {
   return (
     <StageFrame stage="investigation" lead={LEAD}>
       <Panel
-        title="Investigation"
+        title={t("Investigation")}
         eyebrow={<span className="font-mono text-[0.8125rem]">{id}</span>}
         aside={investigation ? <JobStatusBadge status={investigation.status} /> : undefined}
         figures={investigation !== null}
       >
         {investigation ? (
           <Facts className="sm:grid-cols-3">
-            <Fact label="Request">
+            <Fact label={t("Request")}>
               <span className="tabular">{describeJobRequest(investigation)}</span>
             </Fact>
             <Fact label="Checked against">Confirmed policy: version {investigation.policy_version}</Fact>
@@ -107,30 +107,29 @@ export function InvestigationStage() {
             <Fact label="Started">
               <span className="tabular">{formatDateTime(investigation.created_at)}</span>
             </Fact>
-            <Fact label="Steps reported">
+            <Fact label={t("Steps reported")}>
               <span className="tabular" data-testid="step-count">
                 {investigation.steps.length}
               </span>
             </Fact>
-            <Fact label="Last update">
+            <Fact label={t("Last update")}>
               <span className="tabular">{formatTime(investigation.updated_at)}</span>
               <span className="block text-sm text-ink-muted">
-                The service stops the job at <span className="tabular">{formatTime(investigation.deadline_at)}</span> at the latest.
-              </span>
+                {t("The service stops the job at")} <span className="tabular">{formatTime(investigation.deadline_at)}</span> {t("at the latest.")}</span>
             </Fact>
-            <Fact label="How it is run">
+            <Fact label={t("How it is run")}>
               <HowItIsRun job={investigation} />
             </Fact>
           </Facts>
         ) : (
-          <LoadingBlock label="Investigation accepted. Waiting for its first status…" />
+          <LoadingBlock label={t("Investigation accepted. Waiting for its first status…")} />
         )}
       </Panel>
 
       {investigation ? (
-        <Panel title="Steps" figures description="A completed job means the checks ran. It does not mean the rules are respected: read the verdict.">
+        <Panel title={t("Steps")} figures description={t("A completed job means the checks ran. It does not mean the rules are respected: read the verdict.")}>
           {investigation.steps.length === 0 && terminal ? (
-            <EmptyBlock title="The job reported no steps" />
+            <EmptyBlock title={t("The job reported no steps")} />
           ) : (
             <StepTimeline steps={investigation.steps} waiting={waiting} />
           )}
@@ -159,32 +158,31 @@ export function InvestigationStage() {
 
       {investigation?.status === "FAILED" ? (
         <ErrorBlock
-          title="The investigation failed"
+          title={t("The investigation failed")}
           message={investigation.failure?.message ?? "The job ended without a result and gave no reason."}
           onRetry={
             // A new investigation needs a policy in force (there is none after a policy version conflict).
             investigation.failure?.retryable !== false && retryRequest && derived.currentPolicy ? () => void actions.startInvestigation(retryRequest, null, retryPortfolio) : undefined
           }
-          retryLabel="Run the same request again"
+          retryLabel={t("Run the same request again")}
         >
           {investigation.failure?.code ? (
             <p>
-              Error code: <span className="font-mono text-[0.8125rem]">{investigation.failure.code}</span>
+              {t("Error code:")} <span className="font-mono text-[0.8125rem]">{investigation.failure.code}</span>
             </p>
           ) : null}
-          <p>No verdict was produced, so none is shown. The steps above are the ones that ran before the failure.</p>
+          <p>{t("No verdict was produced, so none is shown. The steps above are the ones that ran before the failure.")}</p>
         </ErrorBlock>
       ) : null}
 
       {waiting && error ? (
         // A failed status request is retried until the time limit (contracts/api.md section 7), and said while it lasts.
-        <Notice tone="caution" role="status" title="The latest request for the status failed">
+        <Notice tone="caution" role="status" title={t("The latest request for the status failed")}>
           <div data-testid="polling-retrying">
             <p>{error}</p>
             <p>
-              It is asked again every <span className="tabular">{timing.pollIntervalMs / 1000}</span> seconds until the time limit of{" "}
-              <span className="tabular">{deadlineSeconds}</span> seconds. The investigation itself may be unaffected.
-            </p>
+              {t("It is asked again every")} <span className="tabular">{timing.pollIntervalMs / 1000}</span> {t("seconds until the time limit of")}{" "}
+              <span className="tabular">{deadlineSeconds}</span> {t("seconds. The investigation itself may be unaffected.")}</p>
           </div>
         </Notice>
       ) : null}
@@ -198,26 +196,26 @@ export function InvestigationStage() {
               : "The investigation did not finish within the time limit, so checking was stopped. It may still be running."
           }
           onRetry={actions.retryPolling}
-          retryLabel="Keep waiting"
+          retryLabel={t("Keep waiting")}
         >
-          {error ? <p data-testid="polling-last-error">The last request for its status failed: {error}</p> : null}
-          <p>No verdict is shown, because none was received.</p>
+          {error ? <p data-testid="polling-last-error">{t("The last request for its status failed:")} {error}</p> : null}
+          <p>{t("No verdict is shown, because none was received.")}</p>
         </ErrorBlock>
       ) : null}
 
       {!terminal && isActive && phase === "failed" ? (
         <ErrorBlock
-          title="The status of the investigation could not be fetched"
+          title={t("The status of the investigation could not be fetched")}
           message={error ?? "The request for its status failed."}
           onRetry={actions.retryPolling}
-          retryLabel="Check again"
+          retryLabel={t("Check again")}
         >
-          <p>The investigation itself may be unaffected. No verdict is shown until its status is known.</p>
+          <p>{t("The investigation itself may be unaffected. No verdict is shown until its status is known.")}</p>
         </ErrorBlock>
       ) : null}
 
       {state.start.status === "error" ? (
-        <ErrorBlock title="A new investigation could not be started" message={state.start.error ?? "The request failed."} />
+        <ErrorBlock title={t("A new investigation could not be started")} message={state.start.error ?? "The request failed."} />
       ) : null}
     </StageFrame>
   );
