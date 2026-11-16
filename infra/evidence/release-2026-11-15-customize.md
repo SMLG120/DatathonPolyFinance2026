@@ -4,7 +4,12 @@ Status: **deployed and verified live** (backend 19:35 EST, frontend 19:44 EST). 
 This is a second release on 2026-11-15; `release-2026-11-15.md` describes the earlier one (code `bd73f44e`, snapshot
 `snap-2026-11-12-c2289f2b406d`). The API still requires the existing access code, which was not displayed, changed or stored.
 
-Built from an **uncommitted working tree** on top of `origin/main` 1f582bf, so the release is identified by hashes:
+Built from a working tree that was uncommitted at the time, on top of `origin/main` 1f582bf. That source state was committed
+afterwards, unchanged, on branch `release/customize-profile-2026-11-15`: **commit `66b33b9e3838a0dd9644ea39246a85419ef0e2ac`
+is the deployed source**. Checked on a clean export of that commit: `scripts/package.py` produces
+`byb-backend-7c459ee17d81cff1.zip` with the SHA-256 below (byte-identical to the deployed zip), `infra/template.yaml` and the
+release scripts equal the deployed bundle's, and the frontend sources are the ones the published site was built from. Later
+commits on the branch (this note, the merge of newer `origin/main`) are NOT deployed. The release is identified by:
 
 | Artifact | Value |
 | --- | --- |
