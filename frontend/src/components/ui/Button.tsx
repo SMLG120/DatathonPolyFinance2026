@@ -29,7 +29,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
  * focusable and readable, so it keeps AA contrast: grey text on a grey fill
  * with a dashed outline, instead of a faded copy of the active style.
  */
-const UNAVAILABLE = "bg-sunken text-ink-muted border border-dashed border-line-strong cursor-default";
+const UNAVAILABLE = "bg-none bg-sunken text-ink-muted border border-dashed border-line-strong cursor-default";
 
 export function Button({
   variant = "secondary",

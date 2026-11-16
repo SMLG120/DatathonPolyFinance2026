@@ -22,7 +22,7 @@ function Content() {
         {SIMULATION_LABEL}
         {config.mode === "fixtures" ? ` · ${FIXTURES_LABEL}` : ""}
       </p>
-      <LinkButton href="../" variant="quiet" size="sm">
+      <LinkButton href={`../${config.mode === "fixtures" && config.fixturesReason === "requested" ? "?fixtures=1" : ""}`} variant="quiet" size="sm">
         Back to the purchase check
       </LinkButton>
       {needsAccessCode ? (

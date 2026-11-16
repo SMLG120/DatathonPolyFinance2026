@@ -97,8 +97,16 @@ export function AppShell({ children }: { children: ReactNode }) {
             <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
             {/* A separate page (/evidence/). Shown at every width; it wraps under the name on a narrow screen. */}
             <nav aria-label="Tools" className="ml-auto">
-              <LinkButton href="/evidence/" size="sm" data-testid="evidence-investigator-link">
-                Evidence Investigator
+              <LinkButton
+                href={`/evidence/${config.mode === "fixtures" && config.fixturesReason === "requested" ? "?fixtures=1" : ""}`}
+                target="_blank"
+                // Same-origin page: "opener" keeps the tab's sessionStorage copy (the access code) in the new tab.
+                rel="opener"
+                size="sm"
+                data-testid="evidence-investigator-link"
+              >
+                Evidence Investigator{" "}
+                <span className="sr-only">(opens in a new tab; your progress on this page is kept)</span>
               </LinkButton>
             </nav>
           </div>

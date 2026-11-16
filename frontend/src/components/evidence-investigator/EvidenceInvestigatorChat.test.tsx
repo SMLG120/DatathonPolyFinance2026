@@ -178,8 +178,11 @@ describe("release labelling", () => {
   it("links to the investigator from the main page header", async () => {
     const { AppShell } = await import("@/components/shell/AppShell");
     renderWithApp(<AppShell>content</AppShell>);
-    const link = screen.getByRole("link", { name: "Evidence Investigator" });
-    expect(link).toHaveAttribute("href", "/evidence/");
+    const link = screen.getByRole("link", { name: /^Evidence Investigator/ });
+    expect(link.getAttribute("href")).toMatch(/^\/evidence\/(\?fixtures=1)?$/);
+    // A new tab, so that the progress of the main page (kept in memory only) is not lost, and the name says so.
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAccessibleName("Evidence Investigator (opens in a new tab; your progress on this page is kept)");
   });
 });
 
