@@ -138,14 +138,14 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
         </div>
         <div>
           <dt className="text-sm font-semibold text-ink-muted">Checked at the boundary</dt>
-          <dd className="text-ink">Yes — the same checks were run again at this weight.</dd>
+          <dd className="text-ink">Yes: the same checks were run again at this weight.</dd>
         </div>
       </dl>
       <p className="text-ink" data-testid="max-reason">
         {maxCompliant.reason}
       </p>
       <p className="text-sm text-ink-muted">
-        Both figures are shown rounded down, so they never overstate the boundary. This is where your own confirmed rules stop — not a suggestion to
+        Both figures are shown rounded down, so they never overstate the boundary. This is where your own confirmed rules stop: not a suggestion to
         buy that amount.
       </p>
       <EvidenceButton label="the largest compliant purchase" result={result} evidenceIds={maxCompliant.evidence_ids} />
@@ -160,7 +160,7 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
  */
 export function coverageSentence(fund: Pick<FundCoverage, "status" | "coverage_fraction">): string {
   if (fund.status === "MISSING") return "No holdings file";
-  return `${coverageText(fund.status)} — ${formatCoverage(fund.coverage_fraction)} of the fund reported`;
+  return `${coverageText(fund.status)}: ${formatCoverage(fund.coverage_fraction)} of the fund reported`;
 }
 
 /** How much of the fund holdings behind the numbers is actually reported, fund by fund. */

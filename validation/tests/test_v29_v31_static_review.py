@@ -834,8 +834,9 @@ def test_v31_no_advice_or_forecast_wording_in_the_interface():
     unexpected = [h for h in hits if not any(denial in h for denial in REVIEWED_DENIALS)]
     assert unexpected == [], "\n".join(unexpected)
     scenario = _source("components/verdict/ScenarioPanel.tsx")
-    assert 'title="A replay of the past — not a forecast"' in scenario
-    assert 'SIMULATION_LABEL = "Simulation — fictional portfolio, not advice"' in _source("components/shell/AppShell.tsx")
+    # The owner replaced the em dash by a colon in every label (2026-11-15); the words are the same.
+    assert 'title="A replay of the past: not a forecast"' in scenario
+    assert 'SIMULATION_LABEL = "Simulation: fictional portfolio, not advice"' in _source("components/shell/AppShell.tsx")
 
 
 @pytest.mark.vcase("V31")
@@ -851,7 +852,8 @@ def test_v31_the_page_outlasts_the_job_deadline():
 
 @pytest.mark.vcase("V31")
 def test_v31_three_js_is_loaded_only_when_the_explorer_is_opened():
-    importers = _hits(r"from [\"']three(/[^\"']*)?[\"']")
+    # Either quote style, and the graph library that brings three with it (3d-force-graph, added with the exposure graph).
+    importers = _hits(r"""(from|import\() ?["'](three(/[^"']*)?|3d-force-graph)["']""")
     assert importers and all("components/explorer/ExposureScene.tsx" in h for h in importers), importers
     scene_users = [h for h in _hits(r"ExposureScene\"") if "ExposureScene.tsx" not in h and ": import type {" not in h]  # type imports are erased
     assert scene_users and all('lazy(() => import("./ExposureScene"))' in h for h in scene_users), scene_users
@@ -864,18 +866,107 @@ def _built_site() -> Path:
     return out
 
 
+# What a built site may and may not hold. The API base URL is a build-time, NON-secret value (frontend/.env.example,
+# LEAD_DECISIONS D8: the access code is the secret and is typed at run time), so a live build necessarily holds it.
+# The check therefore tells three things apart:
+#   - secrets and identifiers that must never be in any build (account id, keys, bearer literals, ARNs, source maps);
+#   - a service address that is NOT the configured endpoint (another stack, or the loopback address of the local
+#     test harness left behind by acceptance/fullstack/run.sh);
+#   - the configured endpoint itself (infra/README.md, stack output ApiBaseUrl), which is legitimate in a live build
+#     and whose ABSENCE from a release bundle means a fixtures build was packaged by accident.
+SITE_SECRETS = {
+    # A 12-digit run inside a longer hexadecimal string is not an account id: d3-scale-chromatic ships its grey ramp as
+    # "f7f7f7cccccc969696525252" (two colours, 969696 and 525252). A standalone 12-digit number is still refused.
+    "account id": r"(?<![0-9a-fA-F.])[0-9]{12}(?![0-9a-fA-F])",
+    "access key": r"(AKIA|ASIA)[0-9A-Z]{16}",
+    "bearer literal": r"Bearer\s+[A-Za-z0-9_\-]{12,}",
+    "ARN": r"arn:aws:",
+    "source map": r"sourceMappingURL",
+}
+API_HOST = r"[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com"
+LOOPBACK_SERVICE = r"https?://(127\.0\.0\.1|localhost|0\.0\.0\.0):41[0-9]{2}"  # the ports of acceptance/fullstack and validation/customize
+SITE_SUFFIXES = (".js", ".html", ".txt", ".css", ".json")
+
+
+def _configured_api_host() -> str:
+    """The deployed API endpoint as the repository records it: the ApiBaseUrl stack output in infra/README.md."""
+    match = re.search(r"\| `ApiBaseUrl` \| `https://(" + API_HOST + r")` \|", (REPO_ROOT / "infra" / "README.md").read_text())
+    assert match, "infra/README.md no longer records the ApiBaseUrl stack output: re-run the manual review"
+    return match.group(1)
+
+
+def _documented_account() -> str:
+    """The project's actual AWS account, as docs/LEAD_DECISIONS.md records it (PR #18's rule, kept next to the generic one)."""
+    return re.search(r"\| Team AWS account \| `([0-9]{12})`", (REPO_ROOT / "docs" / "LEAD_DECISIONS.md").read_text()).group(1)
+
+
+def _assert_no_secret(text: str, where: str) -> None:
+    for label, pattern in SITE_SECRETS.items():
+        assert not re.search(pattern, text), f"{label} in {where}"
+    assert _documented_account() not in text, f"the project's AWS account id in {where}"
+    assert not re.search(LOOPBACK_SERVICE, text), f"{where} was built against the local test harness (a loopback service address)"
+
+
+def _foreign_hosts(text: str) -> set[str]:
+    return set(re.findall(API_HOST, text)) - {_configured_api_host()}
+
+
 @pytest.mark.vcase("V31")
 def test_v31_the_built_site_holds_no_secret_account_identifier_or_source_map():
+    """frontend/out, whichever mode it was built in: no secret, and no service address other than the configured endpoint."""
     out = _built_site()
-    text = "".join(p.read_text(errors="ignore") for p in out.rglob("*") if p.is_file() and p.suffix in (".js", ".html", ".txt", ".css", ".json"))
-    # Match the actual account documented for this project. Arbitrary twelve-digit
-    # substrings also occur in chart colour palettes and are not account disclosures.
-    decisions = (REPO_ROOT / "docs" / "LEAD_DECISIONS.md").read_text()
-    account = re.search(r"\| Team AWS account \| `([0-9]{12})`", decisions).group(1)
-    for label, pattern in {"account id": rf"(?<![0-9]){account}(?![0-9])", "execute-api host": r"[a-z0-9]{10}\.execute-api\.", "access key": r"(AKIA|ASIA)[0-9A-Z]{16}",
-                           "bearer literal": r"Bearer\s+[A-Za-z0-9_\-]{12,}", "ARN": r"arn:aws:", "source map": r"sourceMappingURL"}.items():
-        assert not re.search(pattern, text), f"{label} in the built site"
+    text = "".join(p.read_text(errors="ignore") for p in out.rglob("*") if p.is_file() and p.suffix in SITE_SUFFIXES)
+    _assert_no_secret(text, "the built site")
+    assert _foreign_hosts(text) == set(), "the built site names an API host that is not the configured endpoint (infra/README.md ApiBaseUrl)"
     assert list(out.rglob("*.map")) == [] and not [p for p in out.rglob("*") if p.name.startswith(".env")]
+
+
+def _release_sites() -> list[Path]:
+    return sorted((REPO_ROOT / "dist").glob("cloudshell-release*/cloudshell-release/frontend.zip"))
+
+
+@pytest.mark.vcase("V31")
+def test_v31_a_release_bundle_holds_a_live_build_of_the_configured_endpoint_and_no_secret():
+    """A site packaged for deployment must be a LIVE build: it names the configured API endpoint, and only that one.
+
+    A bundle without it is a fixtures build (frontend/src/lib/config.ts: no base URL means recorded test data), which
+    would show "Test data: fixtures" to every visitor: packaged by accident, it must not be deployed.
+    """
+    import zipfile
+
+    bundles = _release_sites()
+    if not bundles:
+        pytest.skip("no release bundle under dist/ (git-ignored; built by the lead before a deployment)")
+    for bundle in bundles:
+        where = str(bundle.relative_to(REPO_ROOT))
+        with zipfile.ZipFile(bundle) as archive:
+            names = archive.namelist()
+            text = "".join(archive.read(name).decode("utf-8", errors="ignore") for name in names if name.endswith(SITE_SUFFIXES))
+        assert "index.html" in names, f"{where} is not a static site"
+        _assert_no_secret(text, where)
+        assert _foreign_hosts(text) == set(), f"{where} names an API host that is not the configured endpoint"
+        assert _configured_api_host() in text, f"{where} is a fixtures build (no API endpoint): it must not be deployed"
+        assert not [name for name in names if name.endswith(".map") or name.rsplit("/", 1)[-1].startswith(".env")], where
+
+
+def _site_text_for_selftest(host: str | None) -> str:
+    return 'x={apiBaseUrl:"' + (f"https://{host}" if host else "") + '"}'
+
+
+@pytest.mark.vcase("V31")
+def test_v31_the_built_site_rules_tell_the_configured_endpoint_from_what_is_forbidden():
+    """The rules themselves, on small made-up texts: so a change that blinds one of them is noticed."""
+    configured = _configured_api_host()
+    assert _foreign_hosts(_site_text_for_selftest(configured)) == set()
+    assert _foreign_hosts(_site_text_for_selftest(None)) == set()
+    assert _foreign_hosts(_site_text_for_selftest("abcde01234.execute-api.us-east-1.amazonaws.com")) == {"abcde01234.execute-api.us-east-1.amazonaws.com"}
+    _assert_no_secret(_site_text_for_selftest(configured), "a live build")
+    made_up_key = "AKIA" + "ABCDEFGHIJKLMNOP"  # assembled here so that this file holds no string shaped like a key (test_v30 scans it)
+    for forbidden in ('id:"123456789012"', made_up_key, "Bearer abcdefghijkl1234", "arn:aws:lambda:us-east-1", "//# sourceMappingURL=a.js.map",
+                      'apiBaseUrl:"http://127.0.0.1:4184"'):
+        with pytest.raises(AssertionError):
+            _assert_no_secret(forbidden, "a made-up text")
+    _assert_no_secret('"f7f7f7cccccc969696525252"', "a colour ramp")  # two hex colours, not an account id
 
 
 @pytest.mark.vcase("V31")

@@ -155,7 +155,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
 
           {response.proposed_rules.length > 0 ? (
             <div>
-              <h4 className="font-semibold text-ink">Rules drafted from your words — inactive until you confirm them</h4>
+              <h4 className="font-semibold text-ink">Rules drafted from your words: inactive until you confirm them</h4>
               <ul className="mt-1 space-y-2">
                 {response.proposed_rules.map((draft) => (
                   <li key={draft.rule_id} className="rounded-md border border-line bg-canvas p-3" data-testid="drafted-rule">

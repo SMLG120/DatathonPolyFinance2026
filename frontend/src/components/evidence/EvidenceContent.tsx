@@ -35,7 +35,7 @@ function CorrectionNote({ correction }: { correction: ProposedCorrection }) {
   return (
     <li className="rounded-md border border-dashed border-unknown bg-unknown-soft p-3" data-testid="proposed-correction">
       <Badge tone="unknown" dashed icon={<UnknownIcon size={16} />}>
-        Proposed correction — unverified
+        Proposed correction: unverified
       </Badge>
       <dl className="mt-2 space-y-2 text-sm">
         <div>
@@ -117,7 +117,7 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
           </span>
         </Fact>
         <Fact label="Unit">{unitText(record.unit)}</Fact>
-        <Fact label="Policy version">{record.policy_version === null ? "None — a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
+        <Fact label="Policy version">{record.policy_version === null ? "None: a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
         <Fact label="Calculation version">
           <span className="break-all font-mono text-sm">{record.calculation_version}</span>
         </Fact>
@@ -218,7 +218,7 @@ export function EvidenceContent({ request, onChallenge }: { request: EvidenceReq
   return (
     <div className="space-y-6">
       {request.result.preview ? (
-        <UnknownBlock title="Preview with draft rules — not a confirmed policy">
+        <UnknownBlock title="Preview with draft rules: not a confirmed policy">
           <p>These records belong to a preview. They are not part of any stored report.</p>
         </UnknownBlock>
       ) : null}

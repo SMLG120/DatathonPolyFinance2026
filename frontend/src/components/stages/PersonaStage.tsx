@@ -1,5 +1,6 @@
 "use client";
 
+import { CustomizePanel } from "@/components/portfolio/CustomizePanel";
 import { PortfolioTable } from "@/components/portfolio/PortfolioTable";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/AsyncStates";
@@ -11,6 +12,7 @@ import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { PERSONAS, personaName, type PersonaCard } from "@/content/personas";
 import { cn } from "@/lib/cn";
 import type { Persona } from "@/lib/contracts";
+import { CUSTOMIZED_LABEL } from "@/lib/customize";
 import { formatDate, formatFraction } from "@/lib/format";
 import { useWorkflow } from "@/state/workflow";
 
@@ -104,8 +106,11 @@ function CaseFacts({ persona }: { persona: Persona }) {
 
 /** Stage 1: choose a persona and read its fictional portfolio. */
 export function PersonaStage() {
-  const { state, actions } = useWorkflow();
+  const { state, actions, derived } = useWorkflow();
   const { portfolio, personaId } = state;
+  // The portfolio every check starts from: the scenario's, or the applied customization. One value, shown here and sent with each request.
+  const shown = derived.effectivePortfolio;
+  const customized = derived.customPortfolio !== null;
   const hasWork = state.policies.length > 0 || state.investigationIds.length > 0;
   const scenario = portfolio.data?.scenario ?? null;
 
@@ -138,9 +143,18 @@ export function PersonaStage() {
         eyebrow="Fictional simulation"
         figures
         aside={
-          <Badge tone="neutral" dashed>
-            Invented holdings
-          </Badge>
+          <>
+            {customized ? (
+              <span data-testid="customized-badge">
+                <Badge tone="accent" dashed>
+                  {CUSTOMIZED_LABEL}
+                </Badge>
+              </span>
+            ) : null}
+            <Badge tone="neutral" dashed>
+              Invented holdings
+            </Badge>
+          </>
         }
       >
         {portfolio.status === "idle" ? <LoadingBlock label="Preparing the portfolio…" /> : null}
@@ -150,25 +164,36 @@ export function PersonaStage() {
             <p>Nothing was changed. No figure is shown rather than a guessed one.</p>
           </ErrorBlock>
         ) : null}
-        {portfolio.status === "ready" && portfolio.data && scenario ? (
+        {portfolio.status === "ready" && portfolio.data && scenario && shown ? (
           <div className="space-y-5">
             <Notice tone="info" title="These holdings are invented">
               <p data-testid="fiction-notice">{scenario.fiction_notice}</p>
             </Notice>
+            {customized ? (
+              <Notice tone="info" title={CUSTOMIZED_LABEL}>
+                <p data-testid="customized-notice">
+                  These weights were entered by you in place of {scenario.persona.display_name}&rsquo;s original fictional portfolio. They are still invented,
+                  and they are the weights every check is asked for.
+                </p>
+              </Notice>
+            ) : null}
             <Facts className="sm:grid-cols-3">
               <Fact label="Valuation date">
-                <span className="tabular">{formatDate(scenario.portfolio.valuation_date)}</span>
+                <span className="tabular">{formatDate(shown.valuation_date)}</span>
               </Fact>
-              <Fact label="Reporting currency">{scenario.portfolio.base_currency}</Fact>
+              <Fact label="Reporting currency">{shown.base_currency}</Fact>
               <Fact label="Cash">
-                <span className="tabular">{formatFraction(scenario.portfolio.cash_weight)}</span> of the portfolio
+                <span className="tabular">{formatFraction(shown.cash_weight)}</span> of the portfolio
               </Fact>
             </Facts>
-            <PortfolioTable portfolio={scenario.portfolio} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} />
+            <PortfolioTable portfolio={shown} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} customized={customized} />
             <CaseFacts persona={scenario.persona} />
           </div>
         ) : null}
       </Panel>
+
+      {/* Keyed by persona: another persona starts with a closed editor and no customization. */}
+      <CustomizePanel key={personaId ?? "none"} />
     </StageFrame>
   );
 }

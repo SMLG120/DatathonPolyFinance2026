@@ -26,7 +26,7 @@ describe("ScenarioPanel, on Robert's recorded replay", () => {
     expect(note).toHaveTextContent(scenario.label);
     expect(note).toHaveTextContent("bought once on 31 Dec 2021 and held to 30 Dec 2022");
     expect(note).toHaveTextContent("It predicts nothing and guarantees nothing.");
-    expect(screen.getByTestId("scenario-panel")).toHaveTextContent("A replay of the past — not a forecast");
+    expect(screen.getByTestId("scenario-panel")).toHaveTextContent("A replay of the past: not a forecast");
     expect(screen.getByTestId("scenario-panel")).toHaveAttribute("data-scenario-status", "COMPUTED");
   });
 

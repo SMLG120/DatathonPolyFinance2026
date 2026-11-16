@@ -76,7 +76,7 @@ describe("Purchase stage, the preview", () => {
     });
 
     expect(screen.getByTestId("purchase-preview-label")).toHaveTextContent(PURCHASE_PREVIEW_LABEL);
-    expect(PURCHASE_PREVIEW_LABEL).toMatch(/^Preview — computed by the service/);
+    expect(PURCHASE_PREVIEW_LABEL).toMatch(/^Preview: computed by the service/);
     // The figures are the recorded ones.
     const feasibility = recorded.robertResult().feasibility;
     expect([feasibility?.additional_purchase, feasibility?.cash_before, feasibility?.cash_after]).toEqual([0.25, 0.3, 0.05]);

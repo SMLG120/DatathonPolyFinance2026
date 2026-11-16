@@ -61,27 +61,27 @@
       "terms": "Bank of Canada terms: https://www.bankofcanada.ca/terms/ | Original sources are U.S. government agencies (Federal Reserve Board; BLS); see FRED terms https://fred.stlouisfed.org/legal/",
       "limitations": "Monthly CPI is dated to the reference month and is published several weeks later; do not use before its release date | Monthly series are dated to the reference month and released weeks later; values are latest vintage (revised) not as first published"
     },
-    "ssga_spy_product_page_2026-11-14": {
-      "source_id": "ssga_spy_product_page_2026-11-14",
+    "ssga_spy_product_page_2026-11-15": {
+      "source_id": "ssga_spy_product_page_2026-11-15",
       "publisher": "State Street Investment Management (State Street Global Advisors), ssga.com",
       "title": "State Street SPDR S&P 500 ETF Trust (SPY) - product page (Fund Sector Breakdown)",
       "url": "https://www.ssga.com/us/en/intermediary/etfs/state-street-spdr-sp-500-etf-trust-spy",
       "relevant_date": "2026-11-12",
-      "retrieval_date": "2026-11-14",
-      "sha256": "d89aa13878ce43d6b4fb46fe4c8f79b3a330d92c68e5e926fb3e6086396bf603",
-      "processing": "File: data/raw/etf_product_pages/SPY_PAGE_2026-11-14.html (git-ignored). Retrieved 2026-11-14T22:42:16Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The 'Fund Sector Breakdown' block embedded in the page is parsed into fund_sector_breakdowns.json (percent to fraction; not rescaled).",
+      "retrieval_date": "2026-11-15",
+      "sha256": "7644e3e9d320560e38f9a1164db07a562e75f52608d437c832df6c1539605d39",
+      "processing": "File: data/raw/etf_product_pages/SPY_PAGE_2026-11-15.html (git-ignored). Retrieved 2026-11-15T19:11:28Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). The 'Fund Sector Breakdown' block embedded in the page is parsed into fund_sector_breakdowns.json (percent to fraction; not rescaled).",
       "terms": "State Street 'Terms and Conditions', https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions (canonical URL https://www.ssga.com/us/en/footer/terms-and-conditions): \"You may not copy, reproduce, duplicate, modify, adopt or lend, sell, disseminate or otherwise transfer, in whole or in part, any of the information contained in this Site, except for the purpose of accessing the Site and producing print-outs for your own personal use, or making a reasonable number of copies of such pages for internal use within your organization in accordance with this Agreement.\" A further clause forbids causing information from State Street's databases \"to be published, redistributed or retransmitted for other than use for or on behalf of yourself\". No clause about automated access was found on the page. Our reading: the raw file must not be redistributed; publishing the normalized snapshot in a public repository is not permitted on a plain reading (whether bare facts such as weights are protected is a legal question we cannot settle; decision left to the project lead). [Terms page retrieved 2026-11-14T23:15:35Z; source_id ssga_terms_and_conditions_2026-11-14; sha256 c7f27b231536d3c29f8be45a6ec54b6d1f279603604c230263063d88750017e3.]",
       "limitations": "Fund-level totals only: no constituent-level sector. The eleven sectors sum to 1.0, so the issuer appears to show the breakdown without the cash position. Two decimals in percent. The page is dynamic HTML; a layout change stops the parser."
     },
-    "ssga_spy_holdings_2026-11-14": {
-      "source_id": "ssga_spy_holdings_2026-11-14",
+    "ssga_spy_holdings_2026-11-15": {
+      "source_id": "ssga_spy_holdings_2026-11-15",
       "publisher": "State Street Investment Management (State Street Global Advisors), ssga.com",
       "title": "State Street SPDR S&P 500 ETF Trust (SPY) - daily holdings spreadsheet",
       "url": "https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx",
       "relevant_date": "2026-11-12",
-      "retrieval_date": "2026-11-14",
+      "retrieval_date": "2026-11-15",
       "sha256": "ed54e8453c6fd9f6efdda93394e2e569adfb5303b03884a45006a5b7f4175c10",
-      "processing": "File: data/raw/etf_holdings/SPY_2026-11-14.xlsx (git-ignored). Retrieved 2026-11-14T22:42:15Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). Parsed with a standard-library xlsx reader. Percent weights divided by 100; never rescaled. 503 equity constituents kept; 2 non-constituent line(s) (cash 'US DOLLAR'; an unlisted contingent value right) summed separately. Share classes of one company share an issuer_id (name-based grouping, cross-checked against the CUSIP issuer prefix).",
+      "processing": "File: data/raw/etf_holdings/SPY_2026-11-15.xlsx (git-ignored). Retrieved 2026-11-15T19:06:40Z: HTTP GET by acquire_holdings.py (User-Agent: before-you-buy-datathon-prototype/1.0 (educational project; one request per file per run)). Parsed with a standard-library xlsx reader. Percent weights divided by 100; never rescaled. 503 equity constituents kept; 2 non-constituent line(s) (cash 'US DOLLAR'; an unlisted contingent value right) summed separately. Share classes of one company share an issuer_id (name-based grouping, cross-checked against the CUSIP issuer prefix).",
       "terms": "State Street 'Terms and Conditions', https://www.ssga.com/us/en/intermediary/footer/terms-and-conditions (canonical URL https://www.ssga.com/us/en/footer/terms-and-conditions): \"You may not copy, reproduce, duplicate, modify, adopt or lend, sell, disseminate or otherwise transfer, in whole or in part, any of the information contained in this Site, except for the purpose of accessing the Site and producing print-outs for your own personal use, or making a reasonable number of copies of such pages for internal use within your organization in accordance with this Agreement.\" A further clause forbids causing information from State Street's databases \"to be published, redistributed or retransmitted for other than use for or on behalf of yourself\". No clause about automated access was found on the page. Our reading: the raw file must not be redistributed; publishing the normalized snapshot in a public repository is not permitted on a plain reading (whether bare facts such as weights are protected is a legal question we cannot settle; decision left to the project lead). [Terms page retrieved 2026-11-14T23:15:35Z; source_id ssga_terms_and_conditions_2026-11-14; sha256 c7f27b231536d3c29f8be45a6ec54b6d1f279603604c230263063d88750017e3.]",
       "limitations": "The Sector column prints '-' on every line: no constituent-level sector is available from this file. Holdings as of one date only: a current snapshot, not a historical composition. All printed lines sum to 0.99967472, not 1 (the remainder is not itemised). No publication date is printed in the file; the HTTP Last-Modified header was 'Fri, 13 Nov 2026 11:23:37 GMT'. Company names are truncated by the issuer."
     },

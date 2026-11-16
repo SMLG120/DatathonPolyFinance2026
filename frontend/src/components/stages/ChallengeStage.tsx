@@ -13,6 +13,7 @@ import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { Tabs } from "@/components/ui/Tabs";
 import type { ChallengeType } from "@/lib/contracts";
+import { portfolioCheckedLabel } from "@/lib/customize";
 import { describePurchase } from "@/lib/portfolio";
 import { assessResult } from "@/lib/result";
 import { verdictHeadline } from "@/lib/verdict";
@@ -67,6 +68,8 @@ export function ChallengeStage() {
   }
 
   const result = assessment.result;
+  const scenarioPortfolio = state.portfolio.data?.scenario.portfolio ?? null;
+  const personaLabel = state.portfolio.data?.scenario.persona.display_name ?? "This persona";
   const policy = derived.policyFor(job);
   const current = derived.currentPolicy;
   const isCurrentPolicy = policy !== null && current !== null && policy.policy_id === current.policy_id && policy.version === current.version;
@@ -83,8 +86,16 @@ export function ChallengeStage() {
             <span className="tabular">{describePurchase(result.purchase_request)}</span>
           </Fact>
           <Fact label="Checked against">
-            Confirmed policy — version <span className="tabular">{job.policy_version}</span>
+            Confirmed policy: version <span className="tabular">{job.policy_version}</span>
           </Fact>
+          {job.portfolio ? (
+            <Fact label="Portfolio checked" wide>
+              <span data-testid="report-portfolio-label">{portfolioCheckedLabel(job.portfolio, scenarioPortfolio, personaLabel)}</span>
+              <span className="block text-sm text-ink-muted">
+                Stored with this report. A rule change re-checks this same portfolio, whatever customization is applied now.
+              </span>
+            </Fact>
+          ) : null}
         </Facts>
         <div className="mt-4">
           <LinkButton href={stageHref("verdict")} size="sm">
@@ -165,7 +176,7 @@ function ComparisonPanel() {
         id="rule-change-comparison"
         focusableHeading
         className="border-2 border-accent"
-        eyebrow="Outcome of the rule change — separate from the form above"
+        eyebrow="Outcome of the rule change: separate from the form above"
         title="Version comparison: before and after the rule change"
         description="The earlier report was not edited. It still says what it said under the earlier policy version."
       >

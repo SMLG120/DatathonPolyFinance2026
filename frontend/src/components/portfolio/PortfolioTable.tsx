@@ -7,12 +7,12 @@ import { portfolioRows, type InstrumentRegistry } from "@/lib/portfolio";
  * order the service lists them, then cash. Weights arrive as fractions and are
  * shown as percentages; nothing is added up here.
  */
-export function PortfolioTable({ portfolio, instruments, personaName }: { portfolio: Portfolio; instruments: InstrumentRegistry; personaName: string }) {
+export function PortfolioTable({ portfolio, instruments, personaName, customized = false }: { portfolio: Portfolio; instruments: InstrumentRegistry; personaName: string; customized?: boolean }) {
   const rows = portfolioRows(portfolio, instruments);
   return (
     <table className="w-full border-collapse text-left" data-testid="portfolio-table">
       <caption className="pb-3 text-left text-sm text-ink-muted">
-        {personaName}&rsquo;s fictional portfolio. Each weight is a share of the whole portfolio in {portfolio.base_currency}, valued on{" "}
+        {customized ? `Customized fictional portfolio, edited from ${personaName}’s.` : <>{personaName}&rsquo;s fictional portfolio.</>} Each weight is a share of the whole portfolio in {portfolio.base_currency}, valued on{" "}
         <span className="tabular">{formatDate(portfolio.valuation_date)}</span>.
       </caption>
       <thead>

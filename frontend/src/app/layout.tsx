@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <body>
         <noscript>
           <p className="m-4 rounded-md border-l-4 border-unknown bg-unknown-soft px-4 py-3 text-ink">
-            Simulation — fictional portfolio, not advice. This page needs JavaScript to run the simulation.
+            Simulation: fictional portfolio, not advice. This page needs JavaScript to run the simulation.
           </p>
         </noscript>
         {children}

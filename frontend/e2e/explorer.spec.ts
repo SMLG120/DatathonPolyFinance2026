@@ -1,5 +1,17 @@
 import { expect, test, type Page } from "@playwright/test";
-import { browserHasWebGL, confirmScenarioRules, expectNoAxeViolations, expectStage, mainAlert, overviewChart, START_URL } from "./helpers";
+import {
+  browserHasWebGL,
+  checkIdeaAndWaitForReport,
+  confirmScenarioRules,
+  continueToPurchase,
+  expectNoAxeViolations,
+  expectPortfolioLoaded,
+  mainAlert,
+  openExposurePanel,
+  openPurchasePreview,
+  overviewChart,
+  START_URL,
+} from "./helpers";
 
 /**
  * The exposure explorer: one company before and after the purchase, as a 3D
@@ -37,20 +49,21 @@ function recordPageErrors(page: Page): string[] {
   return errors;
 }
 
+/** "Test an idea" with its preview panel open: the explorer is under the service's preview, inside that panel. */
 async function toPurchaseStage(page: Page) {
   await page.goto(START_URL);
-  await expect(page.getByTestId("portfolio-table")).toBeVisible();
+  await expectPortfolioLoaded(page);
   await confirmScenarioRules(page);
-  await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
-  await expectStage(page, 3);
+  await continueToPurchase(page);
+  await openPurchasePreview(page);
   await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toHaveText("5.0%");
 }
 
+/** "Your result" with the panel "Explore my exposures" open: the chart of every company and the explorer are inside it. */
 async function toVerdictStage(page: Page) {
-  await page.getByTestId("start-investigation").click();
-  await page.getByTestId("see-verdict").click({ timeout: 30_000 });
-  await expectStage(page, 5);
-  await expect(page.getByTestId("report")).toBeVisible();
+  await checkIdeaAndWaitForReport(page);
+  await openExposurePanel(page);
+  await expect(page.getByTestId("exposure-explorer")).toBeVisible();
 }
 
 /** The flat chart of one company stands where the drawing would be, with the reason in words, and nothing is reported as an error. */
@@ -74,18 +87,19 @@ test.describe("exposure explorer", () => {
     const errors = recordPageErrors(page);
 
     await page.goto(START_URL);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
     test.skip(!(await browserHasWebGL(page)), "This browser cannot create a WebGL context, so the 3D drawing cannot be exercised here.");
 
-    // Stages 1 and 2: nothing of three.js has been downloaded or run.
+    // "Choose a profile" and "Your limits": nothing of three.js has been downloaded or run.
     await confirmScenarioRules(page);
     const before = [...scripts.urls];
     expect(before.length).toBeGreaterThan(0);
     expect(await scriptsHoldingThree(page, before)).toEqual([]);
     expect(await threeHasRun(page)).toBe(false);
 
-    // Stage 3: the explorer is under the preview; its drawing arrives in a script of its own.
-    await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
+    // "Test an idea": the explorer is under the preview, in the preview panel; its drawing arrives in scripts of its own.
+    await continueToPurchase(page);
+    await openPurchasePreview(page);
     await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toHaveText("5.0%");
     const explorer = page.getByTestId("exposure-explorer");
     await expect(explorer).toHaveAttribute("data-mode", "3D");
@@ -98,10 +112,12 @@ test.describe("exposure explorer", () => {
     const canvas = explorer.getByTestId("explorer-scene").locator("canvas");
     await expect(canvas).toHaveAttribute("aria-hidden", "true");
     await expect(canvas).toHaveAttribute("tabindex", "-1");
-    // Its labels are the model's own words.
-    await expect(explorer.getByTestId("explorer-scene")).toContainText("Current");
-    await expect(explorer.getByTestId("explorer-scene")).toContainText("Proposed");
-    await expect(explorer.getByTestId("explorer-scene")).toContainText("Confirmed limit 10.0%");
+    // The drawing is a network whose labels are painted in the canvas, so the whole scene is hidden from assistive
+    // technology. The two states and the limit are words beside it: the columns of the table and the limit line.
+    await expect(explorer.getByTestId("explorer-scene")).toHaveAttribute("aria-hidden", "true");
+    await expect(explorer.getByTestId("explorer-table").getByRole("columnheader")).toHaveText(["Current", "Proposed"]);
+    await expect(explorer.getByTestId("explorer-table").locator('tr[data-row="limit"] td[data-state="proposed"]')).toHaveText("10.0%");
+    await expect(explorer.getByTestId("explorer-limit")).toContainText("10.0%");
 
     // Something was drawn: ask the scene for a frame and read it back in that same frame.
     const frame = await page.evaluate(
@@ -139,15 +155,15 @@ test.describe("exposure explorer", () => {
 
     // A part is chosen with its HTML button, and its calculation opens in the evidence drawer.
     await explorer.locator('[data-testid="explorer-segment"][data-segment="proposed:FUND:SPY"]').click();
-    await expect(explorer.getByTestId("explorer-details")).toContainText("Through SPY — Proposed portfolio (after the purchase)");
+    await expect(explorer.getByTestId("explorer-details")).toContainText("Through SPY: Proposed portfolio (after the purchase)");
     await explorer.getByTestId("explorer-open-evidence").click();
     await expect(page.getByRole("dialog")).toContainText("Evidence: exposure to NVIDIA through SPY, after the purchase");
     await page.getByRole("button", { name: "Close evidence" }).click();
     await expect(page.getByRole("dialog")).toBeHidden();
     await expect(explorer.getByTestId("explorer-open-evidence")).toBeFocused();
-    await expectNoAxeViolations(page, "stage 3 with the 3D explorer and a part selected");
+    await expectNoAxeViolations(page, "test an idea, with the 3D explorer and a part selected");
 
-    // Stage 5: the chart of every company is still there, and the explorer is beside it.
+    // "Your result": the chart of every company is still there, and the explorer is beside it.
     await toVerdictStage(page);
     await expect(overviewChart(page).getByTestId("exposure-row")).toHaveCount(10);
     await expect(page.getByTestId("exposure-explorer")).toHaveAttribute("data-mode", "3D");
@@ -155,7 +171,7 @@ test.describe("exposure explorer", () => {
     await expect(page.getByTestId("exposure-explorer").getByTestId("explorer-origin")).toContainText("Test data");
     // Once the drawing is up there is one chart of bars on the page, not two.
     await expect(page.getByTestId("exposure-chart")).toHaveCount(1);
-    await expectNoAxeViolations(page, "stage 5 with the 3D explorer");
+    await expectNoAxeViolations(page, "your result, with the 3D explorer");
     expect(errors).toEqual([]);
   });
 
@@ -174,12 +190,12 @@ test.describe("exposure explorer", () => {
     await toPurchaseStage(page);
     expect(await browserHasWebGL(page)).toBe(false);
     await expectFlatChart(page, "NO_WEBGL", "The 3D view is not available in this browser, so the flat chart and the table are shown instead.");
-    await expectNoAxeViolations(page, "stage 3 with the explorer's flat chart");
+    await expectNoAxeViolations(page, "test an idea, with the explorer's flat chart");
 
     await toVerdictStage(page);
     await expectFlatChart(page, "NO_WEBGL", "The 3D view is not available in this browser");
     await expect(overviewChart(page).getByTestId("exposure-row")).toHaveCount(10);
-    await expectNoAxeViolations(page, "stage 5 with the explorer's flat chart");
+    await expectNoAxeViolations(page, "your result, with the explorer's flat chart");
 
     expect(await threeHasRun(page)).toBe(false);
     expect(await scriptsHoldingThree(page, scripts.urls)).toEqual([]);
@@ -203,7 +219,7 @@ test.describe("exposure explorer", () => {
 
   test("when the script of the 3D drawing cannot be loaded the flat chart takes its place, with no error on the page", async ({ page }) => {
     await page.goto(START_URL);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
     test.skip(!(await browserHasWebGL(page)), "This browser cannot create a WebGL context, so the 3D drawing is never requested here.");
     await confirmScenarioRules(page);
 
@@ -214,7 +230,8 @@ test.describe("exposure explorer", () => {
       return route.abort("failed");
     });
 
-    await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
+    await continueToPurchase(page);
+    await openPurchasePreview(page);
     await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toHaveText("5.0%");
     await expectFlatChart(page, "LOAD_OR_RENDER_ERROR", "The 3D view could not be started, so the flat chart and the table are shown instead.");
     expect(refused.length).toBeGreaterThan(0);

@@ -179,8 +179,8 @@ export function thresholdSourceText(rule: Rule): string {
 }
 
 const STATUS_LABELS: Record<RuleStatus, string> = {
-  PROPOSED: "Proposed — inactive",
-  CONFIRMED: "Confirmed — active",
+  PROPOSED: "Proposed: inactive",
+  CONFIRMED: "Confirmed: active",
   SUPERSEDED: "Superseded",
 };
 

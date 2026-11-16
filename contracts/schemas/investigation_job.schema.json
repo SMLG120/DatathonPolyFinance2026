@@ -49,7 +49,8 @@
         }
       }]
     },
-    "proposed_corrections": { "type": "array", "items": { "$ref": "challenge.schema.json#/$defs/proposed_correction" }, "description": "Unverified user corrections raised against this investigation's evidence. Appending here never changes result or evidence." }
+    "proposed_corrections": { "type": "array", "items": { "$ref": "challenge.schema.json#/$defs/proposed_correction" }, "description": "Unverified user corrections raised against this investigation's evidence. Appending here never changes result or evidence." },
+    "portfolio": { "$ref": "portfolio.schema.json", "description": "OPTIONAL member. The exact fictional portfolio this job is checked against, fixed at creation: the persona's scenario portfolio, or the customized portfolio sent with the request. A CHANGE_RULE child job carries its parent's. Absent only on jobs stored before this member existed; those were checked against the scenario portfolio." }
   },
   "allOf": [
     { "if": { "properties": { "status": { "const": "QUEUED" } } },

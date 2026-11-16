@@ -2,7 +2,7 @@ import { createServer, type Server } from "node:http";
 import { expect, test, type Page } from "@playwright/test";
 import { createFixturesClient } from "../src/lib/api/fixtures-client";
 import { FIXTURES } from "../src/lib/fixtures";
-import { expectNoAxeViolations, tabTo } from "./helpers";
+import { confirmScenarioRules, continueToPurchase, expectNoAxeViolations, expectPortfolioLoaded, expectScreen, openPurchasePreview, tabTo } from "./helpers";
 
 /**
  * The access-code gate of a LIVE build (`out-live/`, see scripts/build-e2e.mjs),
@@ -17,7 +17,7 @@ const LIVE_API = "http://127.0.0.1:4174"; // must match scripts/build-e2e.mjs
 const LIVE_SITE = "http://127.0.0.1:4175"; // must match playwright.config.ts
 const ACCEPTED_CODE = "e2e-accepted-code";
 const FORBIDDEN_CODE = "e2e-forbidden-code";
-const APP_NAME = "Before You Buy — fictional simulation";
+const APP_NAME = "Before You Buy: fictional simulation";
 
 interface SeenRequest {
   method: string;
@@ -38,6 +38,7 @@ test.beforeAll(async () => {
   const portfolios: Record<string, string> = {
     "/portfolios/robert": JSON.stringify(await fixtures.getPortfolio("robert")),
     "/portfolios/mateo": JSON.stringify(await fixtures.getPortfolio("mateo")),
+    "/portfolios/amira": JSON.stringify(await fixtures.getPortfolio("amira")),
   };
   const cors = {
     "Access-Control-Allow-Origin": LIVE_SITE,
@@ -112,10 +113,12 @@ test.describe("live build: the access-code gate", () => {
   test("asks for the code before anything else, with a title, and fetches nothing", async ({ page }) => {
     await page.goto("/");
     await expect(form(page).heading).toBeVisible();
-    expect(await settledTitle(page)).toBe(`Access code — ${APP_NAME}`);
-    await expect(page.getByTestId("simulation-label")).toHaveText("Simulation — fictional portfolio, not advice");
+    expect(await settledTitle(page)).toBe(`Access code: ${APP_NAME}`);
+    await expect(page.getByTestId("simulation-label")).toHaveText("Simulation: fictional portfolio, not advice");
     await expect(page.getByTestId("fixtures-label")).toHaveCount(0);
-    await expect(page.getByRole("link", { name: /^Step \d of 6/ })).toHaveCount(0);
+    // Nothing of the simulation is offered before the code: no stage navigation.
+    await expect(page.getByRole("navigation", { name: "Stages of the simulation" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /^Step \d of \d/ })).toHaveCount(0);
     await expect(form(page).field).toHaveAttribute("type", "password");
     expect(seen, "no request before a code is typed").toEqual([]);
     await expectNoAxeViolations(page, "access-code form");
@@ -169,13 +172,16 @@ test.describe("live build: the access-code gate", () => {
     await page.goto("/");
     await submitCode(page, ACCEPTED_CODE);
 
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
-    await expect(page.locator("[data-stage-heading]")).toHaveText("Step 1 of 6: Persona & portfolio");
-    expect(await settledTitle(page)).toBe(`Persona & portfolio — ${APP_NAME}`);
+    await expectPortfolioLoaded(page);
+    await expectScreen(page, "persona", { focused: false });
+    await expect(page.getByRole("button", { name: "Use Mateo’s portfolio" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Use Amira’s portfolio" })).toBeVisible();
+    expect(await settledTitle(page)).toBe(`Choose a profile: ${APP_NAME}`);
     await expect(page.getByTestId("fixtures-label")).toHaveCount(0);
     // Answers that come from a service carry no "Test data" marker.
     await expect(page.getByTestId("test-data-tag")).toHaveCount(0);
     await expect(page.getByTestId("simulation-label")).toBeVisible();
+    // In the notice as text for assistive technology (visually hidden), read from the portfolio the service sent.
     await expect(page.getByTestId("valuation-date")).toHaveText("Valuation date: 12 Nov 2026");
 
     expect(await storedKeys(page)).toEqual({ session: ["byb.accessCode"], local: [], cookie: "" });
@@ -194,7 +200,7 @@ test.describe("live build: the access-code gate", () => {
 
     // The code belongs to this tab: a reload keeps it, another tab asks again.
     await page.reload();
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
     const otherTab = await context.newPage();
     await otherTab.goto("/");
     await expect(form(otherTab).heading).toBeVisible();
@@ -204,13 +210,13 @@ test.describe("live build: the access-code gate", () => {
     await page.getByRole("button", { name: "Forget the access code" }).click();
     await expect(form(page).heading).toBeVisible();
     expect(await storedKeys(page)).toEqual({ session: [], local: [], cookie: "" });
-    expect(await settledTitle(page)).toBe(`Access code — ${APP_NAME}`);
+    expect(await settledTitle(page)).toBe(`Access code: ${APP_NAME}`);
   });
 
   test("a code the service stops accepting is removed, and the form says why", async ({ page }) => {
     await page.goto("/");
     await submitCode(page, ACCEPTED_CODE);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
 
     // Stand-in for a code that was revoked while the tab was open.
     await page.evaluate(() => sessionStorage.setItem("byb.accessCode", "revoked-since"));
@@ -224,14 +230,12 @@ test.describe("live build: the access-code gate", () => {
 
   test("?fixtures=1 on a live build uses test data, is labelled, and sends nothing", async ({ page }) => {
     await page.goto("/?fixtures=1");
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
-    await expect(page.getByTestId("fixtures-label")).toHaveText("Test data — fixtures");
+    await expectPortfolioLoaded(page);
+    await expect(page.getByTestId("fixtures-label")).toHaveText("Test data: fixtures");
     await expect(form(page).heading).toHaveCount(0);
-    await page.getByRole("link", { name: "Continue to Goals & rules" }).click();
-    await expect(page.getByTestId("rule-card").first()).toBeVisible();
-    await page.getByTestId("confirm-rules").click();
-    await expect(page.getByTestId("policy-rule-card").first()).toBeVisible();
-    await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
+    await confirmScenarioRules(page);
+    await continueToPurchase(page);
+    await openPurchasePreview(page);
     await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toHaveText("5.0%");
     await expect(page.getByTestId("purchase-preview").locator("xpath=ancestor::*[@data-figures='true']").getByTestId("test-data-tag").first()).toBeVisible();
     expect(seen, "fixtures mode never calls the service").toEqual([]);

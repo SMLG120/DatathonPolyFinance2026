@@ -63,6 +63,19 @@ function isInterpretation(value: unknown): boolean {
   );
 }
 
+/** The members of a portfolio document the screens read: its id, its date and its weights. */
+function isPortfolio(value: unknown): boolean {
+  return (
+    isObject(value) &&
+    isString(value.portfolio_id) &&
+    isString(value.valuation_date) &&
+    isString(value.base_currency) &&
+    isNumber(value.cash_weight) &&
+    Array.isArray(value.positions) &&
+    value.positions.every((position) => isObject(position) && isString(position.instrument_id) && isNumber(position.weight))
+  );
+}
+
 function isAccepted(value: unknown): boolean {
   return isObject(value) && isString(value.id) && isString(value.status) && JOB_STATUSES.includes(value.status);
 }
@@ -128,7 +141,9 @@ export function asJob(value: unknown, status: number | null = null): Investigati
     Array.isArray(value.explanation) &&
     Array.isArray(value.proposed_corrections) &&
     isObject(value.agent) &&
-    (value.failure === null || (isObject(value.failure) && isString(value.failure.message)));
+    (value.failure === null || (isObject(value.failure) && isString(value.failure.message))) &&
+    // Optional: the portfolio the job was checked against. Absent on jobs stored before it existed.
+    (value.portfolio === undefined || isPortfolio(value.portfolio));
   if (!ok) unreadable("the investigation", status);
   return value as unknown as InvestigationJob;
 }

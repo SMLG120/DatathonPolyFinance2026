@@ -1,3 +1,3 @@
 GENERATED — DO NOT EDIT. Copied by `npm run sync:contracts` from contracts/typescript/.
 
-contracts.ts  sha256:26be019c7eac7a8022d48a46d111e036ef1a0c5e5a41722729d5fe06fb030408
+contracts.ts  sha256:7a78c7f223da66fb0297b87ff9d5596a49753c3d99a6d15e3bd140f8f5bc3370

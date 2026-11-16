@@ -40,8 +40,8 @@ describe("App shell", () => {
     await screen.findByTestId("portfolio-table");
     for (const stage of STAGES) {
       await go(stage.id);
-      expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation — fictional portfolio, not advice");
-      expect(screen.getByTestId("fixtures-label")).toHaveTextContent("Test data — fixtures");
+      expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation: fictional portfolio, not advice");
+      expect(screen.getByTestId("fixtures-label")).toHaveTextContent("Test data: fixtures");
       expect(screen.getByTestId("valuation-date")).toHaveTextContent("Valuation date: 12 Nov 2026");
       expect(screen.getByRole("link", { current: "step" })).toHaveAccessibleName(`Step ${journeyFor(stage.id).number} of 3: ${journeyFor(stage.id).title}`);
     }
@@ -55,7 +55,7 @@ describe("App shell", () => {
 
     await go("goals");
     expect(stageHeading()).toHaveFocus();
-    expect(document.title).toBe("Your limits — Before You Buy — fictional simulation");
+    expect(document.title).toBe("Your limits: Before You Buy: fictional simulation");
   });
 
   it("has one main landmark, one banner notice and one h1", async () => {
@@ -135,7 +135,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     const cards = await screen.findAllByTestId("rule-card");
     expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-issuer-cap-1", "robert-loss-budget-1"]);
     for (const card of cards) {
-      expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+      expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
       expect(card).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
       expect(within(card).getByRole("textbox")).toHaveValue("10");
     }
@@ -240,7 +240,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(preview).toHaveTextContent("Preview: Fail");
     expect(preview).toHaveTextContent("draft limit 20.0%");
     expect(within(preview).getByTestId("rule-gap")).toHaveTextContent("6.2 points over the limit");
-    expect(within(form).getByTestId("draft-preview")).toHaveTextContent("Preview with draft threshold — not your confirmed policy");
+    expect(within(form).getByTestId("draft-preview")).toHaveTextContent("Preview with draft threshold: not your confirmed policy");
 
     // Nothing was confirmed or challenged, and the report still says what it said.
     expect(confirmRules).toHaveBeenCalledTimes(1);
@@ -283,7 +283,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(challengeInvestigation.mock.calls[0]?.[1]).toEqual(exchange.request);
     expect(correction.status).toBe("UNVERIFIED");
     expect(correction.applied_to_calculation).toBe(false);
-    expect(card).toHaveTextContent("Proposed correction — unverified");
+    expect(card).toHaveTextContent("Proposed correction: unverified");
     expect(within(card).getByTestId("correction-proposed")).toHaveTextContent("8.00%");
     expect(within(card).getByTestId("correction-original")).toHaveTextContent("6.00%");
     expect(card).toHaveTextContent("Asserted by the user on");
@@ -314,7 +314,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     const user = await toVerdict({ api: { ...fixtures, challengeInvestigation } });
     await go("challenge");
     const form = screen.getByTestId("change-rule-form");
-    expect(within(form).getByLabelText("Rule to change")).toHaveDisplayValue("Maximum exposure to a single company — now 10.0%");
+    expect(within(form).getByLabelText("Rule to change")).toHaveDisplayValue("Maximum exposure to a single company: now 10.0%");
     expect(within(form).getByTestId("current-threshold")).toHaveTextContent("Confirmed now: 10.0%");
 
     // Gated: no change without a different number.
@@ -399,7 +399,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(within(forms).getByRole("heading", { level: 2 })).toHaveTextContent("What do you want to challenge?");
     expect(within(form).getByRole("heading", { level: 3, name: "Change a rule" })).toBeInTheDocument();
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent("Version comparison: before and after the rule change");
-    expect(section).toHaveTextContent("Outcome of the rule change — separate from the form above");
+    expect(section).toHaveTextContent("Outcome of the rule change: separate from the form above");
     expect(within(comparison).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
       "What changed in the policy",
       "The same purchase under each version",
@@ -566,12 +566,12 @@ describe("A policy version conflict (finding F-04)", () => {
     // The stale version is no longer presented as the policy in force.
     expect(screen.queryAllByTestId("policy-rule-card")).toHaveLength(0);
     expect(screen.queryByTestId("policy-rule-card")).toBeNull();
-    expect(screen.queryByRole("heading", { name: /^Confirmed policy — version/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^Confirmed policy: version/ })).toBeNull();
     // Every rule is a proposal again: the one being confirmed keeps the number typed, the scenario's other rule is offered again.
     const proposals = screen.getAllByTestId("rule-card");
     expect(proposals.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-loss-budget-1", "robert-issuer-cap-1"]);
     expect(proposals.map((card) => (within(card).getByRole("textbox") as HTMLInputElement).value)).toEqual(["12", "10"]);
-    for (const card of proposals) expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    for (const card of proposals) expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
 
     // Nothing can be checked until a rule is confirmed again.
     await go("purchase");

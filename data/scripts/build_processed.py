@@ -154,7 +154,15 @@ def pick_record(manifest: dict, item: str, pinned: set[str]):
         candidates = pinned_here
     if not candidates:
         return None
-    return max(candidates, key=lambda entry: (entry["as_of_date_in_file"], entry["retrieved_at_utc"]))
+    # No look-ahead (official case p.14, "Time consistency": do not use information in a simulation before it was
+    # available): a file whose as-of date is after the valuation date is never used, pinned or not. The latest
+    # eligible file is taken. quality_checks.py Q29 checks the result.
+    eligible = [entry for entry in candidates if entry["as_of_date_in_file"] <= VALUATION_DATE]
+    if not eligible:
+        dated = sorted({entry["as_of_date_in_file"] for entry in candidates})
+        raise BuildError(f"{item}: every registered file is dated after the valuation date {VALUATION_DATE} ({dated}). "
+                         "Register the issuer file as of the valuation date or earlier (docs/data-sources.md 5.5).")
+    return max(eligible, key=lambda entry: (entry["as_of_date_in_file"], entry["retrieved_at_utc"]))
 
 
 def read_verified(record: dict) -> bytes:

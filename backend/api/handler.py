@@ -33,7 +33,7 @@ import uuid
 from typing import Any, Callable
 
 from botocore.exceptions import BotoCoreError, ClientError
-from byb_contracts import SCHEMA_VERSION, ContractError, schema_errors
+from byb_contracts import SCHEMA_VERSION, ContractError, check_result_errors, schema_errors
 from byb_contracts.constants import CHECK_TIMEOUT_SECONDS
 
 from backend import engine
@@ -57,6 +57,7 @@ from backend.common.jobs import (
 from backend.common.jobview import accepted_view, job_id_for, mark_failed, new_job, public_view
 from backend.common.policies import PolicyStore, PolicyVersionExists
 from backend.common.policy_ops import InvalidConfirmation, body_hash, build_changed_rule_version, build_confirmed_version
+from backend.common.portfolios import InvalidCustomPortfolio, is_customized, resolve_portfolio, shape_problems
 
 # Largest body accepted. A confirmation carrying every rule and objective in full is a few kilobytes.
 MAX_BODY_BYTES = 65536
@@ -71,6 +72,10 @@ _PERSONA_RE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 _NUMERIC_UNITS = frozenset({"fraction", "price", "fx_rate", "days", "count"})
 
 _VALIDATION_MESSAGE = "The request body does not match the contract."
+_CUSTOM_PORTFOLIO_MESSAGE = ("The customized portfolio cannot be used, so nothing was calculated or stored. "
+                             "Weights are never rescaled; shorting and leverage are not supported.")
+_FOLLOW_UP_PORTFOLIO_MESSAGE = ("A follow-up investigation is about the same portfolio as the investigation it follows. "
+                                "Nothing was calculated or stored.")
 _DISPATCH_FAILED_MESSAGE = "The investigation could not be started. Nothing was run. Retry with a new idempotency key."
 _DEADLINE_MESSAGE = "The investigation did not finish before its deadline. Nothing more will be run for it."
 _CONFLICT_MESSAGE = "The policy has a newer version than the one this confirmation was based on. Reload it and confirm again."
@@ -111,6 +116,15 @@ def _finite_float(text: str) -> float:
     return value
 
 
+def _float_sized_int(text: str) -> int:
+    value = int(text)
+    try:
+        float(value)  # an integer too large for a double cannot be a weight, a threshold or a version
+    except OverflowError as error:
+        raise ValueError("a number is too large to be represented") from error
+    return value
+
+
 def read_json_body(event: dict[str, Any]) -> dict[str, Any]:
     """The body as a JSON object. NaN, Infinity, numbers that overflow, non-UTF-8, non-objects and oversized bodies are 400."""
     raw = event.get("body")
@@ -126,7 +140,7 @@ def read_json_body(event: dict[str, Any]) -> dict[str, Any]:
     if len(raw.encode("utf-8")) > MAX_BODY_BYTES:
         raise _validation([detail("", f"the request body is larger than {MAX_BODY_BYTES} bytes")])
     try:
-        body = json.loads(raw, parse_constant=_reject_constant, parse_float=_finite_float)
+        body = json.loads(raw, parse_constant=_reject_constant, parse_float=_finite_float, parse_int=_float_sized_int)
     except (ValueError, RecursionError) as error:
         raise _validation([detail("", "the request body is not valid JSON (NaN, Infinity and numbers too large to represent are refused)")]) from error
     if not isinstance(body, dict):
@@ -157,6 +171,19 @@ def validate_body(body: dict[str, Any], definition: str) -> None:
     errors = schema_errors(body, SCHEMA + definition)
     if errors:
         raise _validation(contract_details(errors))
+
+
+def validate_portfolio_request(body: dict[str, Any], definition: str) -> None:
+    """``validate_body`` for the two requests that may carry ``custom_portfolio`` (contracts/api.md section 2a).
+
+    A malformed ``custom_portfolio`` is reported first, with the path of each problem under ``custom_portfolio`` and a
+    plain reason; the schema would only say that the optional member matches neither null nor the object.
+    """
+    if body.get("custom_portfolio") is not None:
+        problems = shape_problems(body["custom_portfolio"])
+        if problems:
+            raise _validation([detail(path, issue) for path, issue in problems[:20]], _CUSTOM_PORTFOLIO_MESSAGE)
+    validate_body(body, definition)
 
 
 def read_idempotency_key(event: dict[str, Any]) -> str:
@@ -233,6 +260,17 @@ class Api:
         if policy is None or policy.get("persona_id") != persona_id:
             raise _not_found("policy version", "policy_version")
         return policy
+
+    def _resolved_portfolio(self, snapshot: Snapshot, scenario: dict[str, Any], body: dict[str, Any]) -> dict[str, Any]:
+        """The portfolio this request is about (contracts/api.md section 2a): the scenario's, or the customized one.
+
+        ``custom_portfolio`` absent or null gives the scenario portfolio itself. Weights that cannot be used are a
+        400 before anything is calculated or stored; they are never rescaled.
+        """
+        try:
+            return resolve_portfolio(scenario["portfolio"], body.get("custom_portfolio"), snapshot.purchasable_instrument_ids())
+        except InvalidCustomPortfolio as error:
+            raise _validation([detail(path, issue) for path, issue in error.problems[:20]], _CUSTOM_PORTFOLIO_MESSAGE) from error
 
     # ------------------------------------------------- GET /portfolios/{persona_id}
 
@@ -318,7 +356,7 @@ class Api:
     def _check(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
         started = self._clock.time()
         body = read_json_body(event)
-        validate_body(body, "check_request")
+        validate_portfolio_request(body, "check_request")
         policy_id, version, drafts = body["policy_id"], body["policy_version"], body["draft_rules"]
         if (policy_id is None) != (version is None):
             raise _validation([detail("policy_version", "policy_id and policy_version are both null or both set")])
@@ -326,16 +364,26 @@ class Api:
             raise _validation([detail("draft_rules", "is null, so policy_id and policy_version are required (the stored policy is evaluated)")])
         snapshot = self._snapshot()
         scenario = self._scenario(snapshot, body["persona_id"])
+        portfolio = self._resolved_portfolio(snapshot, scenario, body)
         # In a preview the stored version only supplies the objectives for goal_context; its rules are not read.
         policy = self._policy(body["persona_id"], policy_id, version) if policy_id is not None else None
         self._within_check_budget(started, "before the calculation")  # reading the data used the budget: do not start
         result = run_engine(
-            engine.check_rules, scenario["portfolio"], policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
+            engine.check_rules, portfolio, policy, body["purchase_request"], snapshot.instruments, snapshot.holdings, snapshot.market_data,
             snapshot.controversies, draft_rules=drafts, data_sources=snapshot.data_sources or None,
+            # Weights the user entered are labelled as such in the evidence; the scenario's own are not (api.md 2a).
+            portfolio_customized=is_customized(portfolio, scenario["portfolio"]),
         )
+        # The worker refuses to publish a result that is not a valid contract document (FAILED / ENGINE_ERROR). The
+        # preview must not show what the investigation would refuse: the same check here, and no result on failure.
+        problems = check_result_errors(result)
+        if problems:
+            log.error("check_result_invalid", errors=problems[:5], portfolio_id=portfolio["portfolio_id"])
+            raise ApiError(500, "INTERNAL_ERROR", "The result did not pass its own consistency checks, so it is not shown. Nothing was stored.")
         elapsed_ms = self._within_check_budget(started, "after the calculation")  # a late result is not returned
         log.info("check_completed", preview=result["preview"], headline=result["summary"]["headline"], data_snapshot_id=snapshot.snapshot_id,
-                 calculation_version=result["calculation_version"], elapsed_ms=elapsed_ms)
+                 calculation_version=result["calculation_version"], elapsed_ms=elapsed_ms, portfolio_id=portfolio["portfolio_id"],
+                 custom_portfolio=portfolio is not scenario["portfolio"])
         return json_response(200, result)
 
     def _within_check_budget(self, started: float, stage: str) -> int:
@@ -356,18 +404,19 @@ class Api:
 
     def _create(self, event: dict[str, Any], request_id: str | None) -> dict[str, Any]:
         body = read_json_body(event)
-        validate_body(body, "investigation_create_request")
+        validate_portfolio_request(body, "investigation_create_request")
         key = read_idempotency_key(event)
         snapshot = self._snapshot()
         scenario = self._scenario(snapshot, body["persona_id"])
+        portfolio = self._resolved_portfolio(snapshot, scenario, body)
         policy = self._policy(body["persona_id"], body["policy_id"], body["policy_version"])
         parent_id = body["parent_investigation_id"]
-        if parent_id is not None and (not is_valid_job_id(parent_id) or self._store.get(parent_id) is None):
-            raise _not_found("investigation", "parent_investigation_id")
+        if parent_id is not None:
+            self._check_follow_up(parent_id, body["persona_id"], portfolio, scenario["portfolio"])
         request = body["request"]
         if request["instrument_id"] is not None:
             # A request the engine would refuse is never stored (contracts/api.md section 6, rule 3).
-            execution = run_engine(engine.simulate_change, scenario["portfolio"], request, snapshot.instruments, policy)["execution"]
+            execution = run_engine(engine.simulate_change, portfolio, request, snapshot.instruments, policy)["execution"]
             if execution["status"] != "OK":
                 raise ApiError(422, "INVALID_PURCHASE_REQUEST", "The purchase request cannot be evaluated.",
                                [detail("request", f"{execution['code']}: {execution['message']}")])
@@ -377,9 +426,27 @@ class Api:
             job_id=job_id, now=self._clock.time(), deadline_seconds=self._config.job_deadline_seconds, expiry_seconds=self._config.job_expiry_seconds,
             idempotency_key=key, persona_id=body["persona_id"], policy_id=body["policy_id"], policy_version=body["policy_version"], request=request,
             parent_investigation_id=parent_id, challenge=None, model_id=self._config.model_id, request_hash=body_hash(body),
-            snapshot_id=snapshot.snapshot_id, api_request_id=request_id,
+            snapshot_id=snapshot.snapshot_id, api_request_id=request_id, portfolio=portfolio,
         )
+        log.add_context(portfolio_id=portfolio["portfolio_id"], custom_portfolio=portfolio is not scenario["portfolio"])
         return json_response(202, self._store_and_dispatch(candidate), headers={"location": f"/investigations/{job_id}"})
+
+    def _check_follow_up(self, parent_id: str, persona_id: str, portfolio: dict[str, Any], scenario_portfolio: dict[str, Any]) -> None:
+        """A follow-up investigation names a job of the same persona and is about that job's portfolio.
+
+        An unknown parent and another persona's job are the same 404. The parent's portfolio is the one stored
+        with it; a job stored before jobs carried their portfolio was checked against the scenario's. A request
+        whose resolved portfolio is another one is refused (400) before anything is calculated or stored: the
+        parent's portfolio is never silently substituted and the two are never mixed under one chain.
+        """
+        found = self._store.get(parent_id) if is_valid_job_id(parent_id) else None
+        if found is None or found[0].get("persona_id") != persona_id:
+            raise _not_found("investigation", "parent_investigation_id")
+        parent_portfolio_id = (found[0].get("portfolio") or scenario_portfolio)["portfolio_id"]
+        if parent_portfolio_id != portfolio["portfolio_id"]:
+            raise _validation([detail("custom_portfolio", (
+                f"a follow-up investigation must carry the portfolio of the investigation it follows: {parent_id} was checked against "
+                f"{parent_portfolio_id}, and this request resolves to {portfolio['portfolio_id']}"))], _FOLLOW_UP_PORTFOLIO_MESSAGE)
 
     def _store_and_dispatch(self, candidate: dict[str, Any]) -> dict[str, Any]:
         """Store first, dispatch second, and report 202 only once Lambda accepted the invocation."""
@@ -584,6 +651,15 @@ class Api:
         if existing is not None:
             child = existing[0]
         else:
+            # The child re-checks the portfolio the challenged job was created with (api.md 2a). Only a job stored
+            # before jobs carried their portfolio falls back to the scenario's, which is what it was checked against.
+            snapshot = self._snapshot()
+            portfolio = job.get("portfolio")
+            if portfolio is None:
+                scenario = snapshot.scenario(job["persona_id"])
+                if scenario is None:
+                    raise ApiError(500, "INTERNAL_ERROR", "The portfolio of this investigation could not be read.")
+                portfolio = scenario["portfolio"]
             now = self._clock.time()
             challenge = {"challenge_id": "ch-" + child_id[4:16], "investigation_id": job["id"], "type": "CHANGE_RULE", "payload": payload,
                          "created_at": to_iso(now)}
@@ -595,7 +671,7 @@ class Api:
                 job_id=child_id, now=now, deadline_seconds=self._config.job_deadline_seconds, expiry_seconds=self._config.job_expiry_seconds,
                 idempotency_key=key, persona_id=job["persona_id"], policy_id=job["policy_id"], policy_version=new_version,
                 request=dict(job["resolved_request"]), parent_investigation_id=job["id"], challenge=challenge, model_id=self._config.model_id,
-                request_hash=request_hash, snapshot_id=self._snapshot().snapshot_id, api_request_id=request_id,
+                request_hash=request_hash, snapshot_id=snapshot.snapshot_id, api_request_id=request_id, portfolio=portfolio,
             )
             child["internal"]["policy_ready"] = False
             child, _etag, _created = self._store.create(child)

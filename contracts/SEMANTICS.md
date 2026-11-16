@@ -95,6 +95,11 @@ For one portfolio state (starting or proposed), over positions with a positive w
 Then `lower[issuer] = direct[issuer] + sum over funds of via[issuer, fund]`, `U = sum of uncovered`, and
 `upper[issuer] = lower[issuer] + U` (E01, E03, E04, E05, E06).
 
+Neither bound is capped at 1. With `INSUFFICIENT_CASH` the rules are evaluated at the requested weights
+(section 4), which total more than 1, so a bound can exceed 1: a 0.15 target next to a 0.90 fund without a
+holdings entry gives `upper = 0.15 + 0.90 = 1.05`. The same number is reported in `measured`, in
+`breaching_subjects` and in `exposure`; `feasibility_status` says why it is not a reachable portfolio.
+
 Fund coverage status (`coverage_status`): `MISSING` without a holdings entry; `COVERED` when `c >= 1`;
 otherwise `PARTIAL`. A real fund that reports 0.9987 of its weight is therefore `PARTIAL`.
 
@@ -269,7 +274,8 @@ All fixture numbers are synthetic. Never show them as real holdings or prices.
   result; every id cited anywhere in the result exists in it. The ids used in the fixtures are examples.
 - Labels: `FACT` is taken unchanged from a cited source (`source_ids` required) or is a threshold the user
   stated and confirmed; `FICTIONAL_SCENARIO` is invented for the simulation (persona weights, scenario
-  thresholds, the hypothetical purchase); `ASSUMPTION` is a modelling choice or a draft value in a preview;
+  thresholds, the hypothetical purchase, and the weights of a portfolio the user customized, which then say
+  in `assumptions` that the user entered them); `ASSUMPTION` is a modelling choice or a draft value in a preview;
   `CALCULATION` is computed by the engine and carries `derived_from` (the calculation path) and a `formula`
   printed with the numbers used.
 - `subject`, `unit`, `period` and `portfolio_state` say what the number is about. A statement may cite a record

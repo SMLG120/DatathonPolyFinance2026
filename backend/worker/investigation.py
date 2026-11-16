@@ -13,8 +13,12 @@ So a job has at most one result, and a terminal job is never touched again.
 
 The model does not own the calculation. Order of work:
 
-1. Load the persona's portfolio, the stored policy version named by the job and
-   the data snapshot. Failure: ``FAILED / DATA_UNAVAILABLE``, nothing assumed.
+1. Load the portfolio stored with the job (the persona's scenario portfolio, or
+   the customized one the request carried; a job stored before jobs carried
+   their portfolio uses the scenario's), the stored policy version named by the
+   job and the data snapshot. Failure, or a stored portfolio that is not a valid
+   contract document: ``FAILED / DATA_UNAVAILABLE``, nothing assumed. That one
+   portfolio object is what the engine and every tool read.
 2. Run ``backend.engine.check_rules`` on the stored request. This happens before
    any model call and does not depend on one.
 3. Let the model call read-only tools over that result (bounded rounds, calls,
@@ -32,10 +36,11 @@ template (contracts/api.md, investigation_job.schema.json).
 
 from __future__ import annotations
 
+import copy
 import platform
 from typing import Any
 
-from byb_contracts import investigation_job_errors
+from byb_contracts import ContractError, investigation_job_errors, validate_portfolio
 
 from backend import engine
 from backend.agents import explain, prompts
@@ -61,6 +66,7 @@ from backend.common.jobs import (
 )
 from backend.common.jobview import OUTCOME_SCHEMA_VERSION, mark_failed, public_view
 from backend.common.policies import PolicyStore
+from backend.common.portfolios import content_sha256, is_customized
 
 # Failure codes of the contract (byb_contracts.FAILURE_CODES).
 FAILURE_WORKER_ERROR = "WORKER_ERROR"
@@ -80,6 +86,10 @@ LAMBDA_TIMEOUT_MARGIN_SECONDS = 10.0
 TRACE_SCHEMA_VERSION = 2
 
 _DATA_MESSAGE = "The data needed for this check could not be read, so no check was run and no result was produced. Nothing was assumed in its place."
+_REQUEST_INVALID_MESSAGE = ("The stored request can no longer be evaluated against the portfolio stored with this investigation and the "
+                            "current data ({code}: {message}). No check was run and no result was produced.")
+_DEMO_OPTION_DESCRIPTION = "A request from the fictional scenario: a final direct weight, funded from cash."
+_DEMO_OPTION_REFUSED = "Not available for the portfolio of this investigation: {reason}"
 _FALLBACK_NOTE = "The language model did not complete its part ({code}). The checks were run by the service and every sentence is a template."
 _FREE_TEXT_NOTE = "A free-text request is not resolved by a model in this build: the service asks instead of guessing an instrument or a number."
 
@@ -169,7 +179,7 @@ class InvestigationWorker:
         job_id = job["id"]
         started = self._clock.time()
         recorder = LoopRecorder()
-        extras: dict[str, Any] = {"explanation_rejections": [], "fallback": None, "data_snapshot_id": None}
+        extras: dict[str, Any] = {"explanation_rejections": [], "fallback": None, "data_snapshot_id": None, "portfolio_id": None}
         deadline = from_iso(job["deadline_at"]) - JOB_DEADLINE_MARGIN_SECONDS
         remaining = getattr(context, "get_remaining_time_in_millis", None)
         if callable(remaining):
@@ -213,8 +223,10 @@ class InvestigationWorker:
         try:
             snapshot, portfolio, policy = self._load(job)
             extras["data_snapshot_id"] = snapshot.snapshot_id
+            extras["portfolio_id"] = portfolio["portfolio_id"]
+            log.add_context(portfolio_id=portfolio["portfolio_id"])
             if job["request"]["instrument_id"] is None:
-                outcome, updates = self._clarify(job, snapshot, portfolio, record_step)
+                outcome, updates = self._clarify(job, snapshot, portfolio, policy, record_step)
             else:
                 outcome, updates = self._investigate(job, snapshot, portfolio, policy, deadline, recorder, record_step, extras)
             if self._clock.time() >= from_iso(job["deadline_at"]):
@@ -287,10 +299,36 @@ class InvestigationWorker:
         if scenario is None or policy is None or policy.get("persona_id") != job["persona_id"]:
             log.error("data_unavailable", reason="persona scenario or policy version not found")
             raise JobFailure(FAILURE_DATA_UNAVAILABLE, _DATA_MESSAGE, False)
-        return snapshot, scenario["portfolio"], policy
+        return snapshot, self._job_portfolio(job, scenario), policy
 
-    def _clarify(self, job: dict[str, Any], snapshot: Any, portfolio: dict[str, Any], record_step: Any) -> tuple[dict[str, Any], dict[str, Any]]:
-        """A free-text request: ask, never guess. The options are the scenario's own labelled demo requests."""
+    @staticmethod
+    def _job_portfolio(job: dict[str, Any], scenario: dict[str, Any]) -> dict[str, Any]:
+        """The portfolio stored with the job at creation; the scenario's only for a job stored without one.
+
+        A stored portfolio that is not a valid contract document, or is another persona's, is never repaired or
+        replaced by a guess: the job fails and no result is produced.
+        """
+        portfolio = job.get("portfolio")
+        if portfolio is None:
+            return scenario["portfolio"]
+        try:
+            validate_portfolio(portfolio)
+        except ContractError as error:
+            log.error("data_unavailable", reason="the portfolio stored with the job is not a valid portfolio", errors=list(error.errors)[:3])
+            raise JobFailure(FAILURE_DATA_UNAVAILABLE, _DATA_MESSAGE, False) from error
+        if portfolio["persona_id"] != job["persona_id"]:
+            log.error("data_unavailable", reason="the portfolio stored with the job belongs to another persona")
+            raise JobFailure(FAILURE_DATA_UNAVAILABLE, _DATA_MESSAGE, False)
+        return portfolio
+
+    def _clarify(self, job: dict[str, Any], snapshot: Any, portfolio: dict[str, Any], policy: dict[str, Any],
+                 record_step: Any) -> tuple[dict[str, Any], dict[str, Any]]:
+        """A free-text request: ask, never guess. The options are the scenario's own labelled demo requests.
+
+        Each demo request is simulated against the job's portfolio first (the check ``POST /investigations`` makes
+        before storing a job). One the engine would refuse there, for example a target below the weight a
+        customized portfolio already holds, is shown as unsupported with the engine's reason and carries no request.
+        """
         words = job["request"]["original_words"]
         scenario = snapshot.scenario(job["persona_id"])
         now = to_iso(self._clock.time())
@@ -300,15 +338,16 @@ class InvestigationWorker:
             result_summary=f"Fictional portfolio loaded: {len(portfolio['positions'])} positions, valuation date {portfolio['valuation_date']}.",
         )
         record_step(event)
-        options = [
-            {
+        options = []
+        for demo in scenario.get("demo_requests", [])[:4]:
+            purchase_request = {**demo["purchase_request"], "original_words": words}
+            refusal = self._refusal(portfolio, purchase_request, snapshot, policy)
+            options.append({
                 "option_id": demo["request_id"], "label": demo["label"],
-                "description": "A request from the fictional scenario: a final direct weight, funded from cash.",
-                "supported": True, "proposed_rule": None,
-                "purchase_request": {**demo["purchase_request"], "original_words": words},
-            }
-            for demo in scenario.get("demo_requests", [])[:4]
-        ]
+                "description": _DEMO_OPTION_DESCRIPTION if refusal is None else _DEMO_OPTION_REFUSED.format(reason=refusal),
+                "supported": refusal is None, "proposed_rule": None,
+                "purchase_request": purchase_request if refusal is None else None,
+            })
         options.append({
             "option_id": "enter-instrument-and-weight", "label": "Choose the instrument and enter the final direct weight yourself",
             "description": "Use the purchase form: pick an instrument and type the final weight as a share of the portfolio.",
@@ -325,19 +364,39 @@ class InvestigationWorker:
             "options": options,
         }
         agent = {"mode": "DETERMINISTIC_FALLBACK", "model_id": None, "tool_rounds": 0, "note": _FREE_TEXT_NOTE}
-        outcome = self._outcome(job, snapshot, None, [], agent)
+        outcome = self._outcome(job, snapshot, portfolio, None, [], agent)
         self._validated(job, {"agent": agent, "clarification": clarification, "steps": [event.to_step(1)]}, outcome)
         return outcome, {"agent": agent, "clarification": clarification}
+
+    @staticmethod
+    def _refusal(portfolio: dict[str, Any], purchase_request: dict[str, Any], snapshot: Any, policy: dict[str, Any]) -> str | None:
+        """Why the engine would not simulate this request on this portfolio ("CODE: message"), or None when it would."""
+        try:
+            execution = engine.simulate_change(portfolio, purchase_request, snapshot.instruments, policy)["execution"]
+        except ContractError as error:
+            return "; ".join(str(issue) for issue in list(error.errors)[:2]) or "the request is not valid"
+        if execution["status"] == "OK":
+            return None
+        return f"{execution['code']}: {execution['message']}"
 
     def _investigate(self, job: dict[str, Any], snapshot: Any, portfolio: dict[str, Any], policy: dict[str, Any], deadline: float,
                      recorder: LoopRecorder, record_step: Any, extras: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
         request = job["resolved_request"]
+        scenario_portfolio = snapshot.scenario(job["persona_id"])["portfolio"]
         # 2. The engine, server-side, before and independently of any model call.
         result = engine.check_rules(portfolio, policy, request, snapshot.instruments, snapshot.holdings, snapshot.market_data,
-                                    snapshot.controversies, data_sources=snapshot.data_sources or None)
-        if result["execution"]["status"] == "ERROR":
-            log.error("engine_error", message=result["execution"]["message"])
+                                    snapshot.controversies, data_sources=snapshot.data_sources or None,
+                                    # Weights the user entered are labelled as such in the evidence (api.md 2a).
+                                    portfolio_customized=is_customized(portfolio, scenario_portfolio))
+        execution = result["execution"]
+        if execution["status"] == "ERROR":
+            log.error("engine_error", message=execution["message"])
             raise JobFailure(FAILURE_ENGINE_ERROR, "The calculation could not be completed, so no result was produced.", False)
+        if execution["status"] != "OK":
+            # POST /investigations never stores a request the engine refuses (api.md section 6, rule 3). If it is
+            # refused now, the stored inputs and the data no longer fit together: there is no verdict to publish.
+            log.error("stored_request_invalid", execution_status=execution["status"], execution_code=execution["code"])
+            raise JobFailure(FAILURE_DATA_UNAVAILABLE, _REQUEST_INVALID_MESSAGE.format(code=execution["code"], message=execution["message"]), False)
         registry: ToolRegistry = self._registry_factory(InvestigationContext(
             portfolio=portfolio, policy=policy, request=request, result=result, holdings=snapshot.holdings, controversies=snapshot.controversies))
 
@@ -349,7 +408,7 @@ class InvestigationWorker:
                 model=self._model,
                 registry=registry,
                 system_prompt=prompts.INVESTIGATOR_SYSTEM_PROMPT,
-                user_text=prompts.build_user_message(_model_view(job, request)),
+                user_text=prompts.build_user_message(_model_view(job, request, portfolio, scenario_portfolio)),
                 limits=LoopLimits(
                     max_tool_rounds=self._config.max_tool_rounds,
                     max_tool_calls=self._config.max_tool_calls,
@@ -392,7 +451,7 @@ class InvestigationWorker:
             "note": None if fallback is None else _FALLBACK_NOTE.format(code=fallback),
         }
         statements = _numbered(templates[:-1] + accepted + templates[-1:])
-        outcome = self._outcome(job, snapshot, result, statements, agent, policy)
+        outcome = self._outcome(job, snapshot, portfolio, result, statements, agent, policy)
         try:
             self._validated(job, {"agent": agent, "steps": public}, outcome)
         except JobFailure:
@@ -400,11 +459,11 @@ class InvestigationWorker:
                 raise
             # A model sentence broke the document: drop every model sentence and keep the templates.
             extras["explanation_rejections"].append({"index": -1, "reason": "the job document was invalid with the selected evidence sentences"})
-            outcome = self._outcome(job, snapshot, result, _numbered(templates), agent, policy)
+            outcome = self._outcome(job, snapshot, portfolio, result, _numbered(templates), agent, policy)
             self._validated(job, {"agent": agent, "steps": public}, outcome)
         return outcome, {"agent": agent}
 
-    def _outcome(self, job: dict[str, Any], snapshot: Any, result: dict[str, Any] | None, explanation: list[dict[str, Any]],
+    def _outcome(self, job: dict[str, Any], snapshot: Any, portfolio: dict[str, Any], result: dict[str, Any] | None, explanation: list[dict[str, Any]],
                  agent: dict[str, Any], policy: dict[str, Any] | None = None) -> dict[str, Any]:
         """The write-once object behind ``result`` and ``explanation``, with the identity of its inputs."""
         return {
@@ -419,6 +478,11 @@ class InvestigationWorker:
                 "data_snapshot_id": snapshot.snapshot_id,
                 "calculation_version": engine.CALCULATION_VERSION,
                 "persona_id": job["persona_id"],
+                # The exact portfolio that was checked: its id, and a hash of the whole document.
+                "portfolio_id": portfolio["portfolio_id"],
+                "portfolio_content_sha256": content_sha256(portfolio),
+                # The document itself, so the write-once result stays reproducible after the job object expires.
+                "portfolio": copy.deepcopy(portfolio),
                 "policy_id": job["policy_id"],
                 "policy_version": job["policy_version"],
                 "policy_content_hash": policy["content_hash"] if policy else None,
@@ -471,6 +535,7 @@ class InvestigationWorker:
             "outcome": outcome,
             "failure": failure,
             "data_snapshot_id": extras.get("data_snapshot_id"),
+            "portfolio_id": extras.get("portfolio_id"),
             "calculation_version": engine.CALCULATION_VERSION,
             "policy": {"policy_id": job.get("policy_id"), "policy_version": job.get("policy_version")},
             "model_fallback": extras.get("fallback"),
@@ -520,10 +585,16 @@ def _numbered(statements: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [dict(statement, statement_id=f"st-{index + 1}") for index, statement in enumerate(statements)]
 
 
-def _model_view(job: dict[str, Any], request: dict[str, Any]) -> dict[str, Any]:
-    """The part of the stored request the model is shown. ``original_words`` is untrusted user text."""
+def _model_view(job: dict[str, Any], request: dict[str, Any], portfolio: dict[str, Any], scenario_portfolio: dict[str, Any]) -> dict[str, Any]:
+    """The part of the stored request the model is shown. ``original_words`` is untrusted user text.
+
+    ``portfolio_id`` and ``portfolio_customized`` are the server's: which portfolio the tools show, and whether it is
+    the persona's scenario portfolio or one the user customized.
+    """
     return {
         "persona_id": job["persona_id"],
+        "portfolio_id": portfolio["portfolio_id"],
+        "portfolio_customized": is_customized(portfolio, scenario_portfolio),
         "policy_id": job["policy_id"],
         "policy_version": job["policy_version"],
         "instrument_id": request["instrument_id"],

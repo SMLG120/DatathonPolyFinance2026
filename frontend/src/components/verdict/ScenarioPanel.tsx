@@ -124,7 +124,7 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
   const target = result.purchase_request.instrument_id;
   return (
     <div className="space-y-5" data-testid="scenario-panel" data-scenario-status={scenario.status}>
-      <Notice tone="caution" title="A replay of the past — not a forecast">
+      <Notice tone="caution" title="A replay of the past: not a forecast">
         <p data-testid="scenario-note">
           {scenario.label}. The allocation is assumed to have been bought once on <span className="tabular">{formatDate(scenario.base_date)}</span>{" "}
           and held to <span className="tabular">{formatDate(scenario.end_date)}</span>. It says what would have happened in that period only. It

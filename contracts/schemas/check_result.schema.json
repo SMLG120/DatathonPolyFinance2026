@@ -86,8 +86,8 @@
       "properties": {
         "subject_kind": { "const": "ISSUER" },
         "subject_id": { "$ref": "common.schema.json#/$defs/issuer_id" },
-        "lower": { "$ref": "common.schema.json#/$defs/fraction" },
-        "upper": { "$ref": "common.schema.json#/$defs/fraction" }
+        "lower": { "type": "number", "minimum": 0, "description": "The same number as the issuer's lower bound in measured. Not capped at 1: see exposure_breakdown.upper." },
+        "upper": { "type": "number", "minimum": 0, "description": "The same number as the issuer's upper bound in measured. Not capped at 1: see exposure_breakdown.upper." }
       }
     },
     "rule_evaluation_snapshot": {
@@ -245,8 +245,8 @@
           "items": { "type": "object", "required": ["fund_id", "known"], "additionalProperties": false,
             "properties": { "fund_id": { "$ref": "common.schema.json#/$defs/instrument_id" }, "known": { "$ref": "common.schema.json#/$defs/fraction", "description": "fund portfolio weight x issuer weight in that fund." } } }
         },
-        "lower": { "$ref": "common.schema.json#/$defs/fraction", "description": "direct + sum(known)." },
-        "upper": { "$ref": "common.schema.json#/$defs/fraction", "description": "lower + possible_extra of that portfolio state." }
+        "lower": { "type": "number", "minimum": 0, "description": "direct + sum(known). Typed like common bounds (no maximum): with INSUFFICIENT_CASH the rules are evaluated at the requested weights (SEMANTICS section 4), which total more than 1, so a bound can exceed 1." },
+        "upper": { "type": "number", "minimum": 0, "description": "lower + possible_extra of that portfolio state (SEMANTICS section 5). Never capped: it can exceed 1 when the request is INSUFFICIENT_CASH, e.g. a 0.15 target next to a 0.90 fund without holdings gives 1.05. It is the same number as measured.upper of the rule." }
       }
     },
     "exposure": {

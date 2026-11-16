@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { expect, type Locator, type Page } from "@playwright/test";
 
@@ -6,7 +7,11 @@ export const SITE = `http://127.0.0.1:${process.env.BYB_LOCAL_SITE_PORT ?? 4185}
 export const CONTROL = `http://127.0.0.1:${process.env.BYB_LOCAL_CONTROL_PORT ?? 4186}`;
 /** Made up by run.sh for this run; the local authorizer's fake SSM holds the same value. */
 export const CODE = process.env.BYB_LOCAL_ACCESS_CODE as string;
-export const SCREENSHOTS = path.resolve(__dirname, "..", "screenshots");
+/**
+ * `screenshots/` holds the tracked evidence of the first run (commit db9678c, six-stage interface) and is never
+ * written again. Runs on the current interface write to a sibling folder (BYB_FULLSTACK_SHOTS overrides it).
+ */
+export const SCREENSHOTS = process.env.BYB_FULLSTACK_SHOTS ?? path.resolve(__dirname, "..", "screenshots-2026-11-15");
 
 // ---------------------------------------------------------------------------
 // The control port of local_api.py (test-only; the page never calls it)
@@ -184,21 +189,66 @@ export async function storedKeys(page: Page) {
   return page.evaluate(() => ({ session: Object.keys(sessionStorage), local: Object.keys(localStorage), cookie: document.cookie }));
 }
 
-/** Open the live site, pass the gate with the run's code, wait for Robert's portfolio. */
+export type PersonaName = "Robert" | "Mateo" | "Amira";
+export type StageId = "persona" | "goals" | "purchase" | "investigation" | "verdict" | "challenge";
+
+/** The simulation notice of the current interface (a colon; it was an em dash on the six-stage interface). */
+export const SIMULATION_LABEL = "Simulation: fictional portfolio, not advice";
+
+/**
+ * A screen by its address. The interface is three steps (profile -> idea -> result); "Your limits", "Analysis
+ * details" and "Review this result" are secondary screens with their own address (`#/goals`, `#/investigation`,
+ * `#/challenge`). A helper below uses the link the page offers wherever there is one; this is for the screens that
+ * have no link in the state a test is in (the analysis details of a finished job).
+ */
+export async function go(page: Page, stage: StageId) {
+  await page.evaluate((id) => (window.location.hash = `#/${id}`), stage);
+}
+
+/** Open the live site, pass the gate with the run's code, wait until Robert (the default profile) is loaded. */
 export async function openApp(page: Page) {
   await page.goto("/");
   await submitCode(page, CODE);
-  await expect(page.getByTestId("portfolio-table")).toBeVisible();
+  await expectProfileLoaded(page, "Robert");
 }
 
-export async function choosePersona(page: Page, name: "Robert" | "Mateo") {
-  if (name !== "Robert") await page.getByRole("button", { name: `Use ${name}’s portfolio` }).click();
-  await expect(page.getByTestId("persona-selected")).toBeVisible();
-  await expect(page.getByTestId("portfolio-table")).toBeVisible();
+/** The profile is selected and its portfolio has arrived ("Customize this profile" exists only then). */
+export async function expectProfileLoaded(page: Page, name: PersonaName) {
+  await expect(page.getByTestId(`persona-${name.toLowerCase()}`).getByTestId("persona-selected")).toBeVisible();
+  await expect(page.getByTestId("customize-open")).toBeVisible();
 }
 
+export async function choosePersona(page: Page, name: PersonaName) {
+  const card = page.getByTestId(`persona-${name.toLowerCase()}`);
+  if ((await card.getByTestId("persona-selected").count()) === 0) await card.getByRole("button", { name: `Use ${name}’s portfolio` }).click();
+  await expectProfileLoaded(page, name);
+}
+
+/** Open a closed panel (a <details> whose <summary> holds the panel's heading) the way a reader does: on its summary. */
+export async function openPanel(page: Page, title: string | RegExp): Promise<Locator> {
+  const panel = page.locator("details").filter({ has: page.locator(":scope > summary").filter({ hasText: title }) }).last();
+  await expect(panel, `the panel "${title}" exists`).toHaveCount(1);
+  if (!(await panel.evaluate((element) => (element as HTMLDetailsElement).open))) await panel.locator(":scope > summary").click();
+  await expect(panel).toHaveAttribute("open", "");
+  return panel;
+}
+
+/** Step 1: the closed "View the fictional portfolio" panel, opened; its table is then on screen. */
+export async function openPortfolioPanel(page: Page): Promise<Locator> {
+  const panel = await openPanel(page, "View the fictional portfolio");
+  await expect(panel.getByTestId("portfolio-table")).toBeVisible();
+  return panel;
+}
+
+/**
+ * To "Your limits", by the links of the page: from step 1 "Test an idea", then "Set my limits" (while nothing is
+ * confirmed) or "Review limits" (once a policy exists).
+ */
 export async function goToGoals(page: Page) {
-  await page.getByRole("link", { name: "Continue to Goals & rules" }).click();
+  if ((await page.getByTestId("funding-statement").count()) === 0) await page.getByTestId("continue-link").click();
+  await expect(page.getByTestId("funding-statement")).toBeVisible();
+  await page.getByRole("link", { name: /^(Set my limits|Review limits)$/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: /Your limits/ })).toBeVisible();
   await expect(page.getByTestId("rule-card").first()).toBeVisible();
 }
 
@@ -207,20 +257,48 @@ export async function confirmOfferedRules(page: Page) {
   await expect(page.getByTestId("policy-rule-card").first()).toBeVisible();
 }
 
+/** From step 1 or from "Your limits" to step 2, by the page's "Test an idea" link. */
 export async function goToPurchase(page: Page) {
-  await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
+  await page.getByTestId("continue-link").click();
+  await expect(page.getByRole("heading", { level: 1, name: /Test an idea/ })).toBeVisible();
   await expect(page.getByTestId("funding-statement")).toBeVisible();
 }
 
 export async function setPurchase(page: Page, instrumentId: string, percentText: string) {
-  await page.getByLabel("Instrument to buy").selectOption(instrumentId);
-  await page.getByLabel("Final direct weight of this position").fill(percentText);
+  await page.getByLabel("Which investment?").selectOption(instrumentId);
+  await page.getByLabel("Share of the portfolio after buying").fill(percentText);
 }
 
+/** Step 2: the closed "Preview cash and exposures" panel, opened. Returns the preview region. */
+export async function openPreview(page: Page): Promise<Locator> {
+  await openPanel(page, "Preview cash and exposures");
+  return page.getByTestId("purchase-preview");
+}
+
+/** "Check my idea": the page moves to step 3 by itself and shows the report once the job has succeeded. */
 export async function startAndOpenVerdict(page: Page) {
   await page.getByTestId("start-investigation").click();
-  await page.getByTestId("see-verdict").click({ timeout: 60_000 });
-  await expect(page.getByTestId("report")).toBeVisible();
+  await expect(page.getByTestId("report")).toBeVisible({ timeout: 60_000 });
+}
+
+/**
+ * The secondary "Analysis details" screen of the latest job (its steps, how it was run), from step 3.
+ * "Check my idea" moves the page to step 3 when the service has accepted the job, so this waits for step 3 first:
+ * leaving earlier would be undone by that move.
+ */
+export async function openAnalysisDetails(page: Page) {
+  await expect(page.getByRole("heading", { level: 1, name: /Your result/ })).toBeVisible();
+  // While a job runs, step 3 links to it; once it is finished the screen is reached by its address only.
+  const link = page.getByRole("link", { name: "See the investigation steps" });
+  if ((await link.count()) > 0) await link.first().click();
+  else await go(page, "investigation");
+  await expect(page.getByRole("heading", { level: 1, name: /Analysis details/ })).toBeVisible();
+}
+
+/** From the report to "Review this result" (the challenge screen), by the report's own link. */
+export async function goToChallenge(page: Page) {
+  await page.getByTestId("result-actions").getByRole("link", { name: "Review or dispute this result" }).click();
+  await expect(page.getByRole("heading", { level: 1, name: /Review this result/ })).toBeVisible();
 }
 
 /** Open every closed <details> of the page, so text queries see the whole report. */
@@ -232,7 +310,7 @@ export async function openAllDetails(page: Page) {
 export async function expectNoTestDataMarkers(page: Page, context: string, options: { wordsToo?: boolean } = {}) {
   await expect(page.getByTestId("fixtures-label"), `fixtures label on: ${context}`).toHaveCount(0);
   await expect(page.getByTestId("test-data-tag"), `"Test data" tag on: ${context}`).toHaveCount(0);
-  await expect(page.getByTestId("simulation-label")).toHaveText("Simulation — fictional portfolio, not advice");
+  await expect(page.getByTestId("simulation-label")).toHaveText(SIMULATION_LABEL);
   // The access-code form offers "Open the simulation with test data instead": a link, not a label of what is shown.
   if (options.wordsToo === false) return;
   const text = await page.locator("body").innerText();
@@ -241,6 +319,7 @@ export async function expectNoTestDataMarkers(page: Page, context: string, optio
 }
 
 export async function shot(page: Page, name: string, options: { fullPage?: boolean; locator?: Locator } = {}) {
+  fs.mkdirSync(SCREENSHOTS, { recursive: true });
   const file = path.join(SCREENSHOTS, `${name}.png`);
   if (options.locator) await options.locator.screenshot({ path: file });
   else await page.screenshot({ path: file, fullPage: options.fullPage ?? false });

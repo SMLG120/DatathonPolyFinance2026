@@ -116,6 +116,7 @@ EXACT = {
     "RuleConfirmation": f"{API}#/$defs/confirm_request/properties/confirmations/items",
     "ConfirmRequest": f"{API}#/$defs/confirm_request",
     "ConfirmResponse": f"{API}#/$defs/confirm_response",
+    "CustomPortfolio": f"{API}#/$defs/custom_portfolio",
     "CheckRequest": f"{API}#/$defs/check_request",
     "InvestigationCreateRequest": f"{API}#/$defs/investigation_create_request",
     "PollInstruction": f"{API}#/$defs/investigation_accepted/properties/poll",

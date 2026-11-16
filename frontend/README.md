@@ -123,6 +123,47 @@ and is listed in the header of the fixtures client:
 5. `POST /check` on a stored policy version answers with the recorded result
    of the investigation of the same request under the same rules.
 
+## Customize this profile
+
+Stage 1 has an optional panel, "Customize this profile": the weights of the
+persona's fictional portfolio and the wording of its objective can be edited
+(`src/components/portfolio/CustomizePanel.tsx`, `src/lib/customize.ts`).
+
+- **One value is shown and sent.** The applied customization is
+  `state.customPortfolio` in the workflow store (null for the scenario
+  portfolio). `derived.effectivePortfolio` (what stage 1 and the purchase stage
+  show) is built from it, and `withCustomPortfolio(body, customPortfolio)` adds
+  it to every `POST /check` and `POST /investigations`. Without a
+  customization the member is left out, so the default requests are unchanged.
+- **Form validation only.** The editor adds the typed percentages up in whole
+  hundredths of a percent to require a total of exactly 100%. That is not a
+  portfolio figure: every exposure, verdict and cash figure stays the
+  service's, and the service checks the portfolio again.
+- **The objective is context.** An edited objective keeps its id and kind and
+  becomes `USER_STATED` with the user's words. It creates, changes and confirms
+  no rule and is not sent to the interpreter. A policy version already
+  confirmed keeps its wording; the new wording is stored only when another
+  rule is confirmed (it travels in that confirmation). A rule changed from a
+  result copies the stored wording, and the note on screen says so.
+- **Reports keep their own portfolio.** The report shows "Portfolio checked"
+  from `job.portfolio`, never from the customization applied now. A preview of
+  a rule change against a report is asked for that stored portfolio.
+  The same label is shown wherever a job appears without its report: the facts
+  of the investigation stage (running, failed and clarification jobs) and each
+  entry of "Reports of this session". A job stored without a portfolio says
+  nothing. The rule-change comparison says "the same portfolio" only when the
+  two jobs carry the same `portfolio_id`.
+- **Unapplied input is kept, not applied.** The text of the open editor is
+  `state.customizeDraft`, so leaving stage 1 does not drop it; it is never
+  shown as the portfolio and never sent. Apply, Cancel, Reset and choosing a
+  persona end it.
+- **Late answers are dropped.** `state.session` goes up each time a persona is
+  chosen. An answer to a request started in an earlier session (a start, a
+  confirmation, an interpretation, a challenge) changes nothing.
+- **Fixtures mode cannot calculate**, so the control is shown unavailable
+  there, and the fixtures client refuses a `check` or an investigation that
+  carries a `custom_portfolio`.
+
 ## Where things are
 
 - `src/generated/contracts/` — the copy of `../contracts` (generated).
