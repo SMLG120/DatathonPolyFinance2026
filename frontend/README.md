@@ -1,4 +1,4 @@
-# Before You Buy — frontend
+# ETHOS — frontend
 
 A static single-page app (Next.js App Router, `output: "export"`) for the six
 stages of the simulation: persona and portfolio, goals and rules, proposed

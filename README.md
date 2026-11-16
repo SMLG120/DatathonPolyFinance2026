@@ -1,7 +1,9 @@
-# Before You Buy
+# ETHOS
+
+*ETHOS — The AI Agent That Challenges Your Investments Before the Market Does.*
 
 **PolyFinances AlphaForge AI Datathon 2026.** Before an investor changes a
-portfolio, Before You Buy investigates whether the decision respects the rules
+portfolio, ETHOS investigates whether the decision respects the rules
 that investor has explicitly confirmed, and shows evidence the investor can
 inspect and challenge.
 
