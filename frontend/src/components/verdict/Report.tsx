@@ -1,7 +1,7 @@
 "use client";
 
 import { FeasibilityTable } from "@/components/portfolio/FeasibilityTable";
-import { LinkButton } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { stageHref } from "@/state/stage";
 import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
@@ -15,6 +15,7 @@ import { coverageText } from "@/lib/verdict";
 import { CoverageBlock, GoalContextList, MaxCompliantBlock } from "./ContextPanels";
 import { ExplanationList } from "./Explanation";
 import { ExposurePanel } from "./ExposurePanel";
+import { PRINT_REPORT_LABEL } from "./PrintReport";
 import { ruleLookup, RuleResultsList, StartingFindingsList } from "./RuleResults";
 import { ScenarioPanel } from "./ScenarioPanel";
 import { VerdictSummary, type SummaryLink } from "./VerdictSummary";
@@ -33,6 +34,8 @@ export interface ReportProps {
   scenarioPortfolio?: Portfolio | null;
   /** Whose fictional portfolio this is, for the caption of the "Portfolio checked" table. */
   personaName?: string;
+  /** Prints this report, or saves it as PDF, through the browser. The export button is shown only when this is given. */
+  onPrint?: () => void;
 }
 
 /** "SPY complete · XIU.TO partial (98.0%)": what stays visible while the coverage section is closed. */
@@ -60,7 +63,7 @@ function coverageHint(result: CheckResult): string {
  * Every figure is a field of the engine's result. Nothing is added, subtracted
  * or counted here.
  */
-export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona" }: ReportProps) {
+export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona", onPrint }: ReportProps) {
   const lookup = ruleLookup(policy);
   const purchase = result.purchase_request;
   const feasibility = result.feasibility;
@@ -113,7 +116,7 @@ export function Report({ job, result, policy, objectives, instruments, scenarioP
           </p>
         ) : null}
       </VerdictSummary>
-      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton></div>
+      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton>{onPrint ? <Button onClick={onPrint} data-testid="print-report-button" title="Opens the browser's print dialog, where the report can be printed or saved as a PDF file">{PRINT_REPORT_LABEL}</Button> : null}</div>
 
       {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
       {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}
