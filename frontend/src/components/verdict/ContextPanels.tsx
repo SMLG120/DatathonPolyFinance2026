@@ -11,7 +11,7 @@ import { bindingConstraintText, coverageText } from "@/lib/verdict";
 import type { RuleLookup } from "./RuleResults";
 import { t } from "@/lib/i18n";
 
-const CONTEXT_LABEL: Record<GoalContextType, string> = {
+export const CONTEXT_LABEL: Record<GoalContextType, string> = {
   LINKED_RULE_RESULTS: "Rules linked to this objective",
   CONCENTRATION: "Concentration",
   SCENARIO_DRAWDOWN: "Deepest fall in the replay",

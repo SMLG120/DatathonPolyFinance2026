@@ -1,5 +1,6 @@
 "use client";
 
+import { createPortal } from "react-dom";
 import { PortfolioUsedLabel } from "@/components/portfolio/PortfolioChecked";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { EmptyBlock, ErrorBlock, LoadingBlock, UnknownBlock } from "@/components/ui/AsyncStates";
@@ -8,12 +9,14 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { Panel } from "@/components/ui/Panel";
 import { ExecutionState } from "@/components/verdict/ExecutionState";
+import { PrintReport, printDocumentTitle, useReportPrint } from "@/components/verdict/PrintReport";
 import { Report } from "@/components/verdict/Report";
 import type { InvestigationJob, Portfolio } from "@/lib/contracts";
 import { formatTime } from "@/lib/format";
 import { assessResult } from "@/lib/result";
 import { isTerminalJobStatus, verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
+import { useRuntime } from "@/state/runtime";
 import { useWorkflow } from "@/state/workflow";
 import { t } from "@/lib/i18n";
 
@@ -85,6 +88,9 @@ export function VerdictStage() {
   const job = derived.viewedInvestigation;
   const reports = state.investigationIds.map((reportId) => state.investigations[reportId]).filter((candidate): candidate is InvestigationJob => Boolean(candidate?.result));
   const isLatest = id === derived.latestInvestigationId;
+  const { config } = useRuntime();
+  // The print document exists only while the browser prints, and only for a report that can be read.
+  const { printing, print } = useReportPrint(job ? printDocumentTitle(job) : null);
 
   if (!id) {
     return (
@@ -215,7 +221,24 @@ export function VerdictStage() {
             instruments={state.portfolio.data?.instruments ?? {}}
             scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
             personaName={state.portfolio.data?.scenario.persona.display_name}
+            onPrint={print}
           />
+          {/* A child of <body>, so the print style sheet can hide the whole application around it. */}
+          {printing
+            ? createPortal(
+                <PrintReport
+                  job={job}
+                  result={assessment.result}
+                  policy={derived.policyFor(assessment.result)}
+                  objectives={state.objectives}
+                  instruments={state.portfolio.data?.instruments ?? {}}
+                  scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+                  personaName={state.portfolio.data?.scenario.persona.display_name ?? null}
+                  testData={config.mode === "fixtures"}
+                />,
+                document.body,
+              )
+            : null}
 
         </>
       ) : null}

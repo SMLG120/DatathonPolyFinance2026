@@ -33,6 +33,8 @@ export interface ReportProps {
   scenarioPortfolio?: Portfolio | null;
   /** Whose fictional portfolio this is, for the caption of the "Portfolio checked" table. */
   personaName?: string;
+  /** Prints this report, or saves it as PDF, through the browser. The export button is shown only when this is given. */
+  onPrint?: () => void;
 }
 
 /** "SPY complete · XIU.TO partial (98.0%)": what stays visible while the coverage section is closed. */
@@ -60,7 +62,7 @@ function coverageHint(result: CheckResult): string {
  * Every figure is a field of the engine's result. Nothing is added, subtracted
  * or counted here.
  */
-export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona" }: ReportProps) {
+export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona", onPrint }: ReportProps) {
   const lookup = ruleLookup(policy);
   const purchase = result.purchase_request;
   const feasibility = result.feasibility;
@@ -109,7 +111,7 @@ export function Report({ job, result, policy, objectives, instruments, scenarioP
             {summary.rules_not_evaluated === 1 ? "was" : "were"} {t("not evaluated;")} {summary.rules_not_evaluated === 1 ? "it is" : "they are"} {t("listed with the confirmed rules.")}</p>
         ) : null}
       </VerdictSummary>
-      <WhatNext result={result} />
+      <WhatNext result={result} onPrint={onPrint} />
 
       {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
       {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}

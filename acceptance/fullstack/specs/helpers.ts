@@ -241,14 +241,17 @@ export async function openPortfolioPanel(page: Page): Promise<Locator> {
 }
 
 /**
- * To "Your limits", by the links of the page: from step 1 "Test an idea", then "Set my limits" (while nothing is
- * confirmed) or "Review limits" (once a policy exists).
+ * To "Your limits" (step 2 of the four-step journey), by the links of the page: from step 1 its "Set your limits"
+ * continue link; from step 3 the "Set my limits" link (while nothing is confirmed) or "Review limits" (once a
+ * policy exists).
  */
 export async function goToGoals(page: Page) {
-  if ((await page.getByTestId("funding-statement").count()) === 0) await page.getByTestId("continue-link").click();
-  await expect(page.getByTestId("funding-statement")).toBeVisible();
-  await page.getByRole("link", { name: /^(Set my limits|Review limits)$/ }).click();
-  await expect(page.getByRole("heading", { level: 1, name: /Your limits/ })).toBeVisible();
+  const heading = page.getByRole("heading", { level: 1, name: /Your limits/ });
+  if ((await heading.count()) === 0) {
+    if ((await page.getByTestId("funding-statement").count()) > 0) await page.getByRole("link", { name: /^(Set my limits|Review limits)$/ }).click();
+    else await page.getByTestId("continue-link").click();
+  }
+  await expect(heading).toBeVisible();
   await expect(page.getByTestId("rule-card").first()).toBeVisible();
 }
 
@@ -257,10 +260,14 @@ export async function confirmOfferedRules(page: Page) {
   await expect(page.getByTestId("policy-rule-card").first()).toBeVisible();
 }
 
-/** From step 1 or from "Your limits" to step 2, by the page's "Test an idea" link. */
+/** From step 1 or from "Your limits" to step 3, by the page's continue links (step 1 leads to step 2, step 2 to step 3). */
 export async function goToPurchase(page: Page) {
-  await page.getByTestId("continue-link").click();
-  await expect(page.getByRole("heading", { level: 1, name: /Test an idea/ })).toBeVisible();
+  const heading = page.getByRole("heading", { level: 1, name: /Test an idea/ });
+  for (let click = 0; click < 2 && (await heading.count()) === 0; click += 1) {
+    await page.getByTestId("continue-link").click();
+    await expect(page.getByRole("heading", { level: 1, name: /Your limits|Test an idea/ })).toBeVisible();
+  }
+  await expect(heading).toBeVisible();
   await expect(page.getByTestId("funding-statement")).toBeVisible();
 }
 
