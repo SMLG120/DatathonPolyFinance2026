@@ -2,7 +2,7 @@
   "name": "before-you-buy-frontend",
   "version": "0.1.0",
   "private": true,
-  "description": "Before You Buy — static-export interface (fictional simulation, not advice).",
+  "description": "ETHOS — static-export interface (fictional simulation, not advice).",
   "engines": {
     "node": ">=22.12.0"
   },
