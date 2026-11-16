@@ -12,17 +12,37 @@ inspect and challenge.
 > and places no trades. "PASS" means consistent with the investor's own
 > confirmed rules. It does not mean "a good investment".
 
-**Candidate described:** local branch `integration/rc` at `deec650`, plus fixes in progress.
+## Quick start (submitted version, Team 11)
 
-> **Status: a release candidate that works locally and has not been deployed.**
->
-> | | In the candidate |
-> | --- | --- |
-> | Built and tested locally, on the real data | Contracts; data pipeline and validated data snapshot; deterministic engine; backend with the seven contract routes, the engine in the worker, a deterministic fallback and write-once policy versions; rule interpreter; frontend on the contract types with a 3D exposure explorer; Mateo acceptance suite; a full-stack browser run against the real handlers; an independent validation suite |
-> | **Not verified anywhere** | Any deployment of this candidate; the new template in CloudFormation; the real Bedrock model with the current investigator and interpreter prompts; Amplify hosting |
-> | Deployed in AWS today | Still the **phase-1** stack: two routes, a **placeholder calculation**, CORS origin `*` (`infra/evidence/milestone2.md`). It is not this candidate |
-> | Open | One HIGH validation finding being fixed (section 4); the fourth validation pass; frontend findings F-01 to F-08, none blocking (`acceptance/fullstack/FINDINGS.md`) |
-> | Hosted frontend | None. No Amplify app exists |
+**Status at submission (2026-11-15):** deployed on AWS and verified. Exact artifacts and checks:
+[`infra/evidence/release-2026-11-15-freeze.md`](infra/evidence/release-2026-11-15-freeze.md). Current technical
+documentation and AWS architecture: [`docs/submission/`](docs/submission/technical-documentation.md). Where the
+sections below disagree with those documents (they were written before the release), the submission documents are right.
+
+**Use the hosted application** (nothing to install):
+
+- Live: <https://main.dwtdk87nismj6.amplifyapp.com/> . It asks for the team's access code (shared with the judges
+  separately; it is never stored in this repository). The live mode runs the real AWS backend and Amazon Bedrock.
+- Without a code: <https://main.dwtdk87nismj6.amplifyapp.com/?fixtures=1> runs the same interface on recorded test
+  data, labelled as such. Customizing a profile and free-form evidence questions need the live mode.
+- The AWS workshop account is deleted after 2026-11-16; after that date only the local run below works.
+
+**Run it locally** (Node.js and npm; no AWS account needed for the test-data mode):
+
+    git clone https://github.com/SMLG120/DatathonPolyFinance2026.git
+    cd DatathonPolyFinance2026/frontend
+    npm ci
+    npm run build          # static export to frontend/out
+    npm start              # http://127.0.0.1:4173 , recorded test data
+
+**Run the tests:**
+
+    cd frontend && npm test && npm run typecheck && npm run lint
+    cd .. && python3 -m venv .venv && .venv/bin/pip install pytest jsonschema boto3
+    .venv/bin/python -m pytest backend/tests contracts/python/tests -q
+
+Tests that need the git-ignored data files (section 8) are skipped on a fresh clone. Running the backend against
+AWS, and redeploying, are described in [`scripts/deploy.md`](scripts/deploy.md) and section 6.
 
 ## Contents
 
@@ -261,8 +281,9 @@ and must restore them first (`docs/data-sources.md` section 1):
 
 ## 7. Deployment
 
-The runbook is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). **None of it has
-been executed for this candidate.**
+The runbook is [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md); the release procedure that was actually executed, with
+rollback, is in [`scripts/deploy.md`](scripts/deploy.md). **The submitted version is deployed** (see Quick start); the
+bullets below describe the earlier state.
 
 - **Backend:** stack `before-you-buy` in `us-east-1`, through CloudFormation
   change sets (`scripts/deploy.md`). The next deploy needs a data snapshot
