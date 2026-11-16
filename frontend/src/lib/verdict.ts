@@ -13,6 +13,7 @@ import {
   type UnknownCause,
   type VerdictStatus,
 } from "@/lib/contracts";
+import { getLocale, t } from "@/lib/i18n";
 
 /**
  * Wording and counting for results. The statuses and the summary always come
@@ -51,19 +52,22 @@ const plural = (n: number, one: string, many: string) => (n === 1 ? one : many);
  * headline impossible, whatever the `headline` member says.
  */
 export function verdictHeadline(summary: Summary): VerdictHeadline {
+  const french = getLocale() === "fr";
   const { pass, fail, unknown, total } = summaryCounts(summary);
   switch (summary.headline) {
     case "EXECUTION_ERROR":
-      return { tone: "none", title: "The check could not be run", detail: "No rule was evaluated, so there is no result to show." };
+      return { tone: "none", title: t("The check could not be run"), detail: t("No rule was evaluated, so there is no result to show.") };
     case "INVALID_REQUEST":
-      return { tone: "none", title: "This request cannot be evaluated", detail: "No rule was evaluated, so there is no result to show." };
+      return { tone: "none", title: t("This request cannot be evaluated"), detail: t("No rule was evaluated, so there is no result to show.") };
     case "NO_RULES_EVALUATED":
-      return { tone: "none", title: "No confirmed rule was checked", detail: "A result needs at least one confirmed rule with a threshold." };
+      return { tone: "none", title: t("No confirmed rule was checked"), detail: t("A result needs at least one confirmed rule with a threshold.") };
     case "POLICY_CONFLICT":
       return {
         tone: "none",
-        title: "Two confirmed rules cannot both be met",
-        detail: `The rules were still checked one by one: ${fail} not respected, ${unknown} unknown, ${pass} passed.`,
+        title: t("Two confirmed rules cannot both be met"),
+        detail: french
+          ? `${fail} règle(s) non respectée(s), ${unknown} indéterminée(s), ${pass} respectée(s).`
+          : `The rules were still checked one by one: ${fail} not respected, ${unknown} unknown, ${pass} passed.`,
       };
     case "HAS_FAIL":
     case "NO_FAIL_BUT_UNKNOWN":
@@ -72,44 +76,56 @@ export function verdictHeadline(summary: Summary): VerdictHeadline {
   }
   const inconsistent: VerdictHeadline = {
     tone: "none",
-    title: "The summary of this result is inconsistent",
-    detail: "The counts and the headline sent by the service disagree, so no overall statement is shown.",
+    title: t("The summary of this result is inconsistent"),
+    detail: t("The counts and the headline sent by the service disagree, so no overall statement is shown."),
   };
   if (total === 0) {
-    return { tone: "none", title: "No confirmed rule was checked", detail: "A result needs at least one confirmed rule with a threshold." };
+    return { tone: "none", title: t("No confirmed rule was checked"), detail: t("A result needs at least one confirmed rule with a threshold.") };
   }
   if (summary.headline === "HAS_FAIL") {
     if (fail === 0) return inconsistent;
     return {
       tone: "fail",
-      title: `${fail} of ${total} confirmed ${plural(total, "rule", "rules")} ${plural(fail, "is", "are")} not respected`,
+      title: french
+        ? `${fail} sur ${total} règle(s) confirmée(s) non respectée(s)`
+        : `${fail} of ${total} confirmed ${plural(total, "rule", "rules")} ${plural(fail, "is", "are")} not respected`,
       detail:
         unknown > 0
-          ? `${unknown} more could not be determined and ${pass} passed. The unknown ${plural(unknown, "check is", "checks are")} not counted as passed.`
-          : `${pass} passed and none are unknown.`,
+          ? french
+            ? `${unknown} autre(s) n’ont pas pu être déterminée(s) et ${pass} règle(s) respectée(s). Les vérifications indéterminées ne sont pas comptées comme respectées.`
+            : `${unknown} more could not be determined and ${pass} passed. The unknown ${plural(unknown, "check is", "checks are")} not counted as passed.`
+          : french
+            ? `${pass} règle(s) respectée(s) et aucune n’est indéterminée.`
+            : `${pass} passed and none are unknown.`,
     };
   }
   if (summary.headline === "NO_FAIL_BUT_UNKNOWN") {
     if (fail > 0 || unknown === 0) return inconsistent;
     return {
       tone: "unknown",
-      title: `Not determined: ${unknown} of ${total} confirmed ${plural(total, "rule", "rules")} could not be checked`,
-      detail: `${pass} passed and none failed, but this is not a pass. Missing data is never treated as zero.`,
+      title: french
+        ? `Indéterminé : ${unknown} sur ${total} règle(s) confirmée(s) n’ont pas pu être vérifiée(s)`
+        : `Not determined: ${unknown} of ${total} confirmed ${plural(total, "rule", "rules")} could not be checked`,
+      detail: french
+        ? `${pass} règle(s) respectée(s), aucune en échec, mais cela ne signifie pas que tout est respecté. Les données manquantes ne sont jamais considérées comme nulles.`
+        : `${pass} passed and none failed, but this is not a pass. Missing data is never treated as zero.`,
     };
   }
   // ALL_PASS: said only when the engine's counts agree that nothing failed and nothing is unknown.
   if (fail > 0 || unknown > 0) return inconsistent;
   return {
     tone: "pass",
-    title: total === 1 ? "The one confirmed rule is respected" : `All ${total} confirmed rules are respected`,
-    detail: "Every confirmed rule was checked and none is unknown.",
+    title: french
+      ? total === 1 ? "L’unique règle confirmée est respectée" : `Les ${total} règles confirmées sont respectées`
+      : total === 1 ? "The one confirmed rule is respected" : `All ${total} confirmed rules are respected`,
+    detail: t("Every confirmed rule was checked and none is unknown."),
   };
 }
 
 const STATUS_TEXT: Record<VerdictStatus, string> = { PASS: "Pass", FAIL: "Fail", UNKNOWN: "Unknown" };
 
 export function statusText(status: VerdictStatus): string {
-  return STATUS_TEXT[status];
+  return t(STATUS_TEXT[status]);
 }
 
 const JOB_STATUS_TEXT: Record<JobStatus, string> = {
@@ -120,7 +136,7 @@ const JOB_STATUS_TEXT: Record<JobStatus, string> = {
 };
 
 export function jobStatusText(status: JobStatus): string {
-  return JOB_STATUS_TEXT[status];
+  return t(JOB_STATUS_TEXT[status]);
 }
 
 export function isTerminalJobStatus(status: JobStatus): boolean {
@@ -134,7 +150,7 @@ const COVERAGE_TEXT: Record<CoverageStatus, string> = {
 };
 
 export function coverageText(status: CoverageStatus): string {
-  return COVERAGE_TEXT[status];
+  return t(COVERAGE_TEXT[status]);
 }
 
 const UNKNOWN_CAUSE_TEXT: Record<UnknownCause, string> = {
@@ -147,7 +163,7 @@ const UNKNOWN_CAUSE_TEXT: Record<UnknownCause, string> = {
 
 /** Why part of a measurement is unknown, in words. */
 export function unknownCauseText(cause: UnknownCause): string {
-  return UNKNOWN_CAUSE_TEXT[cause];
+  return t(UNKNOWN_CAUSE_TEXT[cause]);
 }
 
 export function findEvidence(result: CheckResult, evidenceId: string): EvidenceRecord | undefined {
@@ -212,23 +228,23 @@ export function pairRuleResults(
 
 /** What stops a larger purchase: a rule or the cash available. */
 export function bindingConstraintText(constraint: BindingConstraint, ruleLabel: (ruleId: string) => string): string {
-  if (constraint.type === "CASH") return "the cash available";
-  return constraint.rule_id ? `the rule “${ruleLabel(constraint.rule_id)}”` : "a confirmed rule";
+  if (constraint.type === "CASH") return t("the cash available");
+  return constraint.rule_id ? `${t("the rule “")}${ruleLabel(constraint.rule_id)}”` : t("a confirmed rule");
 }
 
 /** What the measured quantity of a rule type is called in result rows. */
 export function measuredNoun(ruleType: RuleType): string {
   switch (ruleType) {
     case "max_issuer_exposure":
-      return "Largest exposure to one company";
+      return t("Largest exposure to one company");
     case "min_issuer_exposure":
-      return "Exposure to the named company";
+      return t("Exposure to the named company");
     case "exclusion":
-      return "Share in the excluded holdings";
+      return t("Share in the excluded holdings");
     case "controversy_exclusion":
-      return "Share in companies with a matching record";
+      return t("Share in companies with a matching record");
     case "scenario_loss_budget":
-      return "Loss over the replayed period";
+      return t("Loss over the replayed period");
   }
 }
 

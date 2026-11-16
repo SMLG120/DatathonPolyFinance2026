@@ -7,6 +7,7 @@ import { LockIcon } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/Notice";
 import { describeError, isApiError } from "@/lib/api";
 import { useRuntime } from "@/state/runtime";
+import { t } from "@/lib/i18n";
 
 /**
  * Asks for the demo access code at runtime.
@@ -55,22 +56,21 @@ export function AccessCodeForm() {
     <article aria-labelledby="access-title" className="mx-auto max-w-xl space-y-6">
       <header className="space-y-2">
         <h1 id="access-title" data-stage-heading tabIndex={-1} className="text-3xl font-bold tracking-tight text-ink">
-          Enter the access code
-        </h1>
-        <p className="text-lg text-ink-muted">This demonstration talks to a private service. The access code was given to you with the demo link.</p>
+          {t("Enter the access code")}</h1>
+        <p className="text-lg text-ink-muted">{t("This demonstration talks to a private service. The access code was given to you with the demo link.")}</p>
       </header>
 
       {accessCodeRejected && !fieldError ? (
-        <Notice tone="caution" role="status" title="The service no longer accepts the code that was in use">
-          <p>It has been removed from this tab. Enter the code again to continue. Nothing you did was lost.</p>
+        <Notice tone="caution" role="status" title={t("The service no longer accepts the code that was in use")}>
+          <p>{t("It has been removed from this tab. Enter the code again to continue. Nothing you did was lost.")}</p>
         </Notice>
       ) : null}
 
       <form onSubmit={onSubmit} noValidate className="space-y-5 rounded-lg border border-line bg-surface p-4 sm:p-6">
         <Field
           htmlFor={inputId}
-          label="Access code"
-          hint="Kept for this browser tab only and removed when the tab closes. It is never stored in the page's files."
+          label={t("Access code")}
+          hint={t("Kept for this browser tab only and removed when the tab closes. It is never stored in the page's files.")}
           error={fieldError}
         >
           <TextInput
@@ -93,28 +93,25 @@ export function AccessCodeForm() {
 
         <label className="flex min-h-11 items-center gap-3 text-ink">
           <input type="checkbox" checked={show} onChange={(event) => setShow(event.target.checked)} className="size-5 accent-accent" />
-          <span>Show the code as I type</span>
+          <span>{t("Show the code as I type")}</span>
         </label>
 
         {requestError ? (
-          <Notice tone="error" role="alert" title="The code could not be checked">
+          <Notice tone="error" role="alert" title={t("The code could not be checked")}>
             <p>{requestError}</p>
-            <p>Nothing was stored. You can try again.</p>
+            <p>{t("Nothing was stored. You can try again.")}</p>
           </Notice>
         ) : null}
 
         <Button type="submit" variant="primary" busy={busy} busyLabel="Checking the code…" icon={<LockIcon />}>
-          Continue
-        </Button>
+          {t("Continue")}</Button>
       </form>
 
       <p className="text-ink-muted">
-        No code?{" "}
+        {t("No code?")}{" "}
         <a href="?fixtures=1" className="font-semibold text-accent underline underline-offset-4 hover:text-accent-strong">
-          Open the simulation with test data
-        </a>{" "}
-        instead. Test data needs no service and is labelled on every screen.
-      </p>
+          {t("Open the simulation with test data")}</a>{" "}
+        {t("instead. Test data needs no service and is labelled on every screen.")}</p>
     </article>
   );
 }

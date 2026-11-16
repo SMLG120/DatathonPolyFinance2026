@@ -3,6 +3,7 @@ import { CheckIcon, ClockIcon, ErrorIcon } from "@/components/ui/icons";
 import type { InvestigationStep, StepStatus } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { formatTime } from "@/lib/format";
+import { t } from "@/lib/i18n";
 
 const TOOL_LABELS: Record<string, string> = {
   get_portfolio: "Read the portfolio",
@@ -18,7 +19,8 @@ const TOOL_LABELS: Record<string, string> = {
 
 /** Plain-language name of a tool, or null for a tool this interface does not know. */
 export function toolLabel(tool: string): string | null {
-  return TOOL_LABELS[tool] ?? null;
+  const label = TOOL_LABELS[tool];
+  return label ? t(label) : null;
 }
 
 const STEP_STATUS: Record<StepStatus, { text: string; tone: "accent" | "fail" | "neutral"; dashed: boolean }> = {
@@ -50,7 +52,7 @@ export function StepTimeline({ steps, waiting }: StepTimelineProps) {
   const ordered = steps.slice().sort((a, b) => a.seq - b.seq);
   const reportedRunning = ordered.some((step) => step.status === "RUNNING");
   return (
-    <div role="log" aria-label="Steps reported by the investigation" aria-live="polite" data-testid="step-timeline">
+    <div role="log" aria-label={t("Steps reported by the investigation")} aria-live="polite" data-testid="step-timeline">
       <ol className="space-y-3">
         {ordered.map((step) => {
           const label = toolLabel(step.tool);
@@ -64,28 +66,28 @@ export function StepTimeline({ steps, waiting }: StepTimelineProps) {
             >
               <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
                 <p className="font-semibold text-ink">
-                  <span className="tabular">Step {step.seq}</span>
+                  <span className="tabular">{t("Step")} {step.seq}</span>
                   {label ? <span> · {label}</span> : null}
                 </p>
                 <Badge tone={status.tone} dashed={status.dashed} icon={<StepIcon status={step.status} />}>
-                  {status.text}
+                  {t(status.text)}
                 </Badge>
               </div>
               <p className="mt-0.5 text-sm text-ink-muted">
-                Tool <span className="font-mono text-[0.8125rem] text-ink">{step.tool}</span> ·{" "}
-                {step.initiated_by === "MODEL" ? "requested by the model" : "run by the server"} ·{" "}
+                {t("Tool")} <span className="font-mono text-[0.8125rem] text-ink">{step.tool}</span> ·{" "}
+                {step.initiated_by === "MODEL" ? t("requested by the model") : t("run by the server")} ·{" "}
                 <span className="tabular">
-                  {step.finished_at ? `finished ${formatTime(step.finished_at)}` : `started ${formatTime(step.started_at)}`}
+                  {step.finished_at ? `${t("finished")} ${formatTime(step.finished_at)}` : `${t("started")} ${formatTime(step.started_at)}`}
                 </span>
               </p>
               <dl className="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2">
                 <div>
-                  <dt className="text-sm font-semibold text-ink-muted">Input</dt>
+                  <dt className="text-sm font-semibold text-ink-muted">{t("Input")}</dt>
                   <dd className="tabular text-ink">{step.input_summary}</dd>
                 </div>
                 <div>
-                  <dt className="text-sm font-semibold text-ink-muted">Result</dt>
-                  <dd className="tabular text-ink">{step.result_summary ?? "Not available yet"}</dd>
+                  <dt className="text-sm font-semibold text-ink-muted">{t("Result")}</dt>
+                  <dd className="tabular text-ink">{step.result_summary ?? t("Not available yet")}</dd>
                 </div>
               </dl>
             </li>
@@ -94,7 +96,7 @@ export function StepTimeline({ steps, waiting }: StepTimelineProps) {
         {waiting && !reportedRunning ? (
           <li className="flex items-center gap-3 rounded-md border border-dashed border-line-strong bg-canvas p-3 text-ink-muted sm:p-4" data-testid="timeline-waiting">
             <ClockIcon className="flex-none" />
-            <span>Waiting for the next step</span>
+            <span>{t("Waiting for the next step")}</span>
           </li>
         ) : null}
       </ol>

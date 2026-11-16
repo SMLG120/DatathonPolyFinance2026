@@ -6,6 +6,17 @@ purchase, investigation steps, verdict and evidence, challenge. It is a
 fictional simulation: it shows what the deterministic engine returned and
 never computes a verdict or a financial figure itself.
 
+## Languages
+
+English is the default. The accessible **Language / Langue** selector in the
+header switches between English and French and saves the choice in
+`localStorage` (`byb.locale`) so it survives a reload. French translates
+interface-authored labels, navigation, statuses, guidance and messages; text
+entered by the user and values or prose returned by the API, evidence registry
+or model remain as received. The document `lang` attribute follows the
+selection. Metadata has a bilingual description because static-export metadata
+is shared by both languages.
+
 ## Setup
 
 Node 22.12 or newer (developed on Node 24).
@@ -258,6 +269,9 @@ and is listed in the header of the fixtures client:
   historical replay; the evidence drawer; the purchase stage; the six-stage
   flow in jsdom, including idempotency keys, the corrected fact, the rule
   change and the live-mode access code.
+- **Language selection** — `src/components/LanguageToggle.test.tsx` checks
+  the accessible selector, representative French labels, persistence and
+  restoration after a fresh app mount.
 - **Guard** (`src/guard.test.ts`): no hand-written result object anywhere
   under `src/` outside `generated/`, no `innerHTML` or
   `dangerouslySetInnerHTML`, no `Math.random`, no AWS SDK and no

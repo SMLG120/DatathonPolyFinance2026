@@ -1,6 +1,7 @@
 import type { ControversyNature, ExclusionDefinition, Rule, RuleOrigin, RuleStatus, RuleType } from "@/lib/contracts";
 import { canonical } from "@/lib/canonical";
 import { formatDate, formatFraction, NOT_SET_TEXT, type LimitDirection } from "@/lib/format";
+import { t } from "@/lib/i18n";
 
 /**
  * Everything the interface needs to know about a rule beyond its raw fields:
@@ -77,7 +78,7 @@ const RULE_TYPE_LABELS: Record<RuleType, string> = {
 
 /** The rule type in plain language. */
 export function ruleTypeLabel(ruleType: RuleType): string {
-  return RULE_TYPE_LABELS[ruleType];
+  return t(RULE_TYPE_LABELS[ruleType]);
 }
 
 const NATURE_LABELS: Record<ControversyNature, string> = {
@@ -89,26 +90,26 @@ const NATURE_LABELS: Record<ControversyNature, string> = {
 };
 
 export function exclusionDefinitionLabel(definition: ExclusionDefinition): string {
-  if (definition.kind === "fund_reported_sector") return `Holdings labelled “${definition.sector}” in what the funds report`;
-  return `Named companies: ${definition.issuer_ids.join(", ")}`;
+  if (definition.kind === "fund_reported_sector") return `${t("Holdings labelled “")}${definition.sector}” ${t("in what the funds report")}`;
+  return `${t("Named companies:")} ${definition.issuer_ids.join(", ")}`;
 }
 
 /** What exactly this rule is set to measure, from its parameters. One short line. */
 export function ruleParametersText(rule: Rule): string {
   switch (rule.rule_type) {
     case "max_issuer_exposure":
-      return rule.parameters.issuer_scope === "any" ? "Applies to every company" : `Applies to one company: ${rule.parameters.issuer_scope}`;
+      return rule.parameters.issuer_scope === "any" ? t("Applies to every company") : `${t("Applies to one company:")} ${rule.parameters.issuer_scope}`;
     case "min_issuer_exposure":
-      return `Applies to one company: ${rule.parameters.issuer_id}`;
+      return `${t("Applies to one company:")} ${rule.parameters.issuer_id}`;
     case "exclusion":
       return exclusionDefinitionLabel(rule.parameters.definition);
     case "controversy_exclusion": {
-      const natures = rule.parameters.criteria.natures.map((nature) => NATURE_LABELS[nature]).join(", ");
+      const natures = rule.parameters.criteria.natures.map((nature) => t(NATURE_LABELS[nature])).join(", ");
       const since = rule.parameters.criteria.event_date_from;
-      return `Registry records of these kinds: ${natures}${since ? `, dated ${formatDate(since)} or later` : ""}`;
+      return `${t("Registry records of these kinds:")} ${natures}${since ? `, ${t("dated")} ${formatDate(since)} ${t("or later")}` : ""}`;
     }
     case "scenario_loss_budget":
-      return rule.parameters.scenario_id === "replay_2022" ? "Scenario: replay of calendar 2022" : `Scenario: ${rule.parameters.scenario_id}`;
+      return rule.parameters.scenario_id === "replay_2022" ? t("Scenario: replay of calendar 2022") : `${t("Scenario:")} ${rule.parameters.scenario_id}`;
   }
 }
 
@@ -122,7 +123,7 @@ const THRESHOLD_LABELS: Record<RuleType, string> = {
 
 /** Label of the threshold field for this rule type. */
 export function thresholdLabel(ruleType: RuleType): string {
-  return THRESHOLD_LABELS[ruleType];
+  return t(THRESHOLD_LABELS[ruleType]);
 }
 
 const THRESHOLD_HINTS: Record<RuleType, string> = {
@@ -134,14 +135,14 @@ const THRESHOLD_HINTS: Record<RuleType, string> = {
 };
 
 export function thresholdHint(ruleType: RuleType): string {
-  return THRESHOLD_HINTS[ruleType];
+  return t(THRESHOLD_HINTS[ruleType]);
 }
 
 /** Short noun for the limit in result rows: "limit", "minimum" or "budget". */
 export function limitNoun(ruleType: RuleType): string {
-  if (ruleType === "min_issuer_exposure") return "Minimum";
-  if (ruleType === "scenario_loss_budget") return "Budget";
-  return "Limit";
+  if (ruleType === "min_issuer_exposure") return t("Minimum");
+  if (ruleType === "scenario_loss_budget") return t("Budget");
+  return t("Limit");
 }
 
 const ORIGIN_LABELS: Record<RuleOrigin, string> = {
@@ -151,7 +152,7 @@ const ORIGIN_LABELS: Record<RuleOrigin, string> = {
 };
 
 export function originLabel(origin: RuleOrigin): string {
-  return ORIGIN_LABELS[origin];
+  return t(ORIGIN_LABELS[origin]);
 }
 
 const ORIGIN_DESCRIPTIONS: Record<RuleOrigin, string> = {
@@ -161,20 +162,20 @@ const ORIGIN_DESCRIPTIONS: Record<RuleOrigin, string> = {
 };
 
 export function originDescription(origin: RuleOrigin): string {
-  return ORIGIN_DESCRIPTIONS[origin];
+  return t(ORIGIN_DESCRIPTIONS[origin]);
 }
 
 /** Where the number of a rule comes from, in words. */
 export function thresholdSourceText(rule: Rule): string {
   switch (rule.threshold_source) {
     case "USER_WORDS":
-      return rule.threshold_quote ? `Number taken from your words: “${rule.threshold_quote}”` : "Number taken from your words";
+      return rule.threshold_quote ? `${t("Number taken from your words:")} “${rule.threshold_quote}”` : t("Number taken from your words");
     case "USER_ENTERED":
-      return "Number entered by you";
+      return t("Number entered by you");
     case "FICTIONAL_SCENARIO":
-      return "Number from the fictional scenario";
+      return t("Number from the fictional scenario");
     case null:
-      return "No number yet";
+      return t("No number yet");
   }
 }
 
@@ -185,7 +186,7 @@ const STATUS_LABELS: Record<RuleStatus, string> = {
 };
 
 export function ruleStatusLabel(status: RuleStatus): string {
-  return STATUS_LABELS[status];
+  return t(STATUS_LABELS[status]);
 }
 
 const STATUS_DESCRIPTIONS: Record<RuleStatus, string> = {
@@ -195,12 +196,12 @@ const STATUS_DESCRIPTIONS: Record<RuleStatus, string> = {
 };
 
 export function ruleStatusDescription(status: RuleStatus): string {
-  return STATUS_DESCRIPTIONS[status];
+  return t(STATUS_DESCRIPTIONS[status]);
 }
 
 /** "10.0%" or "Not set" — for rule summaries and diffs. */
 export function thresholdText(rule: Rule): string {
-  return rule.threshold === null ? NOT_SET_TEXT : formatFraction(rule.threshold);
+  return rule.threshold === null ? t(NOT_SET_TEXT) : formatFraction(rule.threshold);
 }
 
 /** One line naming a rule and its threshold, e.g. for policy summaries. */
@@ -210,8 +211,8 @@ export function ruleSummary(rule: Rule): string {
 
 /** Why a threshold typed by the user cannot be confirmed, or null when it can. */
 export function validateThreshold(value: number | null): string | null {
-  if (value === null) return "Enter a number before confirming. This rule has no threshold yet.";
-  if (value < 0) return "The threshold cannot be negative.";
-  if (value > 1) return "The threshold cannot be more than 100% of the portfolio.";
+  if (value === null) return t("Enter a number before confirming. This rule has no threshold yet.");
+  if (value < 0) return t("The threshold cannot be negative.");
+  if (value > 1) return t("The threshold cannot be more than 100% of the portfolio.");
   return null;
 }

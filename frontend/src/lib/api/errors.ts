@@ -1,3 +1,5 @@
+import { t } from "@/lib/i18n";
+
 export type ApiErrorKind =
   /** The request never reached the service (offline, DNS, CORS, connection reset). */
   | "network"
@@ -77,10 +79,10 @@ const FALLBACK_MESSAGES: Record<ApiErrorKind, string> = {
 
 /** A sentence that can be shown to the user for any thrown value. */
 export function describeError(error: unknown): string {
-  if (isApiError(error)) return error.message || FALLBACK_MESSAGES[error.kind];
-  return "Something went wrong in this page. Try again.";
+  if (isApiError(error)) return error.message || t(FALLBACK_MESSAGES[error.kind]);
+  return t("Something went wrong in this page. Try again.");
 }
 
 export function fallbackMessage(kind: ApiErrorKind): string {
-  return FALLBACK_MESSAGES[kind];
+  return t(FALLBACK_MESSAGES[kind]);
 }

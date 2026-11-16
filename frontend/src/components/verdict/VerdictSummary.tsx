@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import type { Summary } from "@/lib/contracts";
 import { summaryCounts, verdictHeadline, type HeadlineTone } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
+import { t } from "@/lib/i18n";
 
 const TONE: Record<HeadlineTone, { box: string; icon: ReactNode }> = {
   fail: { box: "border-fail bg-fail-soft", icon: <FailIcon size={28} className="text-fail" /> },
@@ -91,14 +92,14 @@ export function VerdictSummary({ summary, scope, links = [], headingId = "verdic
           <p className="mt-1 text-lg text-ink">{headline.detail}</p>
         </div>
       </div>
-      <ul className="mt-4 flex flex-wrap gap-3" aria-label="Number of confirmed rules by result">
-        <CountChip kind="fail" count={counts.fail} label="Fail" icon={<FailIcon size={18} className="text-fail" />} />
-        <CountChip kind="unknown" count={counts.unknown} label="Unknown" icon={<UnknownIcon size={18} className="text-unknown" />} dashed />
-        <CountChip kind="pass" count={counts.pass} label="Pass" icon={<PassIcon size={18} className="text-pass" />} />
+      <ul className="mt-4 flex flex-wrap gap-3" aria-label={t("Number of confirmed rules by result")}>
+        <CountChip kind="fail" count={counts.fail} label={t("Fail")} icon={<FailIcon size={18} className="text-fail" />} />
+        <CountChip kind="unknown" count={counts.unknown} label={t("Unknown")} icon={<UnknownIcon size={18} className="text-unknown" />} dashed />
+        <CountChip kind="pass" count={counts.pass} label={t("Pass")} icon={<PassIcon size={18} className="text-pass" />} />
       </ul>
       {children ? <div className="mt-4 space-y-2 border-t border-line-strong pt-4">{children}</div> : null}
       {links.length > 0 ? (
-        <nav aria-label="Sections of this report" className="mt-4 border-t border-line-strong pt-3" data-testid="summary-links">
+        <nav aria-label={t("Sections of this report")} className="mt-4 border-t border-line-strong pt-3" data-testid="summary-links">
           <ul className="flex flex-wrap gap-x-5 gap-y-1">
             {links.map((link) => (
               <li key={link.id}>

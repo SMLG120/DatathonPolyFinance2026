@@ -2,6 +2,7 @@
 
 import { CheckIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import { JOURNEY, journeyFor, stageHref, type StageId } from "@/state/stage";
 
 export interface StepperProps {
@@ -24,7 +25,7 @@ export interface StepperProps {
  */
 export function Stepper({ current, completed }: StepperProps) {
   return (
-    <nav aria-label="Stages of the simulation">
+    <nav aria-label={t("Stages of the simulation")}>
       <ol className="flex gap-1 rounded-xl bg-sunken p-1.5 sm:gap-2">
         {JOURNEY.map((stage) => {
           const isCurrent = stage.id === journeyFor(current).id;
@@ -59,14 +60,14 @@ export function Stepper({ current, completed }: StepperProps) {
                 >
                   {/* One accessible name at every width; the visible labels are decorative copies of it. */}
                   <span className="sr-only">
-                    Step {stage.number} of {JOURNEY.length}: {stage.title}
-                    {isDone ? " (completed)" : ""}
+                    {t("Step")} {stage.number} {t("of")} {JOURNEY.length}: {t(stage.title)}
+                    {isDone ? ` (${t("completed")})` : ""}
                   </span>
                   <span aria-hidden="true" className="inline lg:hidden">
-                    {stage.short}
+                    {t(stage.short)}
                   </span>
                   <span aria-hidden="true" className="hidden lg:inline">
-                    {stage.title}
+                    {t(stage.title)}
                   </span>
                 </span>
               </a>

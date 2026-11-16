@@ -32,6 +32,7 @@ import {
 } from "./capability";
 import type { ExposureSceneHandle, SceneLabels } from "./ExposureScene";
 import type { ExplorerColumn, ExplorerModel, ExplorerReady, ExplorerSegment, ExplorerUnavailable, LimitUnavailableReason, UnavailableReason } from "./model";
+import { t } from "@/lib/i18n";
 
 const ExposureScene = lazy(() => import("./ExposureScene"));
 
@@ -155,13 +156,11 @@ function OriginMarker({ model }: { model: ExplorerModel }) {
     <p className="flex flex-wrap items-center gap-2" data-testid="explorer-origin">
       {model.dataOrigin === "FIXTURE" ? (
         <Badge tone="unknown" dashed icon={<WarningIcon size={16} />}>
-          Test data
-        </Badge>
+          {t("Test data")}</Badge>
       ) : null}
       {preview ? (
         <Badge tone="neutral" dashed icon={<InfoIcon size={16} />}>
-          Draft preview
-        </Badge>
+          {t("Draft preview")}</Badge>
       ) : null}
     </p>
   );
@@ -170,7 +169,7 @@ function OriginMarker({ model }: { model: ExplorerModel }) {
 function Unavailable({ model, className }: { model: ExplorerUnavailable; className?: string }) {
   return (
     <section
-      aria-label="Exposure explorer"
+      aria-label={t("Exposure explorer")}
       className={cn("space-y-3 rounded-md border border-dashed border-line-strong bg-sunken p-4", className)}
       data-testid="exposure-explorer"
       data-status="UNAVAILABLE"
@@ -179,14 +178,14 @@ function Unavailable({ model, className }: { model: ExplorerUnavailable; classNa
       <div className="flex items-start gap-2" data-testid="explorer-unavailable">
         <UnknownIcon size={20} className="mt-0.5 flex-none text-unknown" />
         <div className="space-y-1">
-          <p className="font-semibold text-ink">Exposure cannot be shown</p>
+          <p className="font-semibold text-ink">{t("Exposure cannot be shown")}</p>
           <p className="text-ink">{UNAVAILABLE_TEXT[model.reason]}</p>
           {model.message ? (
             <p className="text-ink">
-              <span className="font-semibold">Message from the check:</span> {model.message}
+              <span className="font-semibold">{t("Message from the check:")}</span> {model.message}
             </p>
           ) : null}
-          <p className="text-sm text-ink-muted">Nothing is drawn, because an empty chart would read as zero exposure.</p>
+          <p className="text-sm text-ink-muted">{t("Nothing is drawn, because an empty chart would read as zero exposure.")}</p>
         </div>
       </div>
     </section>
@@ -196,20 +195,17 @@ function Unavailable({ model, className }: { model: ExplorerUnavailable; classNa
 function Legend({ model }: { model: ExplorerReady }) {
   const hasUnresolved = [model.current, model.proposed].some((column) => column.segments.some((segment) => segment.kind === "UNRESOLVED"));
   return (
-    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink" aria-label="Legend">
+    <ul className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink" aria-label={t("Legend")}>
       <li className="flex items-center gap-2">
         <span className="byb-swatch" data-seg="direct" aria-hidden="true" />
-        Held directly (dark blue)
-      </li>
+        {t("Held directly (dark blue)")}</li>
       <li className="flex items-center gap-2">
         <span className="byb-swatch border border-ink" data-seg="indirect" aria-hidden="true" />
-        Through a fund (light blue)
-      </li>
+        {t("Through a fund (light blue)")}</li>
       {hasUnresolved ? (
         <li className="flex items-center gap-2">
           <span className="byb-swatch" data-seg="possible" aria-hidden="true" />
-          Not attributed (amber in network; dashed in chart)
-        </li>
+          {t("Not attributed (amber in network; dashed in chart)")}</li>
       ) : null}
       {model.limit ? (
         <li className="flex items-center gap-2">
@@ -277,7 +273,7 @@ function ValuesTable({ model }: { model: ExplorerReady }) {
 
   return (
     <table className="w-full border-collapse text-left" data-testid="explorer-table">
-      <caption className="sr-only">{model.issuerName}: exposure as a share of the portfolio, current and proposed</caption>
+      <caption className="sr-only">{model.issuerName}{t(": exposure as a share of the portfolio, current and proposed")}</caption>
       <thead>
         <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
           <td className="py-2 pr-3" />
@@ -317,18 +313,16 @@ function TotalsInWords({ model }: { model: ExplorerReady }) {
             <span className="font-semibold">{STATE_TEXT[column.state]}:</span>{" "}
             {column.isRange ? (
               <span className="tabular">
-                between {formatFraction(column.known, { decimals })} and {formatFraction(column.upper, { decimals })} of the portfolio; the part that
-                cannot be attributed is an uncertain upper bound.
-              </span>
+                {t("between")} {formatFraction(column.known, { decimals })} {t("and")} {formatFraction(column.upper, { decimals })} {t("of the portfolio; the part that cannot be attributed is an uncertain upper bound.")}</span>
             ) : (
-              <span className="tabular">{formatFraction(column.known)} of the portfolio.</span>
+              <span className="tabular">{formatFraction(column.known)} {t("of the portfolio.")}</span>
             )}
           </p>
         );
       })}
       {model.unknownCauses.length > 0 ? (
         <div className="text-sm text-ink-muted" data-testid="explorer-unknown-causes">
-          <p>Why the total is a range and not one number:</p>
+          <p>{t("Why the total is a range and not one number:")}</p>
           <ul className="list-disc pl-5">
             {model.unknownCauses.map((cause) => (
               <li key={cause}>{UNKNOWN_CAUSE_TEXT[cause] ?? cause}</li>
@@ -355,13 +349,11 @@ function LimitLine({ model }: { model: ExplorerReady }) {
           <span className="font-semibold">{limitNoun(model)}:</span> <span className="tabular">{formatFraction(model.limit.value)}</span>
         </span>
         <span className="flex flex-wrap items-center gap-2">
-          Rule result from the check: <StatusBadge status={model.limit.ruleStatus} />
+          {t("Rule result from the check:")} <StatusBadge status={model.limit.ruleStatus} />
         </span>
       </p>
       <p className="text-sm text-ink-muted">
-        The rule is judged on its own subject, which may be another company than {model.issuerName}. This card does not decide whether the rule is
-        respected.
-      </p>
+        {t("The rule is judged on its own subject, which may be another company than")} {model.issuerName}{t(". This card does not decide whether the rule is respected.")}</p>
     </div>
   );
 }
@@ -374,26 +366,26 @@ function SegmentDetails({ segment, onOpenEvidence }: { segment: ExplorerSegment;
       </p>
       <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 text-ink sm:grid-cols-2">
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Share of the portfolio</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Share of the portfolio")}</dt>
           <dd className="tabular text-lg font-bold">{segmentValueText(segment)}</dd>
         </div>
         {segment.kind === "FUND" ? (
           <>
             <div>
-              <dt className="text-sm font-semibold text-ink-muted">Holdings date</dt>
+              <dt className="text-sm font-semibold text-ink-muted">{t("Holdings date")}</dt>
               <dd className="tabular">{segment.holdingsDate ? formatDate(segment.holdingsDate) : "No holdings file"}</dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-ink-muted">Source</dt>
+              <dt className="text-sm font-semibold text-ink-muted">{t("Source")}</dt>
               <dd className="break-all font-mono text-sm">{segment.sourceId ?? "No source recorded"}</dd>
             </div>
             <div>
-              <dt className="text-sm font-semibold text-ink-muted">Holdings coverage</dt>
+              <dt className="text-sm font-semibold text-ink-muted">{t("Holdings coverage")}</dt>
               <dd>{segment.coverageStatus ? (COVERAGE_TEXT[segment.coverageStatus] ?? segment.coverageStatus) : "Not reported"}</dd>
             </div>
             {segment.formula ? (
               <div className="sm:col-span-2">
-                <dt className="text-sm font-semibold text-ink-muted">Calculation, as recorded (portfolio fractions)</dt>
+                <dt className="text-sm font-semibold text-ink-muted">{t("Calculation, as recorded (portfolio fractions)")}</dt>
                 <dd className="tabular font-mono text-sm">{segment.formula}</dd>
               </div>
             ) : null}
@@ -402,25 +394,21 @@ function SegmentDetails({ segment, onOpenEvidence }: { segment: ExplorerSegment;
       </dl>
       {segment.kind === "UNRESOLVED" ? (
         <p className="mt-2 text-sm text-ink">
-          This share of the portfolio sits in funds whose holdings are not fully reported. It could be this company or any other. It is a possible
-          maximum, not a measured amount, and it is never counted as zero.
-        </p>
+          {t("This share of the portfolio sits in funds whose holdings are not fully reported. It could be this company or any other. It is a possible maximum, not a measured amount, and it is never counted as zero.")}</p>
       ) : null}
       <div className="mt-3">
         {segment.evidenceId ? (
           onOpenEvidence ? (
             <Button size="sm" icon={<EvidenceIcon size={16} />} onClick={() => onOpenEvidence(segment.evidenceId as string)} data-testid="explorer-open-evidence">
-              Open the calculation
-            </Button>
+              {t("Open the calculation")}</Button>
           ) : (
             <p className="text-sm text-ink">
-              Calculation record: <span className="font-mono">{segment.evidenceId}</span>
+              {t("Calculation record:")} <span className="font-mono">{segment.evidenceId}</span>
             </p>
           )
         ) : (
           <p className="text-sm text-ink-muted" data-testid="explorer-no-evidence">
-            The response contains no calculation record for this part.
-          </p>
+            {t("The response contains no calculation record for this part.")}</p>
         )}
       </div>
     </div>
@@ -480,14 +468,14 @@ function SegmentButtons({
 function HowToRead() {
   return (
     <details className="rounded-md border border-line bg-surface px-3 py-2 text-ink" data-testid="explorer-how-to-read">
-      <summary className="cursor-pointer font-semibold text-accent">How to read this</summary>
+      <summary className="cursor-pointer font-semibold text-accent">{t("How to read this")}</summary>
       <ul className="mt-2 list-disc space-y-1 pl-5">
-        <li>The network shows ownership paths, not a forecast or a risk score.</li>
-        <li>Current and proposed portfolios are separate branches. Compare their percentages in the table.</li>
-        <li>Node size, distance and link width do not represent amounts. The simple chart uses a shared percentage scale.</li>
-        <li>Not attributed means missing holdings: the possible amount is not connected to the company as a proven exposure. The simple chart shows this range hollow and dashed.</li>
-        <li>Indirect exposure means owning a company through a fund.</li>
-        <li>The numbers are in the table. The drawing never shows a value the table does not.</li>
+        <li>{t("The network shows ownership paths, not a forecast or a risk score.")}</li>
+        <li>{t("Current and proposed portfolios are separate branches. Compare their percentages in the table.")}</li>
+        <li>{t("Node size, distance and link width do not represent amounts. The simple chart uses a shared percentage scale.")}</li>
+        <li>{t("Not attributed means missing holdings: the possible amount is not connected to the company as a proven exposure. The simple chart shows this range hollow and dashed.")}</li>
+        <li>{t("Indirect exposure means owning a company through a fund.")}</li>
+        <li>{t("The numbers are in the table. The drawing never shows a value the table does not.")}</li>
       </ul>
     </details>
   );
@@ -549,21 +537,20 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
       <header className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <Heading id={headingId} className="text-lg font-semibold text-ink">
-            {model.issuerName}: current and proposed exposure
-          </Heading>
+            {model.issuerName}{t(": current and proposed exposure")}</Heading>
           <OriginMarker model={model} />
         </div>
         <p className="text-sm text-ink-muted" data-testid="explorer-context">
           {model.policyVersion === null ? "Draft rules, not a confirmed policy" : `Confirmed policy version ${model.policyVersion}`}
-          {" · "}Valuation date <span className="tabular">{formatDate(model.valuationDate)}</span>
-          {" · "}Calculation <span className="break-all font-mono">{model.calculationVersion}</span>
+          {" · "}{t("Valuation date")} <span className="tabular">{formatDate(model.valuationDate)}</span>
+          {" · "}{t("Calculation")} <span className="break-all font-mono">{model.calculationVersion}</span>
         </p>
       </header>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-accent-soft p-4">
         <div>
-          <p className="font-semibold text-ink">See how you own {model.issuerName}</p>
-          <p className="text-sm text-ink-muted">Follow each connection from your portfolio. Select a holding to inspect its source.</p>
+          <p className="font-semibold text-ink">{t("See how you own")} {model.issuerName}</p>
+          <p className="text-sm text-ink-muted">{t("Follow each connection from your portfolio. Select a holding to inspect its source.")}</p>
         </div>
         {decision.mode === "3D" ? <Button size="sm" aria-pressed={simpleView} onClick={() => setSimpleView(!simpleView)}>
           {simpleView ? "Show interactive network" : "Show simple chart"}
@@ -575,26 +562,20 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
             <SceneBoundary onError={onBoundaryError}>
               <Suspense fallback={<div data-testid="explorer-fallback">{fallback}</div>}>
                 <ExposureScene ref={sceneRef} model={model} labels={labels} selectedId={selected?.id ?? null} onSelect={setSelection} onFailure={onSceneFailure} />
-                <div className="flex flex-wrap items-center gap-2" role="group" aria-label="3D view controls">
+                <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("3D view controls")}>
                   <Button size="sm" onClick={() => sceneRef.current?.rotate(-1)}>
-                    Rotate left
-                  </Button>
+                    {t("Rotate left")}</Button>
                   <Button size="sm" onClick={() => sceneRef.current?.rotate(1)}>
-                    Rotate right
-                  </Button>
+                    {t("Rotate right")}</Button>
                   <Button size="sm" onClick={() => sceneRef.current?.zoom(1)}>
-                    Zoom in
-                  </Button>
+                    {t("Zoom in")}</Button>
                   <Button size="sm" onClick={() => sceneRef.current?.zoom(-1)}>
-                    Zoom out
-                  </Button>
+                    {t("Zoom out")}</Button>
                   <Button size="sm" onClick={() => sceneRef.current?.reset()} data-testid="explorer-reset-view">
-                    Reset view
-                  </Button>
+                    {t("Reset view")}</Button>
                 </div>
                 <p className="text-sm text-ink-muted">
-                  Drag to rotate; scroll to zoom. Click a holding to see its evidence below, or use the selection buttons.
-                </p>
+                  {t("Drag to rotate; scroll to zoom. Click a holding to see its evidence below, or use the selection buttons.")}</p>
               </Suspense>
             </SceneBoundary>
           ) : (
@@ -615,8 +596,8 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
       </div>
 
       <div className="space-y-3">
-        <SubHeading className="font-semibold text-ink">Parts of the exposure</SubHeading>
-        <p className="text-sm text-ink-muted">Select a part to see where it comes from.</p>
+        <SubHeading className="font-semibold text-ink">{t("Parts of the exposure")}</SubHeading>
+        <p className="text-sm text-ink-muted">{t("Select a part to see where it comes from.")}</p>
         <SegmentButtons model={model} selectedId={selected?.id ?? null} onSelect={setSelection} />
         <div aria-live="polite">
           {selected ? <SegmentDetails segment={selected} onOpenEvidence={onOpenEvidence} /> : null}

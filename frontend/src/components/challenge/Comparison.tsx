@@ -13,6 +13,7 @@ import { limitNoun, ruleTypeLabel, thresholdText } from "@/lib/rules";
 import { isTerminalJobStatus, pairRuleResults, diffPolicies, summaryCounts, verdictHeadline, type RuleChangeKind } from "@/lib/verdict";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 const CHANGE_TEXT: Record<RuleChangeKind, string> = {
   CHANGED: "Changed",
@@ -27,18 +28,17 @@ export function PolicyDiffTable({ older, newer }: { older: Policy; newer: Policy
   return (
     <table className="w-full border-collapse text-left" data-testid="policy-diff">
       <caption className="pb-2 text-left text-sm text-ink-muted">
-        Rules in force in policy version {older.version} and in version {newer.version}.
+        {t("Rules in force in policy version")} {older.version} {t("and in version")} {newer.version}.
       </caption>
       <thead>
         <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
           <th scope="col" className="py-2 pr-3 font-semibold">
-            Rule
+            {t("Rule")}</th>
+          <th scope="col" className="py-2 pl-3 text-right font-semibold">
+            {t("Version")} {older.version}
           </th>
           <th scope="col" className="py-2 pl-3 text-right font-semibold">
-            Version {older.version}
-          </th>
-          <th scope="col" className="py-2 pl-3 text-right font-semibold">
-            Version {newer.version}
+            {t("Version")} {newer.version}
           </th>
         </tr>
       </thead>
@@ -51,12 +51,12 @@ export function PolicyDiffTable({ older, newer }: { older: Policy; newer: Policy
               <th scope="row" className="py-2.5 pl-2 pr-3 font-normal">
                 <span className="block font-semibold text-ink">{ruleTypeLabel(rule.rule_type)}</span>
                 <Badge tone={row.kind === "UNCHANGED" ? "neutral" : "accent"} className="mt-1 py-0 leading-5">
-                  {CHANGE_TEXT[row.kind]}
+                  {t(CHANGE_TEXT[row.kind])}
                 </Badge>
               </th>
-              <td className="tabular py-2.5 pl-3 text-right text-lg text-ink">{row.before ? thresholdText(row.before) : "Not in this version"}</td>
+              <td className="tabular py-2.5 pl-3 text-right text-lg text-ink">{row.before ? thresholdText(row.before) : t("Not in this version")}</td>
               <td className={cn("tabular py-2.5 pl-3 pr-2 text-right text-lg text-ink", row.kind === "CHANGED" && "font-bold")}>
-                {row.after ? thresholdText(row.after) : "Not in this version"}
+                {row.after ? thresholdText(row.after) : t("Not in this version")}
               </td>
             </tr>
           );
@@ -67,12 +67,12 @@ export function PolicyDiffTable({ older, newer }: { older: Policy; newer: Policy
 }
 
 function ResultCell({ ruleResult }: { ruleResult: RuleResult | null }) {
-  if (!ruleResult) return <span className="text-ink-muted">Not checked in this version</span>;
+  if (!ruleResult) return   <span className="text-ink-muted">{t("Not checked in this version")}</span>;
   return (
     <span className="flex flex-col items-end gap-1">
       <StatusBadge status={ruleResult.status} />
       <span className="tabular text-sm text-ink">
-        measured {measuredText(ruleResult.rule_type, ruleResult.measured).toLowerCase()} · {limitNoun(ruleResult.rule_type).toLowerCase()}{" "}
+        {t("measured")} {measuredText(ruleResult.rule_type, ruleResult.measured).toLowerCase()} · {limitNoun(ruleResult.rule_type).toLowerCase()}{" "}
         {formatFraction(ruleResult.limit)}
       </span>
     </span>
@@ -93,25 +93,23 @@ function ReportCard({ label, job, onOpen }: { label: string; job: InvestigationJ
             {verdictHeadline(assessment.result.summary).title}
           </p>
           <p className="tabular text-ink" data-testid="comparison-counts">
-            {summaryCounts(assessment.result.summary).fail} fail · {summaryCounts(assessment.result.summary).unknown} unknown ·{" "}
-            {summaryCounts(assessment.result.summary).pass} pass
-          </p>
+            {summaryCounts(assessment.result.summary).fail} {t("fail ·")} {summaryCounts(assessment.result.summary).unknown} {t("unknown ·")}{" "}
+            {summaryCounts(assessment.result.summary).pass} {t("pass")}</p>
           <div className="mt-auto">
             <Button size="sm" onClick={onOpen}>
-              Open this report
-            </Button>
+              {t("Open this report")}</Button>
           </div>
         </>
       ) : assessment?.kind === "not_executed" ? (
-        <UnknownBlock title="The check did not run">
-          <p>{assessment.result.execution.message ?? "The service gave no reason."} No rule was evaluated, so there is no verdict.</p>
+        <UnknownBlock title={t("The check did not run")}>
+          <p>{assessment.result.execution.message ?? "The service gave no reason."} {t("No rule was evaluated, so there is no verdict.")}</p>
         </UnknownBlock>
       ) : assessment?.kind === "unreadable" ? (
-        <UnknownBlock title="The result could not be read" />
+        <UnknownBlock title={t("The result could not be read")} />
       ) : job?.status === "FAILED" ? (
-        <ErrorBlock title="This investigation failed" message={job.failure?.message ?? "No result was produced."} />
+        <ErrorBlock title={t("This investigation failed")} message={job.failure?.message ?? "No result was produced."} />
       ) : job && isTerminalJobStatus(job.status) ? (
-        <UnknownBlock title="No result was returned" />
+        <UnknownBlock title={t("No result was returned")} />
       ) : (
         <>
           <LoadingBlock
@@ -119,8 +117,7 @@ function ReportCard({ label, job, onOpen }: { label: string; job: InvestigationJ
           />
           <div>
             <LinkButton href={stageHref("investigation")} size="sm">
-              See the investigation steps
-            </LinkButton>
+              {t("See the investigation steps")}</LinkButton>
           </div>
         </>
       )}
@@ -155,8 +152,7 @@ export function RuleChangeComparison() {
       {olderPolicy && newerPolicy ? (
         <section aria-labelledby="comparison-policy-title">
           <h3 id="comparison-policy-title" className="text-lg font-semibold text-ink">
-            What changed in the policy
-          </h3>
+            {t("What changed in the policy")}</h3>
           <div className="mt-2">
             <PolicyDiffTable older={olderPolicy} newer={newerPolicy} />
           </div>
@@ -165,11 +161,10 @@ export function RuleChangeComparison() {
 
       <section aria-labelledby="comparison-reports-title">
         <h3 id="comparison-reports-title" className="text-lg font-semibold text-ink">
-          The same purchase under each version
-        </h3>
+          {t("The same purchase under each version")}</h3>
         <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <ReportCard label={`Earlier report — policy version ${older?.policy_version ?? "unknown"} — unchanged`} job={older} onOpen={() => open(comparison.olderId)} />
-          <ReportCard label={`New report — policy version ${newer?.policy_version ?? newerPolicy?.version ?? "unknown"}`} job={newer} onOpen={() => open(comparison.newerId)} />
+          <ReportCard                     label={`${t("Earlier report")} — ${t("policy version")} ${older?.policy_version ?? t("unknown")} — ${t("Unchanged")}`} job={older} onOpen={() => open(comparison.olderId)} />
+          <ReportCard label={`${t("New report")} — ${t("policy version")} ${newer?.policy_version ?? newerPolicy?.version ?? "unknown"}`} job={newer} onOpen={() => open(comparison.newerId)} />
         </div>
       </section>
 
@@ -177,22 +172,20 @@ export function RuleChangeComparison() {
         <section aria-labelledby="comparison-rules-title" data-figures="true">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <h3 id="comparison-rules-title" className="text-lg font-semibold text-ink">
-              Each rule under the two versions
-            </h3>
+              {t("Each rule under the two versions")}</h3>
             <TestDataTag />
           </div>
           <table className="mt-2 w-full border-collapse text-left" data-testid="result-comparison">
-            <caption className="pb-2 text-left text-sm text-ink-muted">Each rule, after the purchase, as reported under the two policy versions.</caption>
+            <caption className="pb-2 text-left text-sm text-ink-muted">{t("Each rule, after the purchase, as reported under the two policy versions.")}</caption>
             <thead>
               <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
                 <th scope="col" className="py-2 pr-3 font-semibold">
-                  Rule
+                  {t("Rule")}</th>
+                <th scope="col" className="py-2 pl-3 text-right font-semibold">
+                  {t("Version")} {olderPolicy.version}
                 </th>
                 <th scope="col" className="py-2 pl-3 text-right font-semibold">
-                  Version {olderPolicy.version}
-                </th>
-                <th scope="col" className="py-2 pl-3 text-right font-semibold">
-                  Version {newerPolicy.version}
+                  {t("Version")} {newerPolicy.version}
                 </th>
               </tr>
             </thead>
@@ -220,9 +213,7 @@ export function RuleChangeComparison() {
       ) : null}
 
       <p className="text-sm text-ink-muted">
-        A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the
-        same purchase and the same sources.
-      </p>
+        {t("A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the same purchase and the same sources.")}</p>
     </div>
   );
 }
