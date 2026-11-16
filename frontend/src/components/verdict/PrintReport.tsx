@@ -4,6 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useState, type ReactNode } fro
 import { flushSync } from "react-dom";
 import { SOURCE_DETAILS_NOTE } from "@/components/evidence/EvidenceContent";
 import { FIXTURES_LABEL, SIMULATION_LABEL } from "@/components/shell/AppShell";
+import { BRAND_NAME } from "@/components/shell/BrandHero";
 import type { CheckResult, FundCoverage, InvestigationJob, Objective, Policy, Portfolio, RuleResult, VerdictStatus } from "@/lib/contracts";
 import { isCustomizedPortfolio, portfolioCheckedLabel } from "@/lib/customize";
 import { metricLabel } from "@/lib/evidence";
@@ -20,13 +21,13 @@ import { ruleLookup, type RuleLookup } from "./RuleResults";
 export const PRINT_REPORT_LABEL = "Print / Save as PDF";
 
 /** What the printed document is, said on its first lines. */
-export const PRINT_REPORT_TITLE = "Before You Buy: simulation report";
+export const PRINT_REPORT_TITLE = `${BRAND_NAME}: simulation report`;
 export const PRINT_NOT_ADVICE =
   "This is the report of a simulation on a fictional portfolio. It is not personalized financial advice, not a recommendation to buy or sell, and not a forecast. It says only whether one simulated purchase respects the rules that were confirmed, and what could not be determined.";
 
 /** The browser proposes the page title as the PDF file name. */
 export function printDocumentTitle(job: Pick<InvestigationJob, "id" | "persona_id">): string {
-  return `Before You Buy simulation report - ${job.persona_id} - ${job.id}`;
+  return `${BRAND_NAME} simulation report - ${job.persona_id} - ${job.id}`;
 }
 
 /**
@@ -845,7 +846,7 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
           </ul>
         </Section>
         <p className="pr-footer" data-testid="print-footer">
-          Before You Buy · {job.id} · policy version {result.policy_version ?? "none"} · valuation date {formatDate(result.valuation_date)} · simulation on a fictional
+          {BRAND_NAME} · {job.id} · policy version {result.policy_version ?? "none"} · valuation date {formatDate(result.valuation_date)} · simulation on a fictional
           portfolio, not advice
         </p>
       </div>
