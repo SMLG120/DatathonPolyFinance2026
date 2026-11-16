@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const completed = useCompletedStages();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(88,119,255,0.18),_transparent_25%),linear-gradient(180deg,rgba(238,244,255,0.9)_0%,rgba(255,255,255,0.75)_18%,transparent_100%)]">
       <a
         href="#main-content"
         onClick={(event) => {
@@ -72,7 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </a>
 
       {/* Always on screen, on every stage and at every scroll position. */}
-      <section aria-label="Simulation notice" className="on-dark sticky top-0 z-30 bg-banner text-on-banner">
+      <section aria-label="Simulation notice" className="on-dark sticky top-0 z-30 bg-[linear-gradient(90deg,#1d4ed8_0%,#2f5bdb_28%,#4f46e5_62%,#7c3aed_100%)] text-on-banner">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6">
           <p className="font-semibold" data-testid="simulation-label">
             {SIMULATION_LABEL}
@@ -90,10 +90,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </section>
 
-      <header className="border-b border-line bg-surface">
+      <header className="border-b border-line bg-[linear-gradient(90deg,rgba(232,240,255,0.98)_0%,rgba(255,255,255,0.99)_38%,rgba(238,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-ink text-sm font-bold text-surface">B</span>Before You Buy</p>
+            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">B</span>Before You Buy</p>
             <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
           </div>
           <div className="mt-4">{needsAccessCode ? <div className="pb-4" /> : <Stepper current={stage} completed={completed} />}</div>
@@ -104,7 +104,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <footer className="border-t border-line bg-surface">
+      <footer className="border-t border-line bg-[linear-gradient(90deg,rgba(239,246,255,0.96)_0%,rgba(255,255,255,0.99)_44%,rgba(243,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
           <details><summary className="cursor-pointer font-medium">About this simulation and its data</summary><p className="mt-3">
             A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no
