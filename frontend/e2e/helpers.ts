@@ -4,21 +4,21 @@ import { expect, type Locator, type Page } from "@playwright/test";
 /** Every test opens the static build in fixtures mode, whatever the build was configured with. */
 export const START_URL = "/?fixtures=1";
 
-/** The three moments of the journey, as the stage navigation names them. */
-export const JOURNEY_TITLES = ["Choose a profile", "Test an idea", "Understand the result"] as const;
+/** The four moments of the journey, as the stage navigation names them. */
+export const JOURNEY_TITLES = ["Choose a profile", "Set your limits", "Test an idea", "Understand the result"] as const;
 
 /**
  * Every screen, by the id in its address (`#/purchase`): the moment of the
- * journey it belongs to and the title of its heading. "Your limits",
- * "Analysis details" and "Review this result" are secondary views of a moment.
+ * journey it belongs to and the title of its heading. "Analysis details" and
+ * "Review this result" are secondary views of the result.
  */
 export const SCREENS = {
   persona: { step: 1, title: "Choose a profile" },
   goals: { step: 2, title: "Your limits" },
-  purchase: { step: 2, title: "Test an idea" },
-  investigation: { step: 3, title: "Analysis details" },
-  verdict: { step: 3, title: "Your result" },
-  challenge: { step: 3, title: "Review this result" },
+  purchase: { step: 3, title: "Test an idea" },
+  investigation: { step: 4, title: "Analysis details" },
+  verdict: { step: 4, title: "Your result" },
+  challenge: { step: 4, title: "Review this result" },
 } as const;
 export type ScreenId = keyof typeof SCREENS;
 
@@ -27,17 +27,17 @@ export function stageHeading(page: Page): Locator {
 }
 
 /** A link of the stage navigation, by the number of its moment. A finished moment reads "(completed)" after its title. */
-export function stepLink(page: Page, step: 1 | 2 | 3): Locator {
-  return page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link", { name: new RegExp(`^Step ${step} of 3: ${JOURNEY_TITLES[step - 1]}`) });
+export function stepLink(page: Page, step: 1 | 2 | 3 | 4): Locator {
+  return page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link", { name: new RegExp(`^Step ${step} of 4: ${JOURNEY_TITLES[step - 1]}`) });
 }
 
 /** The screen is shown and — because a screen change is a page change — its heading has focus. */
 export async function expectScreen(page: Page, id: ScreenId, { focused = true }: { focused?: boolean } = {}) {
   const { step, title } = SCREENS[id];
   const heading = stageHeading(page);
-  await expect(heading).toHaveText(`Step ${step} of 3: ${title}`);
+  await expect(heading).toHaveText(`Step ${step} of 4: ${title}`);
   if (focused) await expect(heading).toBeFocused();
-  await expect(page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link")).toHaveCount(3);
+  await expect(page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link")).toHaveCount(4);
   await expect(stepLink(page, step)).toHaveAttribute("aria-current", "step");
   await expect(page.locator('nav[aria-label="Stages of the simulation"] [aria-current]')).toHaveCount(1);
 }
@@ -120,14 +120,11 @@ export function mainAlert(page: Page): Locator {
 }
 
 /**
- * From screen 1 with the pointer: "Test an idea" says the limits come first,
- * "Set my limits" offers the scenario's rules as proposals; confirm them with
- * their numbers.
+ * From screen 1 with the pointer: "Set your limits" offers the scenario's rules
+ * as proposals; confirm them with their numbers.
  */
 export async function confirmScenarioRules(page: Page) {
   await page.getByTestId("continue-link").click();
-  await expectScreen(page, "purchase");
-  await page.getByRole("link", { name: "Set my limits" }).click();
   await expectScreen(page, "goals");
   await expect(page.getByTestId("rule-card").first()).toBeVisible();
   await page.getByTestId("confirm-rules").click();

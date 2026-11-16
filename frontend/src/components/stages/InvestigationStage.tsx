@@ -59,7 +59,7 @@ export function InvestigationStage() {
           title="No investigation has been started"
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Proposed purchase
+              Go to Test an idea
             </LinkButton>
           }
         >

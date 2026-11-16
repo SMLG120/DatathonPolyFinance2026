@@ -16,14 +16,18 @@ export const STAGES = [
   { id: "challenge", number: 6, title: "Challenge", short: "Challenge" },
 ] as const;
 
-/** Three user-facing moments; detailed routes remain available as secondary views. */
+/**
+ * Four user-facing moments; detailed routes remain available as secondary views. Setting the limits is a step of its
+ * own: a purchase is only checked against limits the user confirmed, so the journey shows it before the idea.
+ */
 export const JOURNEY = [
   { id: "persona", number: 1, title: "Choose a profile", short: "Profile" },
-  { id: "purchase", number: 2, title: "Test an idea", short: "Idea" },
-  { id: "verdict", number: 3, title: "Understand the result", short: "Result" },
+  { id: "goals", number: 2, title: "Set your limits", short: "Limits" },
+  { id: "purchase", number: 3, title: "Test an idea", short: "Idea" },
+  { id: "verdict", number: 4, title: "Understand the result", short: "Result" },
 ] as const;
 export function journeyFor(stage: StageId) {
-  return JOURNEY[stage === "persona" ? 0 : stage === "goals" || stage === "purchase" ? 1 : 2];
+  return JOURNEY[stage === "persona" ? 0 : stage === "goals" ? 1 : stage === "purchase" ? 2 : 3];
 }
 export const SCREEN_TITLES: Record<StageId, string> = {
   persona: "Choose a profile", goals: "Your limits", purchase: "Test an idea",

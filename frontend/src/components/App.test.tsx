@@ -22,7 +22,7 @@ describe("App shell", () => {
     const user = userEvent.setup();
     renderApp();
     await screen.findByTestId("portfolio-table");
-    expect(within(screen.getByRole("navigation", { name: "Stages of the simulation" })).getAllByRole("link")).toHaveLength(3);
+    expect(within(screen.getByRole("navigation", { name: "Stages of the simulation" })).getAllByRole("link")).toHaveLength(4);
     expect(screen.getByTestId("portfolio-table").closest("details")).not.toHaveAttribute("open");
     await confirmScenarioRules(user);
     await go("purchase");
@@ -43,7 +43,7 @@ describe("App shell", () => {
       expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation: fictional portfolio, not advice");
       expect(screen.getByTestId("fixtures-label")).toHaveTextContent("Test data: fixtures");
       expect(screen.getByTestId("valuation-date")).toHaveTextContent("Valuation date: 12 Nov 2026");
-      expect(screen.getByRole("link", { current: "step" })).toHaveAccessibleName(`Step ${journeyFor(stage.id).number} of 3: ${journeyFor(stage.id).title}`);
+      expect(screen.getByRole("link", { current: "step" })).toHaveAccessibleName(`Step ${journeyFor(stage.id).number} of 4: ${journeyFor(stage.id).title}`);
     }
   });
 
@@ -73,7 +73,7 @@ describe("App shell", () => {
     await go("investigation");
     expect(screen.getByText("No investigation has been started")).toBeInTheDocument();
     await go("verdict");
-    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+    expect(screen.getByText("There is no result to show yet")).toBeInTheDocument();
     await go("challenge");
     expect(screen.getByText("There is no report to challenge yet")).toBeInTheDocument();
     await go("purchase");
@@ -1045,7 +1045,7 @@ describe("Requests the test data holds no answer for", () => {
     expect(screen.getByText("No investigation was created.")).toBeInTheDocument();
     expect(stageHeading()).toHaveTextContent("Test an idea");
     await go("verdict");
-    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+    expect(screen.getByText("There is no result to show yet")).toBeInTheDocument();
   });
 
   it("says so when words other than the recorded sentence are interpreted, and keeps the offered rules", async () => {

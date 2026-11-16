@@ -44,17 +44,16 @@ test.describe("keyboard-only journey through the three steps", () => {
     expect(await page.locator("title").count()).toBe(1);
     const portfolioSummary = panelSummary(page, "View the fictional portfolio");
     const continueLink = page.getByTestId("continue-link");
-    await expect(continueLink).toHaveAccessibleName("Test an idea");
+    await expect(continueLink).toHaveAccessibleName("Set your limits");
+    await expect(continueLink).toHaveAttribute("href", "#/goals");
     const expectedOrder = [
       page.getByRole("link", { name: "Skip to main content" }),
       // The header's link to the separate /evidence/ page comes before the steps, in reading order.
-      page.getByRole("link", { name: "Evidence Investigator" }),
+      page.getByRole("link", { name: /^Evidence Investigator/ }),
       stepLink(page, 1),
       stepLink(page, 2),
       stepLink(page, 3),
-      // The brand message opens the first screen: its two calls to action come before the profiles.
-      page.getByTestId("brand-cta-primary"),
-      page.getByTestId("brand-cta-secondary"),
+      stepLink(page, 4),
       page.getByTestId("persona-robert").locator("summary"),
       page.getByTestId("persona-mateo").locator("summary"),
       page.getByRole("button", { name: "Use Mateo’s portfolio" }),
@@ -93,8 +92,8 @@ test.describe("keyboard-only journey through the three steps", () => {
     await expect(page.locator("#main-content")).toBeFocused();
     await expect(page).toHaveURL(/\?fixtures=1$/); // the skip link does not disturb the stage in the hash
 
-    // ---- Step 2, "Test an idea": without a confirmed limit it says what comes first
-    await tabToAndPress(page, continueLink);
+    // ---- Step 3, "Test an idea", opened early from the stepper: without a confirmed limit it says what comes first
+    await tabToAndPress(page, stepLink(page, 3));
     await expectScreen(page, "purchase");
     await expectPersistentLabels(page);
     await expect(page).toHaveTitle(`Test an idea: ${APP_NAME}`);
@@ -348,8 +347,9 @@ test.describe("keyboard-only journey through the three steps", () => {
     await expect(drawer).toBeHidden();
     await expect(evidenceButton).toBeFocused();
 
-    // ---- Step 3, "Review this result": challenge ----------------------------
-    await expect(page.getByTestId("result-actions").getByRole("link")).toHaveText(["Modify my idea", "Review or dispute this result"]);
+    // ---- Step 4, "Review this result": challenge ----------------------------
+    // The next actions of the plain reading; Robert's recorded result supports a largest compliant purchase.
+    await expect(page.getByTestId("result-actions").getByRole("link")).toHaveText(["Modify my idea", "Largest share that fits my limits", "Sources and missing data", "Review or dispute this result"]);
     await tabToAndPress(page, page.getByRole("link", { name: "Review or dispute this result" }), "Enter");
     await expectScreen(page, "challenge");
     await expectPersistentLabels(page);
@@ -429,7 +429,7 @@ test.describe("keyboard-only journey through the three steps", () => {
   test("the stepper works as links: Enter moves to a step and Back returns", async ({ page }) => {
     await page.goto(START_URL);
     await expectPortfolioLoaded(page);
-    await tabToAndPress(page, stepLink(page, 2));
+    await tabToAndPress(page, stepLink(page, 3));
     await expectScreen(page, "purchase");
     await expect(page).toHaveURL(/#\/purchase$/);
     await page.goBack();
@@ -438,10 +438,10 @@ test.describe("keyboard-only journey through the three steps", () => {
     await expectScreen(page, "purchase");
     await expect(stageHeading(page)).toBeVisible();
     // No step is locked: the last one says what it needs instead of showing a verdict.
-    await tabToAndPress(page, stepLink(page, 3));
+    await tabToAndPress(page, stepLink(page, 4));
     await expectScreen(page, "verdict");
     await expect(page).toHaveURL(/#\/verdict$/);
-    await expect(page.getByRole("main").getByText("There is no result yet")).toBeVisible();
+    await expect(page.getByRole("main").getByText("There is no result to show yet")).toBeVisible();
     await expect(page.getByTestId("verdict-summary")).toHaveCount(0);
   });
 });
