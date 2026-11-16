@@ -242,7 +242,7 @@ test.describe("Mateo, live against the local backend", () => {
     // Not a dead end: the form is still there, and so is the report.
     await expect(page.getByTestId("submit-preference")).toBeEnabled();
     await expect(form.getByLabel("What did you mean?")).toHaveValue(typed);
-    await page.getByRole("link", { name: "Step 3 of 3: Understand the result" }).click();
+    await page.getByRole("link", { name: "Step 4 of 4: Understand the result" }).click();
     await expect(page.getByTestId("report")).toBeVisible();
     await expect(page.getByTestId("report")).toHaveAttribute("data-job-id", job.id);
 

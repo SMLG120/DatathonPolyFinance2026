@@ -1,9 +1,10 @@
 "use client";
 
-import { LinkButton } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import type { CheckResult } from "@/lib/contracts";
 import { summaryCounts } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
+import { PRINT_REPORT_LABEL } from "./PrintReport";
 import { goToSection } from "./VerdictSummary";
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
@@ -12,9 +13,16 @@ const plural = (count: number, one: string, many: string) => `${count} ${count =
  * The practical reading of the result, in plain words, and the actions available from here. Every number is one of the
  * engine's own counts (summaryCounts); nothing is recomputed, and nothing here recommends a purchase.
  */
-export function WhatNext({ result }: { result: CheckResult }) {
+export function WhatNext({ result, onPrint }: { result: CheckResult; onPrint?: () => void }) {
   const counts = summaryCounts(result.summary);
-  if (counts.total === 0) return null;
+  // Prints this report, or saves it as PDF, through the browser. Offered only when the caller can print it.
+  const printButton = onPrint ? (
+    <Button onClick={onPrint} data-testid="print-report-button" title="Opens the browser's print dialog, where the report can be printed or saved as a PDF file">
+      {PRINT_REPORT_LABEL}
+    </Button>
+  ) : null;
+  // A report with no evaluated rule has no reading to give, but it can still be printed.
+  if (counts.total === 0) return printButton ? <div className="flex flex-wrap gap-3" data-testid="result-actions">{printButton}</div> : null;
   // Offered only when the engine supports a figure; the section itself says why when it does not.
   const hasMax = result.max_compliant?.status === "SUPPORTED";
   let meaning: string;
@@ -52,6 +60,7 @@ export function WhatNext({ result }: { result: CheckResult }) {
           Sources and missing data
         </LinkButton>
         <LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton>
+        {printButton}
       </div>
     </section>
   );
