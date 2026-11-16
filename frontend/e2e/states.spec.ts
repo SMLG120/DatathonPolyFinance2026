@@ -21,8 +21,6 @@ import {
 /** From the first screen to "Your limits", with the pointer, without confirming anything. */
 async function toLimits(page: Page) {
   await page.getByTestId("continue-link").click();
-  await expectScreen(page, "purchase");
-  await page.getByRole("link", { name: "Set my limits" }).click();
   await expectScreen(page, "goals");
 }
 
@@ -200,8 +198,8 @@ test.describe("states other than the happy path", () => {
     await expect(page.getByTestId("see-verdict")).toHaveCount(0);
     await expectNoAxeViolations(page, "investigation failed");
 
-    // The result screen of the same job: the third step of the navigation leads back to it.
-    await stepLink(page, 3).click();
+    // The result screen of the same job: the last step of the navigation leads back to it.
+    await stepLink(page, 4).click();
     await expectScreen(page, "verdict");
     await expect(mainAlert(page)).toContainText("This investigation failed, so there is no verdict");
     await expect(page.getByTestId("failure-code")).toContainText("A failed run is not a pass and not a fail.");

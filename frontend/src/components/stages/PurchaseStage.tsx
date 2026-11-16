@@ -418,7 +418,7 @@ export function PurchaseStage() {
             title="No confirmed rule yet"
             action={
               <LinkButton href={stageHref("goals")} size="sm">
-                Go to Goals &amp; rules
+                Set your limits
               </LinkButton>
             }
           >

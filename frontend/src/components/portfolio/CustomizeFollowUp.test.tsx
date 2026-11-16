@@ -323,7 +323,7 @@ describe("Customize this profile: leaving stage 1 with the editor open", () => {
 
     // Leave by the Continue control, with the form neither applied nor cancelled.
     await user.click(screen.getByTestId("continue-link"));
-    await waitFor(() => expect(window.location.hash).toBe("#/purchase"));
+    await waitFor(() => expect(window.location.hash).toBe("#/goals"));
     expect(screen.queryByTestId("customized-badge")).toBeNull();
     await confirmScenarioRules(user);
     expect(screen.getByTestId("objective")).not.toHaveTextContent("Sleep well.");
@@ -365,7 +365,7 @@ describe("An answer that arrives after another persona was chosen", () => {
     await go("investigation");
     expect(screen.getByText("No investigation has been started")).toBeInTheDocument();
     await go("verdict");
-    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+    expect(screen.getByText("There is no result to show yet")).toBeInTheDocument();
     await go("goals");
     await screen.findAllByTestId("rule-card");
     expect(screen.queryByTestId("policy-rule-card")).toBeNull();
