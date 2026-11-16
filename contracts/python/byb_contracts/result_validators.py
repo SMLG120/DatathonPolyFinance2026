@@ -316,6 +316,13 @@ def investigation_job_errors(job: Any) -> list[str]:
             errors.append("result.persona_id differs from the job's")
         if job["resolved_request"] != result["purchase_request"]:
             errors.append("resolved_request must equal result.purchase_request")
+    portfolio = job.get("portfolio")  # optional member: the exact portfolio the job is checked against (api.md section 2a)
+    if portfolio is not None:
+        errors.extend(f"portfolio: {e}" for e in portfolio_errors(portfolio))
+        if portfolio["persona_id"] != job["persona_id"]:
+            errors.append("portfolio.persona_id differs from the job's")
+        if result and result["portfolio_id"] != portfolio["portfolio_id"]:
+            errors.append("result.portfolio_id differs from the portfolio stored with the job")
     if job["request"]["instrument_id"] is not None and job["resolved_request"] is not None and job["resolved_request"] != job["request"]:
         errors.append("resolved_request: a structured request is authoritative and cannot be altered")
     if terminal:

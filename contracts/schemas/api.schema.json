@@ -31,6 +31,14 @@
         "purchasable_instrument_ids": { "type": "array", "items": { "$ref": "common.schema.json#/$defs/instrument_id" }, "description": "Instruments a purchase request may name: in the registry AND with a price series in market_data." }
       }
     },
+    "custom_portfolio": {
+      "type": "object", "required": ["cash_weight", "positions"], "additionalProperties": false,
+      "description": "A user-edited fictional portfolio, sent with POST /check and POST /investigations. Only weights are supplied: the server builds the full portfolio (persona, valuation date, currency, fictional: true) and derives its portfolio_id from the content. Semantic rules enforced by the server, not expressible here: cash_weight + sum(positions.weight) == 1 within 1e-9; instrument_id values are unique; every instrument_id is in purchasable_instrument_ids of GET /portfolios/{persona_id}. Negative weights (shorting) and a total above 1 (leverage) are therefore impossible.",
+      "properties": {
+        "cash_weight": { "$ref": "common.schema.json#/$defs/fraction" },
+        "positions": { "type": "array", "maxItems": 40, "items": { "$ref": "portfolio.schema.json#/properties/positions/items" } }
+      }
+    },
     "interpret_request": {
       "type": "object", "required": ["persona_id", "text", "policy_id", "policy_version"], "additionalProperties": false,
       "properties": {
@@ -70,7 +78,8 @@
         "policy_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
         "policy_version": { "type": ["integer", "null"], "minimum": 1 },
         "purchase_request": { "$ref": "purchase_request.schema.json" },
-        "draft_rules": { "anyOf": [{ "type": "null" }, { "type": "array", "items": { "$ref": "rule.schema.json" } }], "description": "Null: evaluate the stored policy version (policy_id and policy_version required), preview false. Array: evaluate exactly these rules instead, preview true, nothing stored." }
+        "draft_rules": { "anyOf": [{ "type": "null" }, { "type": "array", "items": { "$ref": "rule.schema.json" } }], "description": "Null: evaluate the stored policy version (policy_id and policy_version required), preview false. Array: evaluate exactly these rules instead, preview true, nothing stored." },
+        "custom_portfolio": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/custom_portfolio" }], "description": "OPTIONAL member (the one exception to 'every property is required'). Absent or null: the persona's scenario portfolio is checked. An object: this customized fictional portfolio is checked instead (contracts/api.md section 2a)." }
       }
     },
     "investigation_create_request": {
@@ -80,7 +89,8 @@
         "policy_id": { "$ref": "common.schema.json#/$defs/id" },
         "policy_version": { "type": "integer", "minimum": 1 },
         "request": { "oneOf": [{ "$ref": "purchase_request.schema.json" }, { "$ref": "purchase_request.schema.json#/$defs/unresolved" }] },
-        "parent_investigation_id": { "$ref": "common.schema.json#/$defs/nullable_id" }
+        "parent_investigation_id": { "$ref": "common.schema.json#/$defs/nullable_id" },
+        "custom_portfolio": { "anyOf": [{ "type": "null" }, { "$ref": "#/$defs/custom_portfolio" }], "description": "OPTIONAL member. Absent or null: the persona's scenario portfolio is investigated. An object: this customized fictional portfolio is investigated instead and stored with the job (contracts/api.md section 2a)." }
       }
     },
     "investigation_accepted": {
