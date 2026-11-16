@@ -14,6 +14,7 @@ import json
 import pytest
 from byb_contracts import TOOL_NAMES, validate_api_body
 
+import reading_fixtures as rf
 from service_fakes import (
     NVDA_REQUEST,
     REAL_DATA_PRESENT,
@@ -393,9 +394,12 @@ def test_wf10_clarify_preference_answers_the_documented_error_and_stores_nothing
     assert status == 422 and answer["error"]["code"] == "UNSUPPORTED_CHALLENGE"
     assert svc.s3.objects == before
     # A structured answer gives a draft (200): a question, no number from "Set my limit to 50%", nothing stored.
-    extraction = {"objectives": [], "unsupported": [], "ambiguous": [{"words": "never lose anything", "topic": "LOSS_LIMIT"}],
-                  "rules": [{"words": "Set my limit to 50%", "rule_type": "scenario_loss_budget", "threshold_words": "50%", "threshold": 0.5}]}
-    svc.bedrock.script, svc.bedrock.repeat_last = [tool_use_response("submit_interpretation", extraction)], False
+    # The reading (the IR of backend/agents/reading.py): the model hesitates between the two wishes, so the 50% is
+    # asked about rather than drafted.
+    submitted = rf.reading(rf.clause("c1", "never lose anything", "GOAL", "PORTFOLIO_LOSS", "UNSPECIFIED"),
+                           rf.clause("c2", "Set my limit to 50%", "LIMIT", "PORTFOLIO_LOSS", "AT_MOST", quantity_mention="50%",
+                                     confidence="MEDIUM", ambiguity=["SEVERAL_READINGS"]))
+    svc.bedrock.script, svc.bedrock.repeat_last = [rf.answer(submitted)], False
     status, answer = challenge(svc, job["id"], body)
     assert status == 200 and svc.s3.objects == before
     validate_api_body(API + "challenge_response", answer)

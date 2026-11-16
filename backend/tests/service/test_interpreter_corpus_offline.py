@@ -102,6 +102,8 @@ def test_corpus_errors_catch_duplicates_and_empty_categories():
 @pytest.mark.parametrize("quote, value", [
     ("10%", 0.10), ("10 %", 0.10), ("10 percent", 0.10), ("2,5 %", 0.025), ("7.5%", 0.075), ("12.5 pct", 0.125),
     ("ten percent", 0.10), ("twenty-five percent", 0.25), ("dix pour cent", 0.10), ("half", 0.5), ("a tenth", 0.1),
+    # forms the interpreter-4 compiler reads (quantity.parse), so the scorer must not call them invented
+    ("10％", 0.10), ("１０%", 0.10), ("10 pc", 0.10), ("1/10", 0.1), ("10 por ciento", 0.10),
 ])
 def test_literal_values_read_written_quantities(quote, value):
     assert any(abs(v - value) < 1e-9 for v in ev.literal_values(quote))
@@ -294,3 +296,21 @@ def test_report_counts():
     assert totals["passed"] == 1 and totals["errors"] == 1 and totals["failed"] == 1 and totals["items_with_safety_violations"] == 1
     assert totals["per_category"]["a"] == {"total": 2, "passed": 1, "correct": 2, "unsafe": 1, "errors": 0}
     assert totals["latency_median_seconds"] == 2.0 and totals["latency_p95_seconds"] == 3.0
+
+
+def test_prose_check_strips_names_and_templates_longest_first():
+    """A short template piece must not cut a company name apart, and a short data word must not cut a template that
+    quotes it: both orders were once wrong and produced false prose-leak violations."""
+    text = "Avoid Canadian National Railway"
+    templates = [piece for piece in ev.server_literals() if "'avoid Energy'" in piece]
+    assert templates, "the named-sectors template quotes 'avoid Energy'"
+    assert ev.unexplained_words("Canadian National Railway", text, ["Canadian National Railway", "dia"]) == []
+    assert ev.unexplained_words(templates[0], text, ["Energy"]) == []
+
+
+def test_the_audit_examples_are_corpus_items():
+    """The interpreter audit's example inputs are scored on every real-model run (tag 'audit')."""
+    audit = [i for i in CORPUS["items"] if "audit" in i.get("tags", [])]
+    assert len(audit) >= 25 and all(i["id"].startswith("aud-") for i in audit)
+    texts = {i["text"] for i in audit}
+    assert {"keep microsft under 5%", "No oil companies but Enbridge is fine", "Please confirm: at most 10% per company"} <= texts

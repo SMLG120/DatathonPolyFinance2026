@@ -55,6 +55,7 @@ import re
 import statistics
 import sys
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -202,13 +203,14 @@ _UNITS = {"zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six"
           "dix": 10, "onze": 11, "douze": 12, "treize": 13, "quatorze": 14, "quinze": 15, "seize": 16}
 _TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
          "vingt": 20, "trente": 30, "quarante": 40, "cinquante": 50, "soixante": 60}
-_PERCENT_WORD = r"(?:%|percent\b|per\s*cent\b|pct\b|pour\s*cent\b|pourcent\b|prozent\b)"
+_PERCENT_WORD = r"(?:%|percent\b|per\s*cent\b|pct\b|pc\b|pour\s*cent\b|pourcent\b|por\s*ciento\b|prozent\b)"
 _DIGIT_PERCENT_RE = re.compile(r"(?<![\d.,])(\d{1,3}(?:[.,]\d+)?)\s*" + _PERCENT_WORD, re.IGNORECASE)
 _WORD_NUMBER = "|".join(sorted(list(_UNITS) + list(_TENS) + ["hundred", "cent"], key=len, reverse=True))
 _WORD_PERCENT_RE = re.compile(rf"\b((?:(?:{_WORD_NUMBER})[\s-]*(?:and\s+|et\s+)?)+)" + _PERCENT_WORD, re.IGNORECASE)
 _FRACTIONS = {"half": 0.5, "moitie": 0.5, "moitié": 0.5, "third": 1 / 3, "tiers": 1 / 3, "quarter": 0.25, "quart": 0.25,
               "fifth": 0.2, "cinquieme": 0.2, "cinquième": 0.2, "tenth": 0.1, "dixieme": 0.1, "dixième": 0.1}
 _FRACTION_RE = re.compile(r"\b(" + "|".join(_FRACTIONS) + r")\b", re.IGNORECASE)
+_RATIO_RE = re.compile(r"(?<![\d/])(\d{1,3})\s*/\s*(\d{1,3})(?![\d/])")
 
 
 def _words_value(words: str) -> float | None:
@@ -230,13 +232,16 @@ def _words_value(words: str) -> float | None:
 
 def literal_values(quote: str) -> list[float]:
     """Fractions a quote literally denotes: digit percentages, spelled-out percentages and fraction words.
-    A bare decimal ("0.10") or a bare number ("10") denotes nothing: its unit is not written."""
+    A bare decimal ("0.10") or a bare number ("10") denotes nothing: its unit is not written. Full-width characters
+    ("10％") are read as their plain forms, as the investor sees them."""
+    quote = unicodedata.normalize("NFKC", quote)
     values = [float(m.group(1).replace(",", ".")) / 100 for m in _DIGIT_PERCENT_RE.finditer(quote)]
     for match in _WORD_PERCENT_RE.finditer(quote):
         value = _words_value(match.group(1))
         if value is not None:
             values.append(value / 100)
     values.extend(_FRACTIONS[m.group(1).lower()] for m in _FRACTION_RE.finditer(quote))
+    values.extend(int(m.group(1)) / int(m.group(2)) for m in _RATIO_RE.finditer(quote) if 0 < int(m.group(2)) and int(m.group(1)) <= int(m.group(2)))
     return values
 
 
@@ -270,15 +275,15 @@ def server_literals() -> list[str]:
 def unexplained_words(shown: str, text: str, data_words: list[str]) -> list[str]:
     """Words of ``shown`` that are neither a server template, the investor's own words, nor snapshot data."""
     rest = shown
-    # Templates first: a template piece can start with the apostrophe that closes an echoed span ("'{sector}': ...").
-    for literal in server_literals():
-        if literal in rest:
-            rest = rest.replace(literal, " ")
+    # Template pieces and snapshot data together, longest first. Either order alone is wrong: a short template piece
+    # ("dia", "any", "_CA_") would cut a company name or id apart ("Canadian National Railway", "SYN_CA_ISSUER_1"),
+    # and a short data word ("Energy") would cut a template that quotes it ("... 'avoid Energy' ..."). A template
+    # piece can start with the apostrophe that closes an echoed span ("'{sector}': ...").
+    for piece in sorted({*server_literals(), *data_words}, key=len, reverse=True):
+        if piece and piece in rest:
+            rest = rest.replace(piece, " ")
     # Quoted echoes of the investor's text ('...').
     rest = re.sub(r"'([^']*)'", lambda m: " " if m.group(1) in text else m.group(0), rest)
-    for word in sorted(data_words, key=len, reverse=True):
-        if word and word in rest:
-            rest = rest.replace(word, " ")
     rest = re.sub(r"\d{4}-\d{2}-\d{2}", " ", rest)
     return [w for w in re.findall(r"[A-Za-zÀ-ÿ]{3,}", rest) if w not in text]
 
