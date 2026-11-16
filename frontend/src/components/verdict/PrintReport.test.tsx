@@ -6,7 +6,7 @@ import type { CheckResult, InvestigationJob, Portfolio } from "@/lib/contracts";
 import { CUSTOMIZED_LABEL } from "@/lib/customize";
 import { formatDate, formatFraction, formatGap } from "@/lib/format";
 import { limitNoun, ruleDirection } from "@/lib/rules";
-import { recorded } from "@/test/probes";
+import { probe, recorded } from "@/test/probes";
 import { renderWithApp } from "@/test/render";
 import { PRINT_NOT_ADVICE, PRINT_REPORT_LABEL, PrintReport, printDocumentTitle, useReportPrint, type PrintReportProps } from "./PrintReport";
 import { Report } from "./Report";
@@ -259,6 +259,17 @@ describe("the export button on a report", () => {
     expect(button).toHaveAttribute("data-testid", "print-report-button");
     fireEvent.click(button);
     expect(onPrint).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("the export button when the report has no evaluated rule", () => {
+  it("is still offered, although the report has no reading to give", () => {
+    const job = recorded.robertJob();
+    const result = resultOf(job);
+    result.summary = probe.summaryWith("NO_RULES_EVALUATED", { pass: 0, fail: 0, unknown: 0, evaluated: 0 });
+    renderWithApp(<Report job={job} result={result} policy={recorded.robertPolicyV1()} objectives={[]} instruments={recorded.robertPortfolio().instruments} onPrint={vi.fn()} />);
+    expect(screen.queryByTestId("what-next")).toBeNull();
+    expect(within(screen.getByTestId("result-actions")).getByRole("button", { name: PRINT_REPORT_LABEL })).toBeVisible();
   });
 });
 

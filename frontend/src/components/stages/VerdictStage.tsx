@@ -95,14 +95,18 @@ export function VerdictStage() {
     return (
       <StageFrame stage="verdict" lead={LEAD}>
         <EmptyBlock
-          title="There is no result yet"
+          title="There is no result to show yet"
           action={
-            <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Proposed purchase
+            <LinkButton href={stageHref("purchase")} size="sm" data-testid="empty-result-action">
+              Go to Test an idea
             </LinkButton>
           }
         >
-          <p>A verdict exists only after an investigation has run. Nothing is shown in its place.</p>
+          <p>A result exists only after you check an idea. Nothing is shown in its place.</p>
+          <p data-testid="empty-result-reload-note">
+            Results are kept only while this tab stays open: reloading the page or opening it from a saved link starts a new session.
+            Choose a profile, confirm your limits, then check your idea again.
+          </p>
         </EmptyBlock>
       </StageFrame>
     );

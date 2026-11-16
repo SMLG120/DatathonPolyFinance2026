@@ -10,6 +10,7 @@ import {
   overviewChart,
   panelSummary,
   START_URL,
+  stepLink,
 } from "./helpers";
 
 /** Screen 1: the portfolio table is in a closed panel; a tap opens it. */
@@ -19,11 +20,9 @@ async function tapPortfolioOpen(page: Page) {
   await expect(page.getByTestId("portfolio-table")).toBeVisible();
 }
 
-/** From screen 1 to "Your limits" with taps: "Test an idea" says the limits come first and links to them. */
+/** From screen 1 to "Your limits" with taps: "Set your limits" is the next step. */
 async function tapToLimits(page: Page) {
   await page.getByTestId("continue-link").tap();
-  await expectScreen(page, "purchase");
-  await page.getByRole("link", { name: "Set my limits" }).tap();
   await expectScreen(page, "goals");
 }
 
@@ -57,7 +56,7 @@ test.describe("mobile viewport", () => {
     await expectTestDataMarkers(page, "mobile, step 1");
     await expectNoAxeViolations(page, "mobile, step 1");
 
-    await page.getByTestId("continue-link").tap();
+    await stepLink(page, 3).tap();
     await expectScreen(page, "purchase");
     await expect(page.getByRole("main").getByText("First, confirm your limits")).toBeVisible();
     await expectNoHorizontalOverflow(page, "step 2, test an idea, no confirmed limit yet");

@@ -25,8 +25,12 @@ export interface StageFrameProps {
  */
 export function StageFrame({ stage, lead, children, continueNote }: StageFrameProps) {
   const current = journeyFor(stage);
-  const previous = stage === "goals" || stage === "purchase" ? { id: "persona" as const, title: "profiles" } : stage === "verdict" || stage === "investigation" || stage === "challenge" ? { id: "purchase" as const, title: "your idea" } : null;
-  const next = stage === "persona" ? { id: "purchase" as const, title: "Test an idea" } : stage === "goals" ? { id: "purchase" as const, title: "Test an idea" } : null;
+  const previous =
+    stage === "goals" ? { id: "persona" as const, title: "profiles" }
+    : stage === "purchase" ? { id: "goals" as const, title: "your limits" }
+    : stage === "verdict" || stage === "investigation" || stage === "challenge" ? { id: "purchase" as const, title: "your idea" }
+    : null;
+  const next = stage === "persona" ? { id: "goals" as const, title: "Set your limits" } : stage === "goals" ? { id: "purchase" as const, title: "Test an idea" } : null;
 
   return (
     <article aria-labelledby="stage-title" className="space-y-6">
