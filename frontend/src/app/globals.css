@@ -13,18 +13,18 @@
   --color-*: initial;
 
   /* Neutrals */
-  --color-canvas: #fafafa; /* page background */
+  --color-canvas: #f4f7ff; /* page background */
   --color-surface: #ffffff; /* cards, drawer, inputs */
-  --color-sunken: #f4f4f5; /* inset panels, table headers */
-  --color-line: #e4e4e7; /* decorative hairlines only */
-  --color-line-strong: #71717a; /* control boundaries (>= 3:1) */
-  --color-ink: #18181b; /* primary text */
-  --color-ink-muted: #52525b; /* secondary text */
+  --color-sunken: #edf3ff; /* inset panels, table headers */
+  --color-line: #dfe8ff; /* decorative hairlines only */
+  --color-line-strong: #5b6ea8; /* control boundaries (>= 3:1) */
+  --color-ink: #1d2940; /* primary text */
+  --color-ink-muted: #4f5f7d; /* secondary text */
 
-  /* shadcn zinc neutrals for controls; Tremor blue for data. */
-  --color-accent: #18181b;
-  --color-accent-strong: #09090b; /* hover / pressed */
-  --color-accent-soft: #f4f4f5; /* tint behind accent text; chart track */
+  /* Brand accents with a stronger blue-violet identity. */
+  --color-accent: #2f5bdb;
+  --color-accent-strong: #2247bd; /* hover / pressed */
+  --color-accent-soft: #edf3ff; /* tint behind accent text; chart track */
   --color-on-accent: #ffffff;
 
   /* Status. Always paired with an icon shape and a word, never colour alone. */
@@ -36,14 +36,14 @@
   --color-unknown-soft: #fffbeb;
 
   /* Persistent simulation banner */
-  --color-banner: #18181b;
-  --color-on-banner: #ffffff;
-  --color-on-banner-muted: #d4d4d8;
+  --color-banner: #2448c6;
+  --color-on-banner: #f8fbff;
+  --color-on-banner-muted: #dfeaff;
 
   /* Exposure chart: one hue, darker = held more directly (validated as an ordinal ramp). */
-  --color-chart-direct: #1d4ed8;
-  --color-chart-indirect: #4f7ecb;
-  --color-chart-track: #eff6ff;
+  --color-chart-direct: #2d5be5;
+  --color-chart-indirect: #3d5ec8;
+  --color-chart-track: #edf3ff;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -59,7 +59,10 @@
   }
 
   body {
-    background-color: var(--color-canvas);
+    background:
+      radial-gradient(circle at top, rgba(86, 125, 255, 0.2), transparent 30%),
+      radial-gradient(circle at right top, rgba(167, 139, 250, 0.18), transparent 28%),
+      linear-gradient(180deg, #edf4ff 0%, var(--color-canvas) 24%, #f8faff 100%);
     color: var(--color-ink);
     font-family: var(--font-sans);
     line-height: 1.6;
