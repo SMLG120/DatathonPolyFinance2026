@@ -9,8 +9,9 @@ Regenerate every number in sections A to D (they are the verbatim output of the 
 
 The script only reads `data/processed/{instruments,holdings,market_data,controversies}.json` and
 `contracts/scenarios/robert.json`, builds policy v1 (both scenario rules confirmed) and v2 (cap superseded by a 0.30
-cap), and calls the engine. Last generated with Python 3.15.2, engine `byb-engine-1.0.1`. Version 1.0.1 changed evidence links and display text
-only: every number, status and boundary below is identical to the 1.0.0 run.
+cap), and calls the engine. Last generated on 2026-11-15 with Python 3.14.7, engine `byb-engine-1.0.8`, on SPY as of 2026-11-12 (`SPY_2026-11-15.xlsx`, the same
+bytes as the 2026-11-14 file) and XIU.TO as of 2026-11-12 (`XIU_2026-11-14.csv`). Every number, status and boundary below is identical
+to the 1.0.0 and 1.0.1 runs; only source ids, evidence links and display text changed.
 
 ## 1. Result
 
@@ -127,11 +128,11 @@ None of these changed a status or a number in `rule_results` or `max_compliant`.
 
 ## A. Inputs
 
-- CALCULATION_VERSION: `byb-engine-1.0.1`
+- CALCULATION_VERSION: `byb-engine-1.0.8`
 - Portfolio `pf-robert-fictional-1` (fictional), valuation date 2026-11-12: cash 0.3; XBB.TO 0.3, SPY 0.2, XIU.TO 0.1, RY.TO 0.05, JNJ 0.05
 - Request: NVDA to a final direct weight of 0.25, funding CASH; starting direct weight 0.0
 - Scenario `replay_2022`: base date 2021-12-31, end date 2022-12-30, status COMPUTED
-- Holdings snapshot: SPY holdings_date 2026-11-12, source `ssga_spy_holdings_2026-11-14`, coverage 0.99871325 (PARTIAL); XIU.TO holdings_date 2026-11-12, source `ishares_xiu_holdings_2026-11-14`, coverage 0.9977 (PARTIAL)
+- Holdings snapshot: SPY holdings_date 2026-11-12, source `ssga_spy_holdings_2026-11-15`, coverage 0.99871325 (PARTIAL); XIU.TO holdings_date 2026-11-12, source `ishares_xiu_holdings_2026-11-14`, coverage 0.9977 (PARTIAL)
 - market_data valuation_date 2026-11-12; price source id `starter_prices_daily`, FX source id `starter_fx_usdcad`
 
 ## B. 2022 replay inputs (adjusted close, backward-matched FX to CAD)
@@ -180,7 +181,7 @@ Policy `pol-robert-real` version 1, content hash `sha256:1d548d463d690612d070a47
 ### Evidence ids (in the check_result for the requested 0.25)
 
 - max_compliant.evidence_ids: ['ev-max-final', 'ev-max-added']
-  - `ev-max-final`: max_compliant_final_weight = 0.083924028; derived_from ['ev-thr-robert-issuer-cap-1', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start', 'ev-w-NVDA-start']; formula: upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / (change of that value per unit of weight bought): robert-issuer-cap-1 (NVIDIA): 0 + (0.1 - 0.012763304) / 1 = 0.087236696; robert-loss-budget-1: 0 + (0.1 - ≈0.060667029) / ≈0.468673537 ≈ 0.083924028; cash: 0 + 0.3 = 0.3. Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded to 9 decimals = 0.083924028
+  - `ev-max-final`: max_compliant_final_weight = 0.083924028; derived_from ['ev-thr-robert-issuer-cap-1', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start', 'ev-w-NVDA-start']; formula: upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / (change of that value per unit of weight bought): robert-issuer-cap-1 (NVIDIA): 0 + (0.1 - 0.012763304) / 1 = 0.087236696; robert-loss-budget-1: 0 + (0.1 - ≈0.060667029) / ≈0.468673537 ≈ 0.083924028; cash: 0 + 0.3 = 0.3. Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded down to 9 decimals = 0.083924028
   - `ev-max-added`: max_compliant_additional_purchase = 0.083924028; derived_from ['ev-max-final', 'ev-w-NVDA-start', 'ev-thr-robert-issuer-cap-1', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start']; formula: 0.083924028 - 0 = 0.083924028
 - Records cited by `ev-max-final.derived_from` (the inputs of the closed form):
   - `ev-thr-robert-issuer-cap-1`: FICTIONAL_SCENARIO rule_threshold = 0.1, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources []
@@ -199,10 +200,10 @@ Policy `pol-robert-real` version 1, content hash `sha256:1d548d463d690612d070a47
   - `ev-px-NVDA-end`: FACT price_adj_close = 14.565303, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2022-12-30"}, sources ['starter_prices_daily']
   - `ev-fx-2021-12-31`: FACT fx_usdcad = 1.2678, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2021-12-31"}, sources ['starter_fx_usdcad']
   - `ev-fx-2022-12-30`: FACT fx_usdcad = 1.3544, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2022-12-30"}, sources ['starter_fx_usdcad']
-  - `ev-cw-SPY-NVIDIA`: FACT fund_constituent_weight = 0.06137977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
-  - `ev-cov-SPY`: CALCULATION fund_coverage_fraction = 0.99871325, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
+  - `ev-cw-SPY-NVIDIA`: FACT fund_constituent_weight = 0.06137977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
+  - `ev-cov-SPY`: CALCULATION fund_coverage_fraction = 0.99871325, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
   - `ev-cov-XIU.TO`: CALCULATION fund_coverage_fraction = 0.9977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ishares_xiu_holdings_2026-11-14']
-  - `ev-hdate-SPY`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
+  - `ev-hdate-SPY`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
   - `ev-hdate-XIU.TO`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ishares_xiu_holdings_2026-11-14']
 
 ### check_rules exactly at the boundary (target_direct_weight = 0.083924028)
@@ -251,7 +252,7 @@ Policy `pol-robert-real` version 2, content hash `sha256:80d685693ac78b3c609bb71
 ### Evidence ids (in the check_result for the requested 0.25)
 
 - max_compliant.evidence_ids: ['ev-max-final', 'ev-max-added']
-  - `ev-max-final`: max_compliant_final_weight = 0.083924028; derived_from ['ev-thr-robert-issuer-cap-2', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start', 'ev-w-NVDA-start']; formula: upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / (change of that value per unit of weight bought): robert-issuer-cap-2 (NVIDIA): 0 + (0.3 - 0.012763304) / 1 = 0.287236696; robert-loss-budget-1: 0 + (0.1 - ≈0.060667029) / ≈0.468673537 ≈ 0.083924028; cash: 0 + 0.3 = 0.3. Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded to 9 decimals = 0.083924028
+  - `ev-max-final`: max_compliant_final_weight = 0.083924028; derived_from ['ev-thr-robert-issuer-cap-2', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start', 'ev-w-NVDA-start']; formula: upper end of each constraint, as starting direct weight + (limit - measured value before the purchase) / (change of that value per unit of weight bought): robert-issuer-cap-2 (NVIDIA): 0 + (0.3 - 0.012763304) / 1 = 0.287236696; robert-loss-budget-1: 0 + (0.1 - ≈0.060667029) / ≈0.468673537 ≈ 0.083924028; cash: 0 + 0.3 = 0.3. Largest final direct weight at which every evaluated rule passes: the smallest of these, rounded down to 9 decimals = 0.083924028
   - `ev-max-added`: max_compliant_additional_purchase = 0.083924028; derived_from ['ev-max-final', 'ev-w-NVDA-start', 'ev-thr-robert-issuer-cap-2', 'ev-via-NVIDIA-SPY-start', 'ev-lo-NVIDIA-start', 'ev-up-NVIDIA-start', 'ev-unattr-SPY-start', 'ev-unattr-XIU.TO-start', 'ev-thr-robert-loss-budget-1', 'ev-scn-ret-start', 'ev-ret-NVDA', 'ev-cash-start']; formula: 0.083924028 - 0 = 0.083924028
 - Records cited by `ev-max-final.derived_from` (the inputs of the closed form):
   - `ev-thr-robert-issuer-cap-2`: FACT rule_threshold = 0.3, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources []
@@ -270,10 +271,10 @@ Policy `pol-robert-real` version 2, content hash `sha256:80d685693ac78b3c609bb71
   - `ev-px-NVDA-end`: FACT price_adj_close = 14.565303, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2022-12-30"}, sources ['starter_prices_daily']
   - `ev-fx-2021-12-31`: FACT fx_usdcad = 1.2678, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2021-12-31"}, sources ['starter_fx_usdcad']
   - `ev-fx-2022-12-30`: FACT fx_usdcad = 1.3544, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2022-12-30"}, sources ['starter_fx_usdcad']
-  - `ev-cw-SPY-NVIDIA`: FACT fund_constituent_weight = 0.06137977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
-  - `ev-cov-SPY`: CALCULATION fund_coverage_fraction = 0.99871325, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
+  - `ev-cw-SPY-NVIDIA`: FACT fund_constituent_weight = 0.06137977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
+  - `ev-cov-SPY`: CALCULATION fund_coverage_fraction = 0.99871325, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
   - `ev-cov-XIU.TO`: CALCULATION fund_coverage_fraction = 0.9977, state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ishares_xiu_holdings_2026-11-14']
-  - `ev-hdate-SPY`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-14']
+  - `ev-hdate-SPY`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ssga_spy_holdings_2026-11-15']
   - `ev-hdate-XIU.TO`: FACT holdings_date = '2026-11-12', state NOT_APPLICABLE, period {"type": "AS_OF", "date": "2026-11-12"}, sources ['ishares_xiu_holdings_2026-11-14']
 
 ### check_rules exactly at the boundary (target_direct_weight = 0.083924028)
