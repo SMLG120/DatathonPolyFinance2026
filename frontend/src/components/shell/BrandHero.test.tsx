@@ -1,9 +1,19 @@
 import { screen, waitFor } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { App } from "@/components/App";
 import { go, renderApp, toVerdict } from "@/test/app";
 import { BRAND_TAGLINE } from "./BrandHero";
 
 describe("BrandHero", () => {
+  it("titles the page ETHOS in the HTML the build writes, before any script runs", () => {
+    // The static export is rendered on the server: this is the title a crawler, a link preview and a slow connection see.
+    const html = renderToStaticMarkup(<App />);
+    expect(html).toContain("<title>ETHOS: fictional simulation</title>");
+    expect(html).toContain(">ETHOS</h1>");
+    expect(html).not.toContain("Before You Buy");
+  });
+
   it("shows the exact headline, subtitle and tagline on the first screen", async () => {
     renderApp();
     await screen.findByTestId("portfolio-table");
