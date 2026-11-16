@@ -8,6 +8,7 @@ import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { PortfolioChecked } from "@/components/portfolio/PortfolioChecked";
 import type { CheckResult, InvestigationJob, Objective, Policy, Portfolio } from "@/lib/contracts";
 import { formatCoverage, formatDate, formatDateTime, formatFraction } from "@/lib/format";
+import { t } from "@/lib/i18n";
 import { describePurchase, FUNDING_STATEMENT, instrumentName, type InstrumentRegistry } from "@/lib/portfolio";
 import { coverageText } from "@/lib/verdict";
 import { CoverageBlock, GoalContextList, MaxCompliantBlock } from "./ContextPanels";
