@@ -143,6 +143,12 @@ _HEDGE_RE = re.compile(r"\b(roughly|about|around|approximately|approx|maybe|perh
 _MAX_CUE_RE = re.compile(r"\b(?:do not|don['\u2019]t|not|no|never)\b[^.;%\d]{0,30}?\bmore than\b|"
                          r"\b(at most|no greater than|not exceed|never exceed|maximum|max|cap|capped|limit|limited|up to|ceiling)\b", re.IGNORECASE)
 _MIN_CUE_RE = re.compile(r"\b(at least|no less than|not less than|no fewer than|minimum|min|floor)\b", re.IGNORECASE)
+# Everyday comparatives. "less than 10%" and "below 10%" are maximums; "more than 20%" and "above 20%" are minimums, unless a
+# negation turns them around ("not more than", "no less than"), which the two cue patterns above already cover. They are looked
+# for only after those patterns are removed, so "don't want more than" is never read as a minimum.
+# A comparative counts only right before a number ("below 10%"), so "lose 10% over a year" holds no minimum cue.
+_SOFT_MAX_RE = re.compile(r"\b(less than|fewer than|below|under|beneath|lower than|smaller than|at maximum|atmost|maximun)\s*\d", re.IGNORECASE)
+_SOFT_MIN_RE = re.compile(r"\b(more than|greater than|above|over|higher than|atleast|at lest|minimun)\s*\d", re.IGNORECASE)
 # A negation left in the sentence once the cue phrases are removed ("I do not want a 10% limit").
 _NEGATION_RE = re.compile(r"\b(not|no|never|without|neither|nor|none|cannot)\b|n['\u2019]t\b", re.IGNORECASE)
 _LIMIT_TYPES = ("max_issuer_exposure", "min_issuer_exposure", "scenario_loss_budget")
@@ -454,6 +460,9 @@ def negated(sentence: str) -> bool:
 def direction_agrees(sentence: str, rule_type: str) -> bool:
     """The sentence carries a cue for the rule type's direction and none for the opposite one."""
     has_max, has_min = _MAX_CUE_RE.search(sentence) is not None, _MIN_CUE_RE.search(sentence) is not None
+    rest = _MIN_CUE_RE.sub(" ", _MAX_CUE_RE.sub(" ", sentence))
+    has_max = has_max or _SOFT_MAX_RE.search(rest) is not None
+    has_min = has_min or _SOFT_MIN_RE.search(rest) is not None
     if rule_type == "min_issuer_exposure":
         return has_min and not has_max
     if rule_type in ("exclusion", "controversy_exclusion"):
@@ -502,6 +511,17 @@ def draft_rule(rule_id: str, rule_type: str, parameters: dict[str, Any], words: 
         "original_words": words, "objective_id": objective_id, "scope_description": scope_description(rule_type, parameters),
         "confirmed_at": None, "confirmed_by": None, "supersedes_rule_id": None, "superseded_by_rule_id": None,
     }
+
+
+def _pct(fraction: float) -> str:
+    return f"{fraction * 100:g}%"
+
+
+def _limit_text(rule: dict[str, Any]) -> str:
+    if rule["rule_type"] == "exclusion":
+        return "that company is excluded"
+    scope = rule["parameters"]["issuer_scope"]
+    return f"{'any single company' if scope == 'any' else 'that company'} is capped at {_pct(rule['threshold'])}"
 
 
 def _option(option_id: str, label: str, description: str, supported: bool = True, rule: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -858,6 +878,41 @@ class _Builder:
                 continue
             self.rules.append(draft_rule(self._rule_id(rule_type), rule_type, parameters, words, objective_id, number))
 
+    def hold_back_conflicts(self) -> None:
+        """Two drafts of this request that no portfolio can satisfy together become one question.
+
+        Only the conflict the engine can prove is detected here (contracts/SEMANTICS.md, MIN_EXCEEDS_MAX_SAME_ISSUER): a minimum
+        for company X above a maximum whose scope is X or any company, and a minimum above 0 for a company the same request
+        excludes by name. Both numbers come from the investor's words; equal limits are not a conflict. Wishes that only pull
+        in different directions are left alone.
+        """
+        minimums = [r for r in self.rules if r["rule_type"] == "min_issuer_exposure" and r["threshold"] is not None]
+        for minimum in minimums:
+            issuer = minimum["parameters"]["issuer_id"]
+            for other in list(self.rules):
+                if other is minimum or minimum not in self.rules:
+                    continue
+                if other["rule_type"] == "max_issuer_exposure" and other["threshold"] is not None:
+                    clash = other["parameters"]["issuer_scope"] in (issuer, "any") and minimum["threshold"] > other["threshold"]
+                elif other["rule_type"] == "exclusion" and other["parameters"]["definition"]["kind"] == "named_issuers":
+                    clash = issuer in other["parameters"]["definition"]["issuer_ids"] and minimum["threshold"] > 0
+                else:
+                    clash = False
+                if not clash:
+                    continue
+                self.rules.remove(minimum)
+                self.rules.remove(other)
+                name = self.reference.describe(issuer)["name"]
+                question = (f"'{minimum['original_words']}' and '{other['original_words']}' cannot both hold: no portfolio can have at least "
+                            f"{_pct(minimum['threshold'])} in {name} while {_limit_text(other)}. Which one should be drafted?")
+                self.clarifications.append({
+                    "clarification_id": f"clar-{len(self.clarifications) + 1}", "about_words": minimum["original_words"], "question": question,
+                    "options": [
+                        _option("keep-first-limit", f"Keep only: {other['original_words']}", "The other wish is not drafted.", rule=other),
+                        _option("keep-second-limit", f"Keep only: {minimum['original_words']}", "The other wish is not drafted.", rule=minimum),
+                        _option(*_KEEP_QUALITATIVE),
+                    ]})
+
     def scan_catalog(self) -> None:
         """Words that are ambiguous whatever the model answers: "oil" always gets the exclusion-definition question, with Energy."""
         seen: set[str] = set()
@@ -899,6 +954,7 @@ def build_interpretation(extraction: dict[str, Any], *, text: str, persona_id: s
     builder.add_unsupported(lists["unsupported"])
     builder.scan_focus()  # last two: only fill what the model left without a code
     builder.scan_themes()
+    builder.hold_back_conflicts()  # after every rule is drafted: a proven conflict is a question, never two proposals
     return {
         "schema_version": SCHEMA_VERSION, "interpretation_id": interpretation_id, "persona_id": persona_id, "created_at": created_at,
         "model_id": model_id, "original_words": text, "objectives": builder.objectives, "proposed_rules": builder.rules,
