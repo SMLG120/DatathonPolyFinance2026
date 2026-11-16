@@ -77,7 +77,8 @@ _HEDGE_RE = re.compile(
     r"etwa|ungef[aä]hr|zirka|rund|vielleicht)\b")
 # Approximations that only ever trail an amount ("10% per company, give or take", "10 % environ"). Words that lead an
 # amount ("roughly", "~") are left out: after the mention they would belong to the next amount, not this one.
-_TRAILING_HEDGE_RE = re.compile(r"\b(?:or\s+so|give\s+or\s+take|ish|more\s+or\s+less|plus\s+ou\s+moins|environ|m[aá]s\s+o\s+menos|o\s+as[ií])\b")
+_TRAILING_HEDGE_RE = re.compile(r"\b(?:or\s+so|give\s+or\s+take|ish|more\s+or\s+less|plus\s+or\s+minus|or\s+thereabouts|circa|"
+                                r"plus\s+ou\s+moins|environ|[aà]\s+peu\s+pr[eè]s|m[aá]s\s+o\s+menos|o\s+as[ií])\b|\+\s*/\s*-|±")
 _HEDGE_WINDOW_TOKENS = 3
 
 # Two amounts joined like this are a range or an alternative ("5-10%", "between 5% and 10%", "5 or 6%").
@@ -87,6 +88,7 @@ _RANGE_LEAD_RE = re.compile(r"^(?:between|from|entre|de|desde|zwischen|von)\s+")
 _CURRENCY_RE = re.compile(r"[$€£¥]|\b(?:usd|eur|cad|dollars?|euros?)\b")
 _EXPONENT_RE = re.compile(r"\d\s*e\s*[+\-−]?\d")
 _SIGN_RE = re.compile(r"^[+\-−–—±]|[+\-−±]$")
+_LEADING_SIGN_RE = re.compile(r"[+\-−–—±]")
 _LETTER_IN_DIGITS_RE = re.compile(r"\d[^\W\d_]|[^\W\d_]\d")
 _TRIM = " \t\r\n.,;:!?\"'()[]{}«»“”‘’"
 
@@ -298,6 +300,8 @@ def parse(mention: str) -> Quantity:
         return Quantity(MALFORMED, None, quote, "EMPTY")
     if _HEDGE_RE.search(work):
         return Quantity(HEDGED, None, quote, "HEDGE_WORD")
+    if _LEADING_SIGN_RE.match(work):  # "-10%" and "-ten percent" alike: a signed amount is never a limit
+        return Quantity(MALFORMED, None, quote, "SIGNED")
     work = _BOUND_SUFFIX_RE.sub("", work)
     reading = _fraction(work) or _single(work)
     if reading is not None:
@@ -313,6 +317,34 @@ def parse(mention: str) -> Quantity:
 def number_tokens(text: str) -> list[tuple[int, int]]:
     """Offsets of every written number (Unicode digits, fullwidth included; "2,5" and "1.000.000" are one token)."""
     return [match.span() for match in _NUMBER_TOKEN_RE.finditer(text)]
+
+
+_NUMBER_JOINER = "-‐-―−"
+
+
+def splits_a_number(text: str, span: tuple[int, int]) -> bool:
+    """The span starts inside a longer written number: "5%" of "25%", "0%" of "10%", "10%" of "-10%" or "5-10%",
+    "five percent" of "twenty-five percent" or "treinta y cinco por ciento". Its value is then not what the investor
+    wrote, so it is never a threshold."""
+    start, end = span
+    if start <= 0:
+        return False
+    before = text[start - 1]
+    if before.isdigit() or before in _NUMBER_JOINER or before in "+±—–":
+        return True
+    if before in ".," and start >= 2 and text[start - 2].isdigit():
+        return True
+    first = re.match(r"[^\W\d_]+", text[start:end])
+    if first is None:
+        return False
+    head = _normalise(first.group(0))
+    words = re.findall(r"[^\W\d_]+", text[max(0, start - 40):start])
+    tail = text[max(0, start - 40):start]
+    if not words or not re.search(r"[^\W\d_][\s\-‐-―]+$", tail):
+        return False  # the word before is not joined to the amount by blanks or a hyphen
+    previous = [_normalise(w) for w in words[-2:]]
+    candidates = [f"{previous[-1]} {head}"] + ([f"{previous[0]} {previous[1]} {head}"] if len(previous) == 2 else [])
+    return any(c in NUMBER_WORDS for c in candidates)
 
 
 def is_year(token: str) -> bool:

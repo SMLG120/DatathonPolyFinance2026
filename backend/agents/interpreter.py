@@ -311,6 +311,13 @@ class Interpreter:
                     log.warning("interpreter_output_rejected", interpretation_id=interpretation_id, attempt=attempt, reason=rejected,
                                 stop_reason=record.get("stop_reason"), usage=record.get("usage"))
                     break
+                except (ValueError, KeyError, TypeError, IndexError) as error:
+                    # A reading the compiler could not render is a server bug, never a reason to answer 500: the answer
+                    # is treated as unusable (one fresh attempt, then 502), and the failure is logged without text.
+                    rejected = "compiler_error"
+                    log.error("interpreter_compiler_error", interpretation_id=interpretation_id, attempt=attempt,
+                              error_type=type(error).__name__)
+                    break
                 self._done("ok", interpretation_id, text, calls, usage=record.get("usage"), wall_ms=record.get("wall_ms"),
                            lookup_rounds=lookup_rounds, objectives=len(draft["objectives"]), proposed_rules=len(draft["proposed_rules"]),
                            clarifications=len(draft["clarifications"]), unsupported=len(draft["unsupported"]), **_reading_counts(reading, downgrades))

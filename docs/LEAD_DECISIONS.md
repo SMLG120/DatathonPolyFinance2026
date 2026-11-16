@@ -179,3 +179,47 @@ repo. This is demo-grade access control, disclosed as such, not user identity.
 
 Anyone needing a change outside their paths reports it to the lead in their
 final message instead of editing.
+
+## D10. Rule interpreter: the model reads, the server compiles (2026-11-15)
+
+The interpreter (`POST /rules/interpret`, `CLARIFY_PREFERENCE`) no longer asks
+the model for near-final rules checked by sentence-wide regex gates
+(interpreter-3). The model now returns a **reading**: clauses with closed codes
+and spans copied from the investor's text (`submit_reading`). A deterministic
+compiler (`backend/agents/compiler.py`) turns it into the draft, and every
+check can only move a clause down
+`RULE_WITH_NUMBER > RULE_NO_NUMBER > QUESTION > UNSUPPORTED > NOTHING`.
+Behaviour, field reference, mapping table and limits: `docs/INTERPRETER.md`.
+
+| Choice | Decision |
+| --- | --- |
+| Architecture | One model call (plus at most two read-only lookup rounds), a table-driven compiler that only downgrades. A second "audit" model call and a runtime dual pipeline were rejected; the audit stays a flag-gated future option. |
+| Numbers | The model never supplies one. `10%` and "ten percent" (with a percent word) can be `USER_STATED` thresholds; fractions and reused numbers ("same for Enbridge") are offered pre-filled, never drafted; bare numbers, ranges, hedged or malformed amounts give a question with a null threshold. |
+| Grounding | A company id counts only when the investor's words (or a one-match lookup on them) name it; a sector label only when the label or an everyday word for it is written. |
+| Conflicts | Rules that cannot all hold are never both `PROPOSED`: one question per set of clauses involved. A model `TENSION` is never a conflict. |
+| Corrections | Honoured when the later clause restates the same measure, the same rule type on the same kind of subject, or another rule on the same named companies; anything else is asked. This widens the plan's "same measure only" rule, to fix held-out correction faults. |
+| Lexical lists | Kept only for closed checks on model-isolated spans: amounts and dates, the "oil" catalog question, direction and comparative vetoes, injection, refusals, group totals. They can only downgrade, except the narrow "only <sector label>" net. |
+| Cost | Bedrock prompt caching (`cachePoint` after the system prompt and the tool list), interpreter only, switched off for the client if Bedrock refuses it. |
+| Contracts | No change to `contracts/`, `frontend/` or `backend/engine/`. Clarification topics are server-internal. |
+
+Prompt version `interpreter-5`. Evidence with the real model
+(`us.anthropic.claude-sonnet-5-5`, `scripts/eval_interpreter.py`):
+
+| | interpreter-3 baseline | Final run 1 | Final run 2 |
+| --- | --- | --- | --- |
+| Corpus passed | 208/242 | 278/278 | 277/278 |
+| Original 242 items | 208 | 242 | 241 |
+| Safety violations | 0 | 0 | 0 |
+| Latency median / p95 | 1.63 s / 3.79 s | 2.29 s / 4.91 s | 2.34 s / 4.90 s |
+| Fresh input tokens per call (median) | about 4k | 176 | 176 |
+
+Held-out corpus (122 items written without the prompt or tests): 103 -> 109
+passed, safety flags 2 -> 1 (the remaining one judged an over-broad check by
+its author). Reports: `/tmp/nl-plan/baseline_eval.json`,
+`/tmp/nl-plan/eval_final_run1.json`, `/tmp/nl-plan/eval_final_run2.json`,
+`/tmp/nl-plan/heldout_eval.json`, `/tmp/nl-plan/heldout_final.json`.
+
+Known shortfall: the whole uncached prompt is about 6.9k tokens, so the 4.5k
+input-token target holds only for billed (fresh) input. The residual risk is a
+wrong code on words that pass every check; every draft stays `PROPOSED`, quotes
+the investor's words and needs an explicit confirmation.

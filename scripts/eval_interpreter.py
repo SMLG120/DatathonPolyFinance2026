@@ -54,6 +54,7 @@ import math
 import re
 import statistics
 import sys
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -497,8 +498,18 @@ def run(items: list[dict], *, universe: str, model: str, persona: str, concurren
     data_words = _data_words(snapshot)
     config = ApiConfig(data_bucket="unused", worker_function_name="unused", model_id=model, interpreter_enabled=True)
     interpreter = _build_interpreter(boto3.session.Session(region_name="us-east-1"), Config, config, SystemClock())
+    calls = threading.local()
+    converse = interpreter._model.converse
+
+    def counted(**kwargs):  # every model call's token usage, for the item being run on this thread
+        response, record = converse(**kwargs)
+        calls.usage.append(record.get("usage") or {})
+        return response, record
+
+    interpreter._model.converse = counted
 
     def one(item: dict) -> dict:
+        calls.usage = []
         started = time.time()
         interpretation, error = None, None
         try:
@@ -510,7 +521,7 @@ def run(items: list[dict], *, universe: str, model: str, persona: str, concurren
         seconds = round(time.time() - started, 2)
         result = score(item, interpretation, error, data_words)
         result.update({"id": item["id"], "category": item["category"], "text": item["text"], "seconds": seconds,
-                       "tags": item.get("tags", []),
+                       "tags": item.get("tags", []), "usage": list(calls.usage),
                        "summary": summary(interpretation) if interpretation is not None else None,
                        "interpretation": interpretation})
         mark = "PASS" if result["passed"] else ("ERR " if result["error"] else ("UNSAFE" if result["safety"] else "FAIL"))
@@ -549,6 +560,12 @@ def report(results: list[dict], categories: dict[str, str]) -> dict[str, Any]:
         c["unsafe"] += bool(r["safety"])
         c["errors"] += bool(r["error"])
     latencies = sorted(r["seconds"] for r in results if r.get("seconds") is not None)
+    # Per model call: "input" is what Bedrock bills as fresh input; "prompt" adds the tokens read from or written to
+    # the prompt cache, i.e. the whole prompt the model saw.
+    usages = [u for r in results for u in r.get("usage") or []]
+    fresh = sorted(u.get("input_tokens") or 0 for u in usages)
+    prompt = sorted((u.get("input_tokens") or 0) + (u.get("cache_read_input_tokens") or 0) + (u.get("cache_write_input_tokens") or 0)
+                    for u in usages)
     p95 = latencies[min(len(latencies) - 1, math.ceil(0.95 * len(latencies)) - 1)] if latencies else None
     return {
         "total": len(results),
@@ -560,6 +577,11 @@ def report(results: list[dict], categories: dict[str, str]) -> dict[str, Any]:
         "safety_violations": sum(len(r["safety"]) for r in results),
         "latency_median_seconds": round(statistics.median(latencies), 2) if latencies else None,
         "latency_p95_seconds": p95,
+        "model_calls": len(usages),
+        "input_tokens_median_per_call": statistics.median(fresh) if fresh else None,
+        "prompt_tokens_median_per_call": statistics.median(prompt) if prompt else None,
+        "cache_read_calls": sum(1 for u in usages if u.get("cache_read_input_tokens")),
+        "output_tokens_median_per_call": statistics.median(sorted(u.get("output_tokens") or 0 for u in usages)) if usages else None,
         "per_category": {name: per_category[name] for name in categories if name in per_category},
     }
 
@@ -616,6 +638,8 @@ def main() -> int:
     print(f"\npassed {totals['passed']}/{totals['total']}  correct {totals['correct']}  failed {totals['failed']}  errors {totals['errors']}  "
           f"items with safety violations {totals['items_with_safety_violations']} ({totals['safety_violations']} violations)")
     print(f"latency median {totals['latency_median_seconds']} s  p95 {totals['latency_p95_seconds']} s  wall {totals['wall_seconds']} s")
+    print(f"model calls {totals['model_calls']}  median input tokens/call {totals['input_tokens_median_per_call']} (fresh)  "
+          f"{totals['prompt_tokens_median_per_call']} (whole prompt)  cache reads on {totals['cache_read_calls']} calls")
     failing = [r for r in results if not r["passed"]]
     if failing:
         print("\nfailing:")

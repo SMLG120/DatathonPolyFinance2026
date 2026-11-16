@@ -91,10 +91,7 @@ _SECTOR_ALIAS_RE = [(re.compile(rf"\b(?:{pattern})\b", re.IGNORECASE), label) fo
 
 def sectors_written_in(words: str, labels: list[str]) -> set[str]:
     """Snapshot sector labels the investor wrote in ``words``: the label itself, or an everyday word for it."""
-    lowered = words.lower()
-    found = {label for label in labels if label.lower() in lowered}
-    found.update(label for pattern, label in _SECTOR_ALIAS_RE if label in labels and pattern.search(words))
-    return found
+    return {label for _, _, label in sector_mentions(words, labels)}
 
 
 # --------------------------------------------------------------------------- companies
@@ -147,16 +144,29 @@ CATALOG_RE = re.compile(rf"\b(?:{'|'.join(CATALOG_TERMS)})\b", re.IGNORECASE)
 
 # --------------------------------------------------------------------------- veto lexicons (downgrade only)
 
-# Opposite-direction words, looked for inside the model's direction_mention only. A clause read as AT_MOST whose own
-# direction words say "at least" (or the reverse) is asked about, never drafted.
+# Opposite-direction words, looked for inside the model's direction_mention and quantity_mention, or over the evidence
+# when the model marked no direction words. A clause read as AT_MOST whose words say "at least" or "10% or more" (or
+# the reverse) is asked about, never drafted. "more than" / "less than" count only when no negation precedes them.
 DIRECTION_VETO: dict[str, re.Pattern[str]] = {
     "AT_MOST": re.compile(r"\b(?:at\s+least|no\s+less\s+than|not\s+less\s+than|no\s+fewer\s+than|minimum|min|floor|"
+                          r"or\s+(?:more|higher|above|greater)|and\s+(?:more|above|up|higher)|ou\s+plus|o\s+m[aá]s|oder\s+mehr|"
                           r"au\s+moins|pas\s+moins\s+de|minimale?|al\s+menos|no\s+menos\s+de|como\s+m[ií]nimo|m[ií]nimo|"
                           r"mindestens|wenigstens)\b", re.IGNORECASE),
     "AT_LEAST": re.compile(r"\b(?:at\s+most|no\s+more\s+than|not\s+more\s+than|maximum|max|cap(?:ped)?|ceiling|up\s+to|"
+                           r"or\s+(?:less|lower|below|under|fewer)|and\s+(?:less|below|under|lower)|ou\s+moins|o\s+menos|oder\s+weniger|"
                            r"au\s+plus|pas\s+plus\s+de|maximale?|jusqu['’]\s*[àa]|como\s+m[aá]ximo|m[aá]ximo|no\s+m[aá]s\s+de|"
                            r"h[öo]chstens|maximal)\b", re.IGNORECASE),
 }
+
+# "more than 10%" read as a cap, "less than 10%" read as a minimum: the opposite direction unless a negation comes
+# before it in the sentence ("never put more than", "no company ever makes up more than", "pas moins de").
+COMPARATIVE_VETO: dict[str, re.Pattern[str]] = {
+    "AT_MOST": re.compile(r"\b(?:more|greater|higher|bigger|larger)\s+than\b|\bplus\s+(?:de|que)\b|\bm[aá]s\s+(?:de|que)\b|\bmehr\s+als\b", re.IGNORECASE),
+    "AT_LEAST": re.compile(r"\b(?:less|fewer|lower|smaller)\s+than\b|\bmoins\s+(?:de|que)\b|\bmenos\s+(?:de|que)\b|\bweniger\s+als\b", re.IGNORECASE),
+}
+COMPARATIVE_NEGATION_RE = re.compile(r"\b(?:no|not|never|nothing|without|none|nobody|neither|nor|cannot|refuse\w*|avoid\w*|"
+                                     r"ne|pas|jamais|sans|nunca|ni|kein\w*|nicht|nie)\b|n['’]t\b",
+                                     re.IGNORECASE)
 
 # "Each" cues in a scope mention: a per-company amount on a rule the engine measures as a total (controversy).
 EACH_WORDS = re.compile(r"\b(?:each|per|every|apiece|chaque|par|chacune?|cada|por|je|jede[rsn]?|pro)\b", re.IGNORECASE)

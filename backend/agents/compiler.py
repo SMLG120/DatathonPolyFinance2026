@@ -40,13 +40,15 @@ from typing import Any
 from byb_contracts.constants import CONTROVERSY_NATURES, SCENARIO_IDS
 
 from backend.agents import quantity
-from backend.agents.conflicts import EACH, LOSS, Candidate, find_conflicts
+from backend.agents.conflicts import EACH, LOSS, Candidate, find_conflicts, rule_subject
 from backend.agents.reading import Clause, Reading, Span
 from backend.agents.reference import _Reference
 from backend.agents.render import DEFAULT_NATURES, NUMBER_NEEDED, Draft, Renderer, verbatim_slice
 from backend.agents.themes import (
     AVOID_CUE_RE,
     CATALOG_RE,
+    COMPARATIVE_NEGATION_RE,
+    COMPARATIVE_VETO,
     CUE_WINDOW,
     DIRECTION_VETO,
     EACH_WORDS,
@@ -93,7 +95,8 @@ MAPPING: dict[tuple[str, str, str], str] = {
     ("LIMIT", "PORTFOLIO_LOSS", "*"): "direction_unclear",
     ("LIMIT", "CONTROVERSY", "AT_MOST"): "controversy_cap",
     ("LIMIT", "CONTROVERSY", "NONE_AT_ALL"): "exclude_controversy",
-    ("LIMIT", "CONTROVERSY", "UNSPECIFIED"): "exclude_controversy",
+    # "Limit my exposure to controversial companies" says neither a ban nor an amount: asked, never drafted as a ban
+    ("LIMIT", "CONTROVERSY", "UNSPECIFIED"): "controversy_question",
     ("LIMIT", "CONTROVERSY", "BETWEEN"): "range_question",
     ("LIMIT", "CONTROVERSY", "*"): "direction_unclear",
     ("LIMIT", "ACTIVITY", "NONE_AT_ALL"): "exclude_activity",
@@ -170,6 +173,24 @@ _NUMBERISH_RE = re.compile(r"\d|%|\b(percent|per cent|pct|pour cent|half|third|q
 # A subject that only points back ("at most 2% in it"): its company must be written in the same sentence.
 _PRONOUN_RE = re.compile(r"(?:it|them|they|that|this|those|these|their shares|that one|it all|"
                          r"le|la|les|lui|eux|elle|elles|celle-ci|celui-ci|lo|los|ella|ellas|ellos)", re.IGNORECASE)
+# The investor rejects the rule itself ("don't exclude X", "I don't want a 10% cap"), whatever polarity the model
+# coded. Looked for over the evidence and the few words before it; it can only turn a draft into an unsupported entry.
+_NEG = (r"(?:\b(?:do|does|did)\s+not|\b(?:don|doesn|didn)['’]?t|\bnever\s+said(?:\s+to)?|\bne\s+(?:veux|voulons)\s+pas|"
+        r"\bno\s+quiero)\s+")
+_REJECTION_RE = re.compile(
+    _NEG + r"(?:(?:to\s+)?(?:exclud\w*|avoid\w*|ban|cap|limit|exclure|excluir)\b|"
+    r"(?:want|need|wish\s+for|ask\s+for|asked\s+for|like)\s+(?:to\s+(?:have|set|put|add|impose)\s+)?"
+    r"(?:(?:to\s+)?(?:exclud\w*|avoid\w*|ban|cap|limit)\b|(?:(?:a|an|any|the|my|un|une|de|d['’]|ningún|ningun)\s*)?(?:\S+\s+){0,2}?"
+    r"(?:cap|caps|ceiling|limit|limits|maximum|minimum|floor|exclusion|ban|plafond|limite|tope|l[ií]mite)\b)|"
+    r"(?:de|d['’])\s*(?:\S+\s+){0,2}?(?:plafond|limite|maximum|minimum)\b)",
+    re.IGNORECASE)
+_REJECTION_LOOKBACK = 30
+_ANY_ONE_RE = re.compile(r"\b(?:any|single|one)\b", re.IGNORECASE)
+# A total over several named companies: no rule type checks a group together.
+_TOTAL_WORDS_RE = re.compile(r"\b(?:combined|together|in\s+total|total|altogether|overall|collectively|between\s+them|"
+                             r"ensemble|au\s+total|en\s+tout|en\s+total|juntos|juntas|en\s+conjunto|zusammen|insgesamt)\b", re.IGNORECASE)
+# Words that say a subject-less amount is about the portfolio itself ("no more than 10% overall").
+_PORTFOLIO_WORDS_RE = re.compile(r"\b(?:portfolio|portefeuille|cartera|depot|everything|overall|anything|any|all)\b", re.IGNORECASE)
 _NEGATION_RE = re.compile(r"\b(not|no|never|without|neither|nor|none|cannot|ne|pas|jamais|sans)\b|n['’]t\b", re.IGNORECASE)
 
 
@@ -196,6 +217,12 @@ def _named(ids: list[str]) -> dict[str, Any]:
 
 def _sector(label: str) -> dict[str, Any]:
     return {"definition": {"kind": "fund_reported_sector", "sector": label}}
+
+
+def _excluded_sector_of(draft: Draft) -> str | None:
+    """The sector label a draft leaves out, or None."""
+    definition = draft.parameters.get("definition") or {}
+    return definition.get("sector") if draft.rule_type == "exclusion" and definition.get("kind") == "fund_reported_sector" else None
 
 
 def _controversy(natures: list[str], event_date_from: str | None) -> dict[str, Any]:
@@ -342,9 +369,9 @@ class _Compiler:
             self._down("clause_problem")
             outcome.unsupported.append((clause.evidence[0], "NOT_MEASURABLE"))
             return outcome
-        clause = self._field_filter(clause)
+        clause = self._inherit_corrected_subject(self._field_filter(clause))
         outcome.clause = clause
-        if clause.polarity == "NEGATED" and clause.intent in _NEGATABLE:
+        if clause.intent in _NEGATABLE and (clause.polarity == "NEGATED" or self._rejected(clause)):
             # "I do not want a 10% limit": the investor rejects the constraint itself; nothing is drafted.
             self._down("negated")
             outcome.unsupported.append((clause.evidence[0], "NOT_MEASURABLE"))
@@ -352,6 +379,19 @@ class _Compiler:
         getattr(self, "_b_" + route(clause.intent, clause.subject_kind, clause.direction))(outcome)
         self._catalog_filter(outcome)
         return outcome
+
+    def _inherit_corrected_subject(self, clause: Clause) -> Clause:
+        """G. 'cap Fortis at 5%, sorry, I meant 15%': a correction that writes no subject of its own keeps the subject
+        of the earlier clause it corrects (same subject kind, no ids or labels of its own). The ids are still grounded,
+        on the earlier clause's words (``_grounding_texts``)."""
+        earlier = self.by_id.get(clause.supersedes or "")
+        if (earlier is None or earlier.start >= clause.start or clause.subject_mention is not None
+                or clause.subject_kind != earlier.subject_kind or clause.company_ids or clause.sectors):
+            return clause
+        if earlier.company_ids or earlier.sectors:
+            self._down("correction_keeps_subject")
+            return replace(clause, company_ids=list(earlier.company_ids), sectors=list(earlier.sectors))
+        return clause
 
     def _field_filter(self, clause: Clause) -> Clause:
         """A. Only the fields that fit the subject kind are read; the others are logged and cleared."""
@@ -372,8 +412,7 @@ class _Compiler:
         dropped, except in a clarification: there the investor is answering what they meant, and that entry is the
         answer (fixtures/api/challenge_clarify_preference.json)."""
         clause = outcome.clause
-        subject = clause.subject_mention or clause.evidence
-        if clause.subject_kind != "CONTROVERSY" and self._in_catalog(_offsets(subject)):
+        if clause.subject_kind != "CONTROVERSY" and self._about_catalog(clause):
             if outcome.drafts or outcome.asks:
                 self._down("catalog_suppressed")
             outcome.drafts, outcome.asks = [], []
@@ -381,21 +420,44 @@ class _Compiler:
             outcome.unsupported = [(words, code) for words, code in outcome.unsupported
                                    if not (code in _CATALOG_REASONS and self._in_catalog(_offsets(clause.evidence)))]
 
+    def _about_catalog(self, clause: Clause) -> bool:
+        """The clause's subject is a catalog word. With no subject marked, the evidence counts, except for catalog
+        words another clause is about ("At most 10% per company and no oil" with "no oil" its own clause keeps the cap)."""
+        if clause.subject_mention is not None:
+            return self._in_catalog(_offsets(clause.subject_mention))
+        evidence = _offsets(clause.evidence)
+        others = [_offsets(o.evidence) for o in self.by_id.values() if o.id != clause.id and o.subject_kind == "ACTIVITY"
+                  and not _inside(evidence, _offsets(o.evidence))]
+        return any(_overlaps(evidence, c) and not any(_inside(c, other) for other in others) for c in self.catalog)
+
     # -- B. grounding
 
     def _grounded_ids(self, clause: Clause) -> list[str]:
         """Model ids that the investor's words name: a server match on the subject (else the evidence) or a lookup
-        made on words written there. An id for another company of the sentence is dropped."""
-        words = self._grounding_words(clause)
-        named = set(self.reference.find(words)) | set(self.reference.companies_in(words))
-        lowered = words.casefold()
-        for looked_up, ids in self.lookups.items():
-            if looked_up.strip() and looked_up.casefold() in lowered:
-                named.update(ids)
+        made on words written there. An id for another company of the sentence is dropped. A lookup counts only when
+        its words stand as whole words ("royal" is not in "royalty") and it found exactly one company: several
+        candidates mean the words do not pick one, so the investor is asked."""
+        named: set[str] = set()
+        for words in self._grounding_texts(clause):
+            named |= set(self.reference.find(words)) | set(self.reference.companies_in(words))
+            for looked_up, ids in self.lookups.items():
+                if len(ids) == 1 and looked_up.strip() and re.search(
+                        rf"(?<!\w){re.escape(looked_up.strip())}(?!\w)", words, re.IGNORECASE):
+                    named.update(ids)
         grounded = sorted({i for i in clause.company_ids if i in named and i in self.ids})
         if set(clause.company_ids) - set(grounded):
             self._down("ungrounded_company")
         return grounded
+
+    def _grounding_texts(self, clause: Clause) -> list[str]:
+        """The clause's own grounding words, plus, for a correction that writes no subject of its own ("cap Fortis at
+        5%, sorry, I meant 15%"), the subject of the earlier clause it corrects: the correction is about that subject."""
+        texts = [self._grounding_words(clause)]
+        earlier = self.by_id.get(clause.supersedes or "")
+        own = clause.subject_mention
+        if earlier is not None and earlier.start < clause.start and own is None:
+            texts.append(self._grounding_words(earlier))
+        return texts
 
     def _grounding_words(self, clause: Clause) -> str:
         """The words a clause's company ids must be named in: its subject, else its evidence. A pronoun subject ("Since
@@ -482,6 +544,13 @@ class _Compiler:
         evidence = _offsets(clause.evidence)
         return any(_overlaps(evidence, s) for s in self.injection + [i for i in self.instructions if i != evidence])
 
+    def _injected(self, clause: Clause) -> bool:
+        """A rule with no number is still not drafted directly from words that also address the system: a segment
+        the injection lexicon flags, or an instruction clause the evidence overlaps."""
+        evidence = _offsets(clause.evidence)
+        lexical = [(start, end) for start, end in self.injection if INJECTION_RE.search(self.text, start, end)]
+        return any(_overlaps(evidence, s) for s in lexical + [i for i in self.instructions if i != evidence])
+
     def _decide(self, clause: Clause) -> _Decision:
         """The lattice for a numeric rule (C, D, E-veto, I). Checks run in a fixed order and the first that fails
         gives the reason; a FRACTION is offered only once every other check has passed."""
@@ -493,9 +562,10 @@ class _Compiler:
             return _Decision() if firm else _Decision(reason="MISSING")
         if self._addressed_to_system(clause):
             return _Decision(reason="INSTRUCTION")
-        veto = DIRECTION_VETO.get(clause.direction)
-        if veto is not None and clause.direction_mention is not None and veto.search(clause.direction_mention[0]):
+        if self._direction_vetoed(clause):
             return _Decision(reason="DIRECTION_UNCLEAR")
+        if quantity.splits_a_number(self.text, _offsets(clause.quantity_mention)):
+            return _Decision(reason="MISTYPED")  # "5%" marked inside "25%": not the number the investor wrote
         amount = quantity.parse(clause.quantity_mention[0])
         if amount.form in _FORM_REASON:
             return _Decision(reason=_FORM_REASON[amount.form])
@@ -504,7 +574,7 @@ class _Compiler:
         for code in clause.ambiguity:
             if code in _NUMBER_AMBIGUITY:
                 return _Decision(reason=_NUMBER_AMBIGUITY[code])
-        if unowned or not self._one_sentence(clause):
+        if unowned or not self._one_sentence(clause) or self._nested_ambiguity(clause):
             return _Decision(reason="UNOWNED_NUMBER")
         if not firm:
             return _Decision(reason="LOW_CONFIDENCE")
@@ -512,6 +582,52 @@ class _Compiler:
         if amount.form == quantity.FRACTION:
             return _Decision(reason="FRACTION", offer=number)
         return _Decision(number=number)  # type: ignore[arg-type]
+
+    def _direction_vetoed(self, clause: Clause) -> bool:
+        """E. Opposite-direction words in the direction words or the amount ("10% or more" read as a cap); with no
+        direction words marked, anywhere in the evidence."""
+        veto = DIRECTION_VETO.get(clause.direction)
+        if veto is None:
+            return False
+        spans = [s for s in (clause.direction_mention, clause.quantity_mention) if s is not None]
+        if clause.direction_mention is None:
+            spans.append(clause.evidence)
+        if any(veto.search(span[0]) for span in spans):
+            return True
+        # "I want more than 10% in X" read as a cap. Only on company shares: "lose more than 20%" is a loss limit.
+        comparative = COMPARATIVE_VETO.get(clause.direction) if clause.subject_kind in ("EACH_COMPANY", "NAMED_COMPANIES") else None
+        for span in spans:
+            for match in comparative.finditer(span[0]) if comparative else ():
+                # a negation anywhere before it in the sentence keeps the reading ("no company ever makes up more than")
+                start = span[1] + match.start()
+                sentence = self._sentence_of((start, start)) or (0, len(self.text))
+                if not COMPARATIVE_NEGATION_RE.search(self.text[sentence[0]:start]):
+                    return True
+        return False
+
+    def _nested_ambiguity(self, clause: Clause) -> bool:
+        """D. A clause whose evidence holds another clause with its own amount ("Keep Energy below 30%, and no company
+        above 5%" read as one cap plus a nested one) must mark its own subject, and its subject and amount must lie
+        outside the nested clause; otherwise the amount may belong to another subject."""
+        nested = [_offsets(o.evidence) for o in self.by_id.values()
+                  if o.id != clause.id and o.quantity_mention is not None and _inside(_offsets(o.evidence), _offsets(clause.evidence))
+                  and _offsets(o.evidence) != _offsets(clause.evidence)]
+        if not nested:
+            return False
+        if clause.subject_mention is None:
+            # Only a per-company cap can name its subject without a subject span ("At most 10% per company and at
+            # least 3% in Fortis"): its own words, outside the nested clause, must still say per company.
+            own = "".join(" " if any(i <= k < j for i, j in nested) else ch
+                          for k, ch in enumerate(self.text[clause.start:clause.end], start=clause.start))
+            return not (clause.subject_kind == "EACH_COMPANY" and (EACH_WORDS.search(own) or _ANY_ONE_RE.search(own)))
+        return any(_overlaps(_offsets(span), inner) for inner in nested
+                   for span in (clause.subject_mention, clause.quantity_mention) if span is not None)
+
+    def _rejected(self, clause: Clause) -> bool:
+        """E. The words reject the rule itself ("don't exclude X", "I don't want a 10% cap"), whatever the code."""
+        sentence = self._sentence_of(_offsets(clause.evidence))
+        start = max(sentence[0] if sentence else 0, clause.start - _REJECTION_LOOKBACK)
+        return _REJECTION_RE.search(self.text[start:clause.end]) is not None
 
     def _firm(self, clause: Clause) -> bool:
         """Non-numeric rules are drafted directly only on a HIGH reading with no ambiguity about what is meant."""
@@ -527,9 +643,8 @@ class _Compiler:
             outcome.drafts = list(outcome.measures)
             return
         self._down(f"number_{decision.reason}")
-        # One question per clause: several companies in one clause share the question, the first rule is offered.
-        rule_type, parameters = rules[0]
-        outcome.asks.append((NUMBER_NEEDED, words, {"pending": Draft(rule_type, parameters), "reason": decision.reason,
+        # One question per clause: several companies in one clause share it, each with its own options.
+        outcome.asks.append((NUMBER_NEEDED, words, {"pending": [Draft(rt, p) for rt, p in rules], "reason": decision.reason,
                                                     "number": decision.offer}))
 
     def _exclusion_number(self, outcome: _Outcome) -> tuple[bool, tuple[float, str] | None]:
@@ -553,8 +668,8 @@ class _Compiler:
         outcome.measures = [Draft(rt, p, number, words) for rt, p in rules]
         if not direct:
             self._down("number_MISSING")
-            outcome.asks.append((NUMBER_NEEDED, words, {"pending": Draft(*rules[0]), "reason": "MISSING"}))
-        elif self._firm(clause):
+            outcome.asks.append((NUMBER_NEEDED, words, {"pending": [Draft(*r) for r in rules], "reason": "MISSING"}))
+        elif self._firm(clause) and not self._injected(clause):
             outcome.drafts = list(outcome.measures)
         else:
             self._down("not_firm")
@@ -565,9 +680,19 @@ class _Compiler:
     def _b_cap_each(self, outcome: _Outcome) -> None:
         self._numeric(outcome, [_CAP_ANY])
 
+    def _group_total(self, outcome: _Outcome, ids: list[str]) -> bool:
+        """'Under 15% combined' on several companies: no rule type checks a group together, and one rule per company
+        with the whole amount would allow several times it. Reported, never drafted per company."""
+        clause = outcome.clause
+        if len(ids) < 2 or not (clause.distribution == "TOTAL" or _TOTAL_WORDS_RE.search(clause.evidence[0])):
+            return False
+        self._down("group_total")
+        outcome.unsupported.append((clause.evidence[0], "GROUP_TOTAL"))
+        return True
+
     def _b_cap_named(self, outcome: _Outcome) -> None:
         ids = self._companies(outcome, "max_issuer_exposure", lambda i: {"issuer_scope": i})
-        if ids:
+        if ids and not self._group_total(outcome, ids):
             self._numeric(outcome, [("max_issuer_exposure", {"issuer_scope": i}) for i in ids])
 
     def _b_min_named(self, outcome: _Outcome) -> None:
@@ -576,7 +701,7 @@ class _Compiler:
             self._b_company_intent(outcome)  # "I want to hold Exxon" says neither a minimum nor a number
             return
         ids = self._companies(outcome, "min_issuer_exposure", lambda i: {"issuer_id": i})
-        if ids:
+        if ids and not self._group_total(outcome, ids):
             self._numeric(outcome, [("min_issuer_exposure", {"issuer_id": i}) for i in ids])
 
     def _b_loss(self, outcome: _Outcome) -> None:
@@ -590,12 +715,15 @@ class _Compiler:
     def _b_exclude_sector(self, outcome: _Outcome) -> None:
         clause = outcome.clause
         grounded, ungrounded = self._labels(clause)
-        for label in ungrounded or ([] if grounded else [None]):
-            # A label the words do not name ("oil" for Energy) is a guess about meaning: offered, never drafted.
-            outcome.asks.append(("EXCLUSION_DEFINITION", clause.evidence[0], {"sector": label}))
         if grounded:
+            # Not drafted directly: one question offers every label, those the words name first.
             self._exclusions(outcome, [("exclusion", _sector(label)) for label in grounded],
-                             ("EXCLUSION_DEFINITION", {"sector": grounded[0]}))
+                             ("EXCLUSION_DEFINITION", {"sectors": grounded + ungrounded}))
+        if ungrounded and (outcome.drafts or not grounded):
+            # A label the words do not name ("oil" for Energy) is a guess about meaning: offered, never drafted.
+            outcome.asks.append(("EXCLUSION_DEFINITION", clause.evidence[0], {"sectors": ungrounded}))
+        elif not grounded:
+            outcome.asks.append(("EXCLUSION_DEFINITION", clause.evidence[0], {"sectors": []}))
 
     def _b_exclude_controversy(self, outcome: _Outcome) -> None:
         clause = outcome.clause
@@ -616,6 +744,10 @@ class _Compiler:
             self._b_exclude_controversy(outcome)
             return
         date = quantity.parse_date(clause.date_mention[0]) if clause.date_mention is not None else None
+        if clause.date_mention is not None and date is None:  # as on the exclusion path: never widened to every date
+            self._down("date_unparsed")
+            outcome.asks.append(("THEME", clause.evidence[0], {"theme": "ESG", "polarity": "AVOID"}))
+            return
         rule = ("controversy_exclusion", _controversy(clause.natures, date))
         each = clause.distribution == "EACH" or (clause.scope_mention is not None and EACH_WORDS.search(clause.scope_mention[0]))
         if each:
@@ -644,9 +776,15 @@ class _Compiler:
             # words do not name is a guess, and the investor is shown the labels the data has.
             outcome.unsupported.append((words, "SECTOR_NOT_MATCHED" if clause.sectors else "NO_SOURCED_DEFINITION"))
             return
+        if clause.quantity_mention is not None or self._unowned_tokens(clause):
+            # "Only 20% in tech" is a share of a sector, not "nothing else": no sector-cap rule type says it.
+            self._down("focus_with_number")
+            outcome.unsupported.append((words, "SECTOR_LIMIT"))
+            return
         restrictive = clause.exclusivity_mention is not None and RESTRICTIVE_WORDS.search(clause.exclusivity_mention[0])
         others = [label for label in self.reference.sectors if label not in grounded]
-        if not (clause.confidence == "HIGH" and not clause.ambiguity and restrictive and len(grounded) <= MAX_FOCUS_SECTORS):
+        if not (clause.confidence == "HIGH" and not clause.ambiguity and restrictive and len(grounded) <= MAX_FOCUS_SECTORS
+                and not self._injected(clause)):
             self._down("focus_gate")
             outcome.objective_id = self._preference_objective(clause)
             outcome.unsupported.append((words, "FOCUS_NOT_ONLY"))
@@ -672,7 +810,9 @@ class _Compiler:
             return
         # The number is carried by every option, so the direction veto does not apply: the investor picks the direction.
         number = self._decide(replace(clause, direction="UNSPECIFIED")).number if clause.quantity_mention is not None else None
-        outcome.asks.append(("COMPANY_INTENT", clause.evidence[0], {"kind": kind, "ids": ids, "number": number}))
+        # A stated direction keeps the number on the options of that direction only ("hold it, but no more than 5%").
+        direction = clause.direction if clause.direction in ("AT_MOST", "AT_LEAST") else None
+        outcome.asks.append(("COMPANY_INTENT", clause.evidence[0], {"kind": kind, "ids": ids, "number": number, "direction": direction}))
 
     def _implied(self, outcome: _Outcome) -> list[tuple[str, dict[str, Any]]] | None:
         """The rules a clause's subject implies, whatever its direction: what a direction or range question offers."""
@@ -724,6 +864,12 @@ class _Compiler:
     def _b_scope_needed(self, outcome: _Outcome) -> None:
         """'No more than 10%' with no subject: the number is kept, what it limits is the investor's choice."""
         clause = outcome.clause
+        subject = clause.subject_mention
+        if subject is not None and not _PORTFOLIO_WORDS_RE.search(subject[0]):
+            # "Max 25% in Canadian stocks": the words name what is limited and no rule type measures it. Offering a
+            # per-company cap or a loss budget instead would put a different constraint in its place.
+            outcome.unsupported.append((clause.evidence[0], "NOT_MEASURABLE"))
+            return
         number = self._decide(clause).number if clause.quantity_mention is not None else None
         outcome.asks.append(("SCOPE_NEEDED", clause.evidence[0], {"number": number}))
 
@@ -746,7 +892,7 @@ class _Compiler:
 
     def _b_not_measurable(self, outcome: _Outcome) -> None:
         clause = outcome.clause
-        if clause.intent == "PERMISSION":
+        if clause.intent == "PERMISSION" and clause.polarity == "ASSERTED":  # "X is not OK" agrees with a limit
             outcome.permission = self._permission_subject(clause)
         outcome.unsupported.append((clause.evidence[0], "NOT_MEASURABLE"))
 
@@ -792,49 +938,88 @@ class _Compiler:
             if outcome.clause.quantity_from is not None:
                 self._ellipsis(outcome, by_id)
 
+    def _span_of(self, *clauses: Clause) -> tuple[int, int]:
+        """The smallest span holding every given clause (whatever their order or nesting)."""
+        return min(c.start for c in clauses), max(c.end for c in clauses)
+
     def _supersede(self, later: _Outcome, by_id: dict[str, _Outcome], superseded_by: Counter) -> None:
         """'Max 10% per company. Actually make that 8%.': the earlier clause is dropped and the later rule shows the
-        whole correction. Only for the same measure, a later position and one level (no chains, no cycles)."""
+        whole correction. Only at a later position and one level deep (no chains, no cycles), and only when the later
+        clause restates the same kind of rule: the same measures, the same rule type on the same subject kind ("Exclude
+        Enbridge. Wait, I meant Exxon"), or another rule on the same companies ("Microsoft min 3%... scratch that, just
+        a maximum of 10%"). Anything else is asked about."""
         earlier = by_id.get(later.clause.supersedes or "")
         if earlier is None:
             return
-        same = (earlier.measures and {_key(d.rule_type, d.parameters) for d in earlier.measures}
-                == {_key(d.rule_type, d.parameters) for d in later.measures})
         valid = (earlier.clause.start < later.clause.start and earlier.clause.supersedes is None
                  and superseded_by[later.clause.id] == 0 and superseded_by[earlier.clause.id] == 1)
-        if not (same and valid):
+        if not (valid and self._restates(earlier, later)):
             self._down("correction_not_honoured")
             self.unhonoured.append((earlier.clause.id, later.clause.id, "CORRECTION"))
             if earlier.drafts and not later.drafts:
                 # "Avoid Enbridge. Actually, scratch that, keep it.": the later words take something back even when
                 # they draft nothing themselves, so the earlier rule is asked about, never drafted as if unsaid.
-                words = self.text[earlier.clause.start:later.clause.end]
-                sides = [(earlier.clause.evidence[0], d) for d in earlier.drafts] + [(later.clause.evidence[0], None)]
+                words = self.text[slice(*self._span_of(earlier.clause, later.clause))]
+                sides = [(earlier.clause.evidence[0], list(earlier.drafts)), (later.clause.evidence[0], [])]
                 earlier.drafts = []
                 earlier.asks.append(("CONFLICT", words, {"sides": sides}))
             return
         self.honoured.add((earlier.clause.id, later.clause.id))
         earlier.clear()
         earlier.measures = []
-        span = (earlier.clause.start, later.clause.end)
+        span = self._span_of(earlier.clause, later.clause)
         later.drafts = [d._replace(words=verbatim_slice(self.text, *span, d.number[1] if d.number else None)) for d in later.drafts]
+
+    @staticmethod
+    def _restates(earlier: _Outcome, later: _Outcome) -> bool:
+        if not earlier.measures or not later.measures:
+            return False
+        keys = lambda o: {_key(d.rule_type, d.parameters) for d in o.measures}  # noqa: E731
+        if keys(earlier) == keys(later):
+            return True
+        types = lambda o: {d.rule_type for d in o.measures}  # noqa: E731
+        if types(earlier) == types(later) and len(types(later)) == 1 and earlier.clause.subject_kind == later.clause.subject_kind:
+            return True
+        subjects = lambda o: {rule_subject(d.rule_type, d.parameters) for d in o.measures}  # noqa: E731
+        return (earlier.clause.subject_kind == later.clause.subject_kind == "NAMED_COMPANIES"
+                and subjects(earlier) == subjects(later) and None not in subjects(later))
 
     def _exception(self, exception: _Outcome, by_id: dict[str, _Outcome]) -> None:
         """'No energy but Enbridge is fine': no rule type carves an exception, so the base is never drafted directly
-        and the investor chooses among forms that say how they differ from the words. The exception drafts nothing."""
+        and the investor chooses among forms that say how they differ from the words. The exception drafts nothing.
+
+        Two cases need no question. A stricter cap on named companies under an any-company cap ("every company at 10%
+        but Microsoft at 6%") is exactly both rules, so both are drafted. And the base's rules the excepted companies
+        do not fall under ("No Energy or Utilities, but Enbridge is fine": the Utilities exclusion) stay drafted; only
+        the rules the exception touches are asked about."""
         base = by_id.get(exception.clause.exception_of or "")
-        if base is None or not base.measures or base is exception:
+        if base is None or base is exception:
             return
-        start, end = min(base.clause.start, exception.clause.start), max(base.clause.end, exception.clause.end)
+        if not base.measures:
+            # The base drafts nothing (unsupported, or already a question): the exception's own number is never used.
+            if exception.drafts or exception.asks:
+                self._down("exception_without_base")
+                exception.clear()
+                exception.measures = []
+                exception.unsupported.append((exception.clause.evidence[0], "NOT_MEASURABLE"))
+            return
+        if self._stricter_named_caps(base, exception):
+            self._down("exception_stricter")
+            return
+        start, end = self._span_of(base.clause, exception.clause)
         words = self.text[start:end]
         excepted = self._grounded_ids(exception.clause) if exception.clause.subject_kind == "NAMED_COMPANIES" else []
-        sector = self._excluded_sector(base)
+        affected = [d for d in base.measures if not excepted or self._touches(d, excepted)] or list(base.measures)
+        untouched = [d for d in base.drafts if d not in affected and _key(d.rule_type, d.parameters) not in
+                     {_key(a.rule_type, a.parameters) for a in affected}]
+        sectors = [_excluded_sector_of(d) for d in affected]
+        sector = sectors[0] if len(affected) == 1 else None
         details: dict[str, Any] = {"exception_words": exception.clause.evidence[0]}
         if sector is not None and excepted and all(self.reference.sector_of.get(i) == sector for i in excepted):
             members = sorted(i for i, label in self.reference.sector_of.items() if label == sector and i not in excepted)
             details.update(base_draft=Draft("exclusion", _sector(sector)), sector=sector, remaining_ids=members)
         else:
-            details.update(base_draft=base.measures[0])
+            details.update(base_draft=affected if len(affected) > 1 else affected[0])
         self._down("exception")
         if base.clause.subject_kind == "ACTIVITY":
             # "No oil companies but Enbridge is fine": this question replaces the catalog's oil question, whose
@@ -843,13 +1028,27 @@ class _Compiler:
         for outcome in (base, exception):
             outcome.clear()
             outcome.measures = []
+        base.drafts = untouched
+        base.measures = list(untouched)
         base.asks.append(("EXCEPTION", words, details))
 
-    def _excluded_sector(self, base: _Outcome) -> str | None:
-        """The sector label an exclusion base leaves out: its own label, or Energy for oil."""
-        sectors = [d.parameters["definition"]["sector"] for d in base.measures
-                   if d.rule_type == "exclusion" and d.parameters["definition"]["kind"] == "fund_reported_sector"]
-        return sectors[0] if sectors else None
+    def _touches(self, draft: Draft, excepted: list[str]) -> bool:
+        """The excepted companies fall under this rule of the base."""
+        definition = draft.parameters.get("definition") or {}
+        if definition.get("kind") == "fund_reported_sector":
+            return any(self.reference.sector_of.get(i) == definition["sector"] for i in excepted)
+        if definition.get("kind") == "named_issuers":
+            return bool(set(definition["issuer_ids"]) & set(excepted))
+        issuer = draft.parameters.get("issuer_scope") or draft.parameters.get("issuer_id")
+        return issuer == "any" or issuer in excepted or issuer is None
+
+    @staticmethod
+    def _stricter_named_caps(base: _Outcome, exception: _Outcome) -> bool:
+        caps_any = [d for d in base.drafts if (d.rule_type, d.parameters) == _CAP_ANY and d.number is not None]
+        own = exception.drafts
+        return (bool(caps_any) and len(base.drafts) == len(caps_any) and bool(own)
+                and all(d.rule_type == "max_issuer_exposure" and d.parameters.get("issuer_scope") not in (None, "any")
+                        and d.number is not None and d.number[0] <= min(c.number[0] for c in caps_any) for d in own))
 
     def _ellipsis(self, outcome: _Outcome, by_id: dict[str, _Outcome]) -> None:
         """'At most 5% in Microsoft. The same for Enbridge.': the earlier number is offered, never applied."""
@@ -859,17 +1058,27 @@ class _Compiler:
         target = by_id.get(clause.quantity_from or "")
         amount = quantity.parse(target.clause.quantity_mention[0]) if target and target.clause.quantity_mention else None
         outcome.clear()
-        pending = outcome.measures[0]
+        pendings = [d._replace(number=None, words=None) for d in outcome.measures]
         outcome.measures = []
-        if target is None or target.clause.start >= clause.start or amount is None or amount.form not in quantity.THRESHOLD_FORMS:
+        words = None
+        if not (target is None or target.clause.start >= clause.start or amount is None or amount.form not in quantity.THRESHOLD_FORMS):
+            # Both clauses' span, whatever their nesting ("Microsoft, and the same for Enbridge, at most 5%").
+            span = self._span_of(target.clause, clause)
+            try:
+                words = verbatim_slice(self.text, *span, amount.quote)
+            except ValueError:
+                words = None
+        if words is None:
             self._down("number_MISSING")
-            outcome.asks.append((NUMBER_NEEDED, clause.evidence[0], {"pending": pending._replace(number=None, words=None), "reason": "MISSING"}))
+            outcome.asks.append((NUMBER_NEEDED, clause.evidence[0], {"pending": pendings, "reason": "MISSING"}))
             return
         self._down("ellipsis")
         number = (amount.value, amount.quote)
-        words = verbatim_slice(self.text, target.clause.start, clause.end, amount.quote)
+        pending = pendings[0]
         outcome.asks.append(("ELLIPSIS", clause.evidence[0], {"draft": Draft(pending.rule_type, pending.parameters, number, words),
                                                                "source_quote": target.clause.evidence[0]}))
+        if pendings[1:]:  # an ellipsis on several companies: the others are asked for their number
+            outcome.asks.append((NUMBER_NEEDED, clause.evidence[0], {"pending": pendings[1:], "reason": "MISSING"}))
 
     def _drop_redundant_diversification(self, outcomes: list[_Outcome]) -> None:
         """A diversification wish next to a drafted any-company cap is already answered by that cap: asking which
@@ -886,7 +1095,9 @@ class _Compiler:
     # -- H. conflicts
 
     def _conflicts(self, outcomes: list[_Outcome]) -> None:
-        """Rules that cannot all hold are replaced by one question per group (see backend.agents.conflicts)."""
+        """Rules that cannot all hold are replaced by one question per set of clauses involved (see
+        backend.agents.conflicts). Groups that share a clause are one question, so no question is lost to the
+        Renderer's dedup; each clause is one side, with all of its conflicting rules."""
         nodes: list[tuple[_Outcome, Draft | None]] = []
         candidates = []
         for outcome in outcomes:
@@ -899,18 +1110,52 @@ class _Compiler:
                 nodes.append((outcome, None))
         claims = [(c.a, c.b, c.kind) for c in self.reading.conflicts
                   if not (c.kind == "CORRECTION" and ((c.a, c.b) in self.honoured or (c.b, c.a) in self.honoured))]
-        for group in find_conflicts(candidates, self.reference.sector_of, claims + self.unhonoured):
-            members = [nodes[c.index] for c in group.members]
-            self._down("conflict")
+        tensions = sum(1 for c in self.reading.conflicts if c.kind == "TENSION")
+        if tensions:
+            self._down("tension_not_a_conflict")
+        groups = find_conflicts(candidates, self.reference.sector_of, claims + self.unhonoured + self._every_sector_excluded(candidates))
+        merged: list[tuple[set[str], list[int]]] = []  # (clause ids, node indexes)
+        for group in groups:
+            for reason in group.reasons:
+                self._down(f"conflict_{reason}")
+            clause_ids = {c.clause_id for c in group.members}
+            indexes = [c.index for c in group.members]
+            touching = [m for m in merged if m[0] & clause_ids]
+            for m in touching:
+                merged.remove(m)
+                clause_ids |= m[0]
+                indexes = m[1] + indexes
+            merged.append((clause_ids, sorted(set(indexes))))
+        for clause_ids, indexes in merged:
+            members = [nodes[i] for i in indexes]
+            sides: dict[str, tuple[_Outcome, list[Draft]]] = {}
             for outcome, draft in members:
-                if draft is not None and draft in outcome.drafts:
-                    outcome.drafts.remove(draft)
-            clauses = list(dict.fromkeys(outcome.clause.id for outcome, _ in members))
-            spans = [_offsets(self.by_id[c].evidence) for c in clauses]
-            words = self.text[min(s for s, _ in spans):max(e for _, e in spans)]
-            sides = [(outcome.clause.evidence[0], draft) for outcome, draft in members]
-            first = next(o for o, _ in members)
-            first.asks.append(("CONFLICT", words, {"sides": sides}))
+                side = sides.setdefault(outcome.clause.id, (outcome, []))
+                if draft is not None:
+                    side[1].append(draft)
+            for outcome, drafts in sides.values():
+                for draft in drafts:
+                    if draft in outcome.drafts:
+                        outcome.drafts.remove(draft)
+            ordered = sorted(sides.values(), key=lambda side: side[0].clause.start)
+            words = self.text[slice(*self._span_of(*(o.clause for o, _ in ordered)))]
+            self._down("conflict")
+            ordered[0][0].asks.append(("CONFLICT", words, {"sides": [
+                (o.clause.evidence[0], drafts, o.clause.intent == "KEEP_ONLY") for o, drafts in ordered]}))
+
+    def _every_sector_excluded(self, candidates: list[Candidate]) -> list[tuple[str, str, str]]:
+        """'Only tech. No tech either.': exclusions from several clauses that together leave out every sector label
+        leave nothing to hold, so those clauses cannot all hold."""
+        by_clause: dict[str, set[str]] = {}
+        for c in candidates:
+            definition = c.parameters.get("definition") or {}
+            if c.rule_type == "exclusion" and definition.get("kind") == "fund_reported_sector":
+                by_clause.setdefault(c.clause_id, set()).add(definition["sector"])
+        covered = set().union(*by_clause.values()) if by_clause else set()
+        if len(by_clause) < 2 or not self.reference.sectors or not set(self.reference.sectors) <= covered:
+            return []
+        clause_ids = sorted(by_clause)
+        return [(clause_ids[0], other, "INFEASIBLE_TOGETHER") for other in clause_ids[1:]]
 
     # -- emission and safety nets
 

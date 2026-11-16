@@ -671,8 +671,9 @@ def _build_interpreter(boto3: Any, config_class: Any, config: ApiConfig, clock: 
     bedrock = boto3.client("bedrock-runtime", config=config_class(
         retries={"total_max_attempts": 1, "mode": "standard"},
         connect_timeout=INTERPRETER_CONNECT_TIMEOUT_SECONDS, read_timeout=INTERPRETER_READ_TIMEOUT_SECONDS))
+    # The system prompt and the tools are the same for every request on one snapshot: cached (see BedrockConverse).
     model = BedrockConverse(bedrock, config.model_id, clock, max_attempts=2, base_delay_seconds=0.5, max_delay_seconds=1.0,
-                            min_call_budget_seconds=INTERPRETER_CALL_BUDGET_SECONDS)
+                            min_call_budget_seconds=INTERPRETER_CALL_BUDGET_SECONDS, prompt_cache=True)
     return Interpreter(model, clock, max_tokens=config.interpreter_max_tokens, call_budget_seconds=INTERPRETER_CALL_BUDGET_SECONDS)
 
 

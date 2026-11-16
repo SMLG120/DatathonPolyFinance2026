@@ -80,6 +80,16 @@ def _pair_reason(minimum: Candidate, other: Candidate, sector_of: dict[str, str]
     return None
 
 
+def _same_measure_reason(a: Candidate, b: Candidate) -> str | None:
+    """Two clauses giving the same cap or minimum two different numbers ("no more than 10% in X and no more than 20%
+    in X"): both could be checked, but the investor stated two limits for one thing, so they are asked which."""
+    if a.rule_type != b.rule_type or a.rule_type not in ("max_issuer_exposure", "min_issuer_exposure", "scenario_loss_budget"):
+        return None
+    if a.parameters != b.parameters or a.threshold is None or b.threshold is None:
+        return None
+    return "TWO_NUMBERS_FOR_ONE_MEASURE" if abs(a.threshold - b.threshold) > _EPSILON else None
+
+
 def _permission_reason(permission: Candidate, rule: Candidate) -> str | None:
     """A permission ("No limit per company", "I don't mind Exxon") against a limit or exclusion on the same subject."""
     if rule.rule_type in (None, "min_issuer_exposure"):
@@ -112,7 +122,7 @@ def find_conflicts(candidates: list[Candidate], sector_of: dict[str, str],
             b = candidates[j]
             if a.clause_id == b.clause_id:
                 continue  # one clause's own rules (the exclusions of an 'only' wish) never conflict with each other
-            reason = None
+            reason = _same_measure_reason(a, b)
             for first, second in ((a, b), (b, a)):
                 if reason is None and first.rule_type == "min_issuer_exposure":
                     reason = _pair_reason(first, second, sector_of)

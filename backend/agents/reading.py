@@ -84,9 +84,11 @@ _OPTIONAL_CODES = {"activity": ACTIVITIES, "theme": THEME_CODES, "unsupported_re
 
 # --------------------------------------------------------------------------- the tool schema
 
-_SPAN = {"type": "string", "description": "An exact contiguous copy of the investor's characters."}
-_OPTIONAL_SPAN = {"type": ["string", "null"], "description": "An exact contiguous copy of the investor's characters, or null."}
-_CLAUSE_REF = {"type": ["string", "null"], "pattern": _CLAUSE_ID, "description": "The id of another clause, or null."}
+# Members carry no descriptions: the system prompt defines every member and code once, and repeating it here only
+# made every call longer (validation is the same: types, enums, patterns and closed objects).
+_SPAN = {"type": "string"}
+_OPTIONAL_SPAN = {"type": ["string", "null"]}
+_CLAUSE_REF = {"type": ["string", "null"], "pattern": _CLAUSE_ID}
 
 
 def _enum(values: Collection[str], nullable: bool = False) -> dict[str, Any]:
@@ -104,29 +106,28 @@ READING_SCHEMA: dict[str, Any] = _closed({
         {"words": _SPAN, "kind": _enum(OBJECTIVE_KINDS)}, ["words", "kind"])},
     "clauses": {"type": "array", "maxItems": MAX_CLAUSES, "items": _closed({
         "id": {"type": "string", "pattern": _CLAUSE_ID},
-        "evidence": dict(_SPAN, description="The shortest exact copy of the investor's characters that carries the whole wish."),
+        "evidence": _SPAN,
         "intent": _enum(INTENTS),
-        "polarity": dict(_enum(POLARITY_CODES), description="NEGATED only when the investor rejects the constraint itself; "
-                                                            "never for a negated comparative such as 'no more than'."),
+        "polarity": _enum(POLARITY_CODES),
         "subject_kind": _enum(SUBJECT_KINDS),
         "subject_mention": _OPTIONAL_SPAN,
         "company_ids": {"type": "array", "maxItems": MAX_CLAUSE_COMPANIES, "items": {"type": "string"}},
-        "unresolved_company": dict(_OPTIONAL_SPAN, description="A company the investor wrote that no snapshot company matches."),
+        "unresolved_company": _OPTIONAL_SPAN,
         "sectors": {"type": "array", "maxItems": MAX_CLAUSE_SECTORS, "items": {"type": "string"}},
         "activity": _enum(ACTIVITIES, nullable=True),
         "theme": _enum(THEME_CODES, nullable=True),
         "natures": {"type": "array", "items": _enum(CONTROVERSY_NATURES)},
         "direction": _enum(DIRECTIONS),
         "direction_mention": _OPTIONAL_SPAN,
-        "quantity_mention": dict(_OPTIONAL_SPAN, description="Only the amount as written, for example '10%' or 'a quarter'."),
-        "quantity_from": dict(_CLAUSE_REF, description="For 'the same for X': the earlier clause whose amount is reused."),
+        "quantity_mention": _OPTIONAL_SPAN,
+        "quantity_from": _CLAUSE_REF,
         "distribution": _enum(DISTRIBUTIONS),
         "scope_mention": _OPTIONAL_SPAN,
-        "exclusivity_mention": dict(_OPTIONAL_SPAN, description="Only for wording such as 'only' or 'nothing else'."),
+        "exclusivity_mention": _OPTIONAL_SPAN,
         "date_mention": _OPTIONAL_SPAN,
-        "exception_of": dict(_CLAUSE_REF, description="On an exception: the clause it is an exception to."),
-        "supersedes": dict(_CLAUSE_REF, description="On a later correcting clause: the earlier clause it corrects."),
-        "objective": {"type": ["integer", "null"], "description": "Index (from 0) into objectives, or null."},
+        "exception_of": _CLAUSE_REF,
+        "supersedes": _CLAUSE_REF,
+        "objective": {"type": ["integer", "null"]},
         "unsupported_reason": _enum(UNSUPPORTED_REASONS, nullable=True),
         "confidence": _enum(CONFIDENCES),
         "ambiguity": {"type": "array", "uniqueItems": True, "items": _enum(AMBIGUITY_CODES)},
@@ -135,7 +136,7 @@ READING_SCHEMA: dict[str, Any] = _closed({
         {"a": {"type": "string", "pattern": _CLAUSE_ID}, "b": {"type": "string", "pattern": _CLAUSE_ID}, "kind": _enum(CONFLICT_KINDS)},
         ["a", "b", "kind"])},
     "non_quantity": {"type": "array", "maxItems": MAX_NON_QUANTITY, "items": _closed(
-        {"mention": dict(_SPAN, description="A number that is not an amount: a horizon, a year, a count, part of a name."),
+        {"mention": _SPAN,
          "kind": _enum(NON_QUANTITY_KINDS)}, ["mention", "kind"])},
 }, ["objectives", "clauses", "conflicts", "non_quantity"])
 

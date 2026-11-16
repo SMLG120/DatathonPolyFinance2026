@@ -47,19 +47,22 @@ Methods:
   Topics and their keyword-only details:
 
   - ``THEME``: ``theme``, ``polarity`` (``ONLY`` / ``AVOID`` / ``PREFER``).
-  - ``EXCLUSION_DEFINITION``: ``sector`` (offered unless the words are about oil).
+  - ``EXCLUSION_DEFINITION``: ``sectors`` (labels offered in order; ``sector`` is the one-label form), unless the
+    words are about oil (then Energy only).
   - ``DIVERSIFICATION``, ``LOSS_LIMIT``: none.
-  - ``NUMBER_NEEDED``: ``pending`` (the ``Draft`` offered without a number), ``reason`` (a key of
+  - ``NUMBER_NEEDED``: ``pending`` (the ``Draft`` offered without a number, or a list of them: one pair of options
+    per company of the clause, ids suffixed ``-1``, ``-2`` ...), ``reason`` (a key of
     ``NUMBER_REASONS``; None keeps the original same-sentence sentence), ``number`` (``(value, quote)``: offered
     first as 'use-number'; the compiler passes it for reason ``FRACTION`` only).
   - ``COMPANY_WHICH``: ``candidates`` (issuer ids, at most ``MAX_COMPANY_OPTIONS`` are offered), ``rule_type``,
     ``parameters_builder`` (issuer id -> parameters). Each candidate is offered as a numberless draft.
   - ``COMPANY_INTENT``: ``kind`` (``HOLD``: minimum + maximum; ``CAUTION``: maximum + exclusion; ``EXACTLY``:
     minimum + maximum), ``ids`` (issuer ids), ``number`` (``(value, quote)`` or None, carried by every
-    min/max option).
-  - ``CONFLICT``: ``sides`` (``[(evidence, Draft)]``, at least two; at most ``MAX_CONFLICT_SIDES`` are offered as
-    'keep-N'). The question quotes each evidence; keep-qualitative reads as "neither".
-  - ``EXCEPTION``: ``base_draft``, ``exception_words`` (verbatim), ``sector`` (set when the base excludes that
+    min/max option, or only by those of ``direction`` when it is AT_MOST or AT_LEAST).
+  - ``CONFLICT``: ``sides`` (``[(evidence, Draft | None)]`` or ``[(evidence, [Draft], whole)]``, at least two; at most
+    ``MAX_CONFLICT_SIDES`` rules are offered as 'keep-N', sides with rules first). The question quotes every evidence;
+    keep-qualitative reads as "neither". See ``_conflict``.
+  - ``EXCEPTION``: ``base_draft`` (or a list: one 'every-company-N' option each), ``exception_words`` (verbatim), ``sector`` (set when the base excludes that
     sector label and every excepted company carries it), ``remaining_ids`` (the sector's snapshot members minus
     the exception; offered as a named exclusion when 1 to ``MAX_EXCEPTION_REMAINING`` ids).
   - ``ELLIPSIS``: ``draft`` (carrying the reused number), ``source_quote`` (verbatim words the number is
@@ -113,6 +116,9 @@ SERVER_REASONS: dict[str, tuple[str, str]] = {
     "SECTOR_NOT_MATCHED": _SECTOR_NOT_MATCHED,
     "FOCUS_TOO_WIDE": _FOCUS_TOO_WIDE,
     # A focus or preference with no 'only'-type cue: excluding every other label would be stricter than the words.
+    # An amount for several named companies together ("under 15% combined"): one rule per company would allow more.
+    "GROUP_TOTAL": ("UNSUPPORTED_RULE_TYPE", "No rule type checks an amount shared by several companies together, so no rule was drafted. "
+                    "Writing the amount for each company (for example 'at most 5% in each') drafts one rule per company."),
     "FOCUS_NOT_ONLY": ("UNSUPPORTED_RULE_TYPE", "A focus is kept as a qualitative objective and is not checked. "
                        "Writing 'only' followed by the sector labels to keep drafts exclusions of the other labels."),
 }
@@ -323,7 +329,8 @@ class Renderer:
         self.unsupported.append({"words": words, "code": code, "reason": reason + (_CLARIFICATION_SUFFIX if self.clarification_mode else "")})
 
     def ask(self, topic: str, words: str, objective_id: str | None, *, sector: str | None = None,
-            pending: Draft | tuple[Any, ...] | None = None, theme: str | None = None, polarity: str | None = None,
+            sectors: list[str] | None = None, direction: str | None = None,
+            pending: Draft | tuple[Any, ...] | list[Any] | None = None, theme: str | None = None, polarity: str | None = None,
             reason: str | None = None, number: tuple[float, str] | None = None, candidates: list[str] | None = None,
             rule_type: str | None = None, parameters_builder: Callable[[str], dict[str, Any]] | None = None,
             kind: str | None = None, ids: list[str] | None = None, sides: list[tuple[str, Any]] | None = None,
@@ -338,7 +345,7 @@ class Renderer:
         if topic == "THEME":
             question, options = self._theme(quoted, words, objective_id, theme, polarity)
         elif topic == "EXCLUSION_DEFINITION":
-            question, options = self._exclusion_definition(quoted, words, objective_id, sector)
+            question, options = self._exclusion_definition(quoted, words, objective_id, sectors if sectors is not None else [sector])
         elif topic == "DIVERSIFICATION":
             question, options = self._diversification(quoted, words, objective_id)
         elif topic == "LOSS_LIMIT":
@@ -348,7 +355,7 @@ class Renderer:
         elif topic == "COMPANY_WHICH":
             question, options = self._company_which(quoted, words, objective_id, candidates or [], rule_type, parameters_builder)
         elif topic == "COMPANY_INTENT":
-            question, options = self._company_intent(quoted, words, objective_id, kind, ids or [], number)
+            question, options = self._company_intent(quoted, words, objective_id, kind, ids or [], number, direction)
         elif topic == "CONFLICT":
             question, options = self._conflict(objective_id, sides or [])
         elif topic == "EXCEPTION":
@@ -393,13 +400,13 @@ class Renderer:
         return question, options
 
     def _exclusion_definition(self, quoted: str, words: str, objective_id: str | None,
-                              sector: str | None) -> tuple[str, list[dict[str, Any]]]:
+                              sectors: list[str | None]) -> tuple[str, list[dict[str, Any]]]:
         oil = CATALOG_RE.search(words) is not None  # the same catalog that asks the question (EN/FR/ES)
         if oil:
             # For oil the offered label is never the model's choice: Energy when the snapshot has it, else none.
-            sector = "Energy" if "Energy" in self.sectors else None
+            sectors = ["Energy"] if "Energy" in self.sectors else []
         options = []
-        if sector is not None:
+        for sector in dict.fromkeys(s for s in sectors if s is not None):
             slug = re.sub(r"[^a-z0-9]+", "-", sector.lower()).strip("-") or "sector"
             options.append(_option(
                 f"{slug}-sector-label", f"Holdings labelled {sector} in what the funds report",
@@ -444,12 +451,18 @@ class Renderer:
                        reason: str | None, number: tuple[float, str] | None) -> tuple[str, list[dict[str, Any]]]:
         """The rule offered without a number. A number computed from the investor's own words (a fraction) is
         offered first, quoted, so choosing it is the investor's decision, never the server's."""
+        pendings = [Draft.of(p) for p in (pending if isinstance(pending, list) else [pending])]
+        several = len(pendings) > 1
         options = []
-        if number is not None:
-            options.append(_option("use-number", f"Use {_percent(number[0])} (from your words '{number[1]}')",
-                                   "The number is read from your words. It stays inactive until you confirm it.",
-                                   rule=self._offer(pending, words, objective_id, number)))
-        options.append(_option(*_ENTER_NUMBER, rule=self._offer(Draft.of(pending)._replace(number=None), words, objective_id)))
+        for index, draft in enumerate(pendings, start=1):
+            # Several companies in one clause: one pair of options per company, so none of them is lost.
+            suffix, subject = (f"-{index}", f" for {self._subject(draft)}") if several else ("", "")
+            if number is not None:
+                options.append(_option(f"use-number{suffix}", f"Use {_percent(number[0])} (from your words '{number[1]}'){subject}",
+                                       "The number is read from your words. It stays inactive until you confirm it.",
+                                       rule=self._offer(draft, words, objective_id, number)))
+            options.append(_option(f"{_ENTER_NUMBER[0]}{suffix}", f"{_ENTER_NUMBER[1]}{subject}", _ENTER_NUMBER[2],
+                                   rule=self._offer(draft._replace(number=None), words, objective_id)))
         options.append(_option(*_KEEP_QUALITATIVE))
         why = _NUMBER_NEEDED_DEFAULT if reason is None else NUMBER_REASONS[reason]
         return f"Which number should apply to {quoted}? {why}", options
@@ -467,16 +480,18 @@ class Renderer:
         return f"Which company do you mean by {quoted}? Only companies in the data snapshot can be checked.", options
 
     def _company_intent(self, quoted: str, words: str, objective_id: str | None, kind: str | None, ids: list[str],
-                        number: tuple[float, str] | None) -> tuple[str, list[dict[str, Any]]]:
-        """A wish about named companies that no single rule type matches: holding, caution, or an exact share."""
+                        number: tuple[float, str] | None, direction: str | None = None) -> tuple[str, list[dict[str, Any]]]:
+        """A wish about named companies that no single rule type matches: holding, caution, or an exact share. With a
+        ``direction`` (AT_MOST / AT_LEAST) the number pre-fills only the options of that direction."""
         if kind not in COMPANY_INTENT_KINDS or not ids:
             raise ValueError(f"COMPANY_INTENT needs a kind in {COMPANY_INTENT_KINDS} and at least one issuer id")
         ids = list(dict.fromkeys(ids))
-        note = f"{_LOOK_THROUGH_NOTE} {_number_note(number)}"
-        minimums = [_option(f"min-{i}", f"A minimum share of the portfolio in {self._company(i)}", note,
-                            rule=self._draft("min_issuer_exposure", {"issuer_id": i}, words, objective_id, number)) for i in ids] if kind != "CAUTION" else []
-        maximums = [_option(f"cap-{i}", f"A maximum share of the portfolio in {self._company(i)}", note,
-                            rule=self._draft("max_issuer_exposure", {"issuer_scope": i}, words, objective_id, number)) for i in ids]
+        low = None if direction == "AT_MOST" else number
+        high = None if direction == "AT_LEAST" else number
+        minimums = [_option(f"min-{i}", f"A minimum share of the portfolio in {self._company(i)}", f"{_LOOK_THROUGH_NOTE} {_number_note(low)}",
+                            rule=self._draft("min_issuer_exposure", {"issuer_id": i}, words, objective_id, low)) for i in ids] if kind != "CAUTION" else []
+        maximums = [_option(f"cap-{i}", f"A maximum share of the portfolio in {self._company(i)}", f"{_LOOK_THROUGH_NOTE} {_number_note(high)}",
+                            rule=self._draft("max_issuer_exposure", {"issuer_scope": i}, words, objective_id, high)) for i in ids]
         options = minimums + maximums
         if kind == "CAUTION":
             options.append(_option("exclude-named", f"Leave out {_and_list([self._company(i) for i in ids])}",
@@ -490,29 +505,63 @@ class Renderer:
         }[kind]
         return question, options
 
-    def _conflict(self, objective_id: str | None, sides: list[tuple[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    def _conflict(self, objective_id: str | None, sides: list[tuple[Any, ...]]) -> tuple[str, list[dict[str, Any]]]:
         """Wishes that cannot all hold: none is drafted directly, the investor keeps one or neither. The question
         quotes each side's own evidence and never calls it a contradiction (the contract reserves that word).
 
-        A side whose draft is None (a permission such as "No limit per company") is quoted but offers no rule: keeping
-        it is what "neither" means. At least one side must carry a draft, so the question has two options or more."""
-        if len(sides) < 2 or all(side is None for _, side in sides):
-            raise ValueError("CONFLICT needs at least two sides, one of them with a draft")
-        sides = sides[:MAX_CONFLICT_SIDES]
-        options = []
-        for evidence, side in sides:
-            if side is None:
+        A side is ``(evidence, draft or None)`` or ``(evidence, [drafts], whole)``: the rules one clause would draft.
+        A side with no draft (a permission such as "No limit per company") is quoted but offers no rule: keeping it is
+        what "neither" means. A side with several rules offers one option per rule, each naming its subject, unless
+        ``whole`` says the rules only mean the wish together (the exclusions of an "only" wish): one option cannot
+        carry them, so that side is shown as an option that needs the wish written again on its own. Sides that carry
+        rules come first; at most ``MAX_CONFLICT_SIDES`` rule options are offered, and every side is quoted."""
+        normal = []
+        for side in sides:
+            evidence, drafts = side[0], side[1]
+            whole = bool(side[2]) if len(side) > 2 else False
+            drafts = [] if drafts is None else (list(drafts) if isinstance(drafts, list) else [drafts])
+            normal.append((evidence, drafts, whole))
+        if len(normal) < 2:
+            raise ValueError("CONFLICT needs at least two sides")
+        options: list[dict[str, Any]] = []
+        offered = 0
+        for evidence, drafts, whole in sorted(normal, key=lambda side: not side[1]):
+            if not drafts:
                 continue
-            rule = self._offer(side, evidence, objective_id)
-            options.append(_option(f"keep-{len(options) + 1}", f"Draft the rule for '{evidence}'",
-                                   f"{_number_note(_rule_number(rule))} The other wishes are not drafted.",
-                                   rule=rule))
+            if whole and len(drafts) > 1:
+                options.append(_option(f"keep-{len(options) + 1}", f"Draft the rules for '{evidence}'",
+                                       f"These words need {len(drafts)} rules together, which one option cannot draft. "
+                                       "Write them again on their own, without the other wishes, to draft them.", False))
+                continue
+            for draft in drafts:
+                if offered >= MAX_CONFLICT_SIDES:
+                    break
+                offered += 1
+                rule = self._offer(draft, evidence, objective_id)
+                label = f"Draft the rule for '{evidence}'" + (f" on {self._subject(draft)}" if len(drafts) > 1 else "")
+                options.append(_option(f"keep-{len(options) + 1}", label,
+                                       f"{_number_note(_rule_number(rule))} The other wishes are not drafted.", rule=rule))
         options.append(_option(*_NEITHER))
-        quotes = list(dict.fromkeys(f"'{evidence}'" for evidence, _ in sides))
+        quotes = list(dict.fromkeys(f"'{evidence}'" for evidence, _, _ in normal))
         both = "both" if len(quotes) == 2 else "all"
         return f"{_and_list(quotes)} cannot {both} hold as rules. Which should be drafted?", options
 
-    def _exception(self, quoted: str, words: str, objective_id: str | None, base_draft: Draft | dict[str, Any] | None,
+    def _subject(self, draft: Draft | dict[str, Any] | tuple[Any, ...]) -> str:
+        """What one rule is about, as an option names it."""
+        d = Draft.of(draft)
+        definition = d.parameters.get("definition") or {}
+        if definition.get("kind") == "fund_reported_sector":
+            return f"holdings labelled {definition['sector']}"
+        if definition.get("kind") == "named_issuers":
+            return _and_list([self._company(i) for i in definition["issuer_ids"]])
+        issuer = d.parameters.get("issuer_scope") or d.parameters.get("issuer_id")
+        if issuer == "any":
+            return "every company"
+        if issuer:
+            return self._company(issuer)
+        return "the 2022 replay" if d.rule_type == "scenario_loss_budget" else "companies with a recorded controversy"
+
+    def _exception(self, quoted: str, words: str, objective_id: str | None, base_draft: Draft | dict[str, Any] | list[Any] | None,
                    exception_words: str | None, sector: str | None, remaining_ids: list[str]) -> tuple[str, list[dict[str, Any]]]:
         """No rule type can carve an exception out of another rule, so the base rule is offered only in forms that
         say plainly how they differ from the words: a named list without the exception, or the stricter whole rule."""
@@ -533,10 +582,16 @@ class Renderer:
             question = (f"How should {quoted} be drafted? A sector exclusion cannot make an exception for '{exception_words}', "
                         "so only the options below can be checked.")
         else:
-            rule = self._offer(base_draft, words, objective_id)
-            options.append(_option("every-company", "Apply it to every company, including the exception you wrote",
-                                   f"{_number_note(_rule_number(rule))} "
-                                   f"Stricter than you wrote: '{exception_words}' is not left out of the rule.", rule=rule))
+            # A base of several rules (two companies, two labels) offers each of them, named, so none is lost.
+            drafts = base_draft if isinstance(base_draft, list) else [base_draft]
+            for index, draft in enumerate(drafts, start=1):
+                rule = self._offer(draft, words, objective_id)
+                several = len(drafts) > 1
+                options.append(_option("every-company" + (f"-{index}" if several else ""),
+                                       "Apply it to every company, including the exception you wrote"
+                                       + (f" ({self._subject(draft)})" if several else ""),
+                                       f"{_number_note(_rule_number(rule))} "
+                                       f"Stricter than you wrote: '{exception_words}' is not left out of the rule.", rule=rule))
             question = (f"How should {quoted} be drafted? No rule type can make an exception for '{exception_words}', "
                         "so only the options below can be checked.")
         options.append(_option(*_KEEP_QUALITATIVE))

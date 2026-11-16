@@ -570,14 +570,15 @@ def test_a_correction_of_the_same_measure_is_honoured():
     assert rule["original_words"] == "Max 10% per company. Actually make that 8%" and rule["threshold_quote"] == "8%"
 
 
-def test_a_correction_to_another_measure_is_a_conflict_question():
+def test_a_correction_to_another_company_of_the_same_rule_replaces_it():
+    """Final review (held-out h-cor-02): a correction that restates the same rule type on the same subject kind is
+    honoured, so the withdrawn company is never offered. A correction to another kind of rule is still asked about
+    (test_service_interpreter_final.test_a_correction_to_a_different_kind_of_rule_is_still_asked)."""
     text = "Exclude Microsoft. Wait, I meant Exxon."
     doc = compile_text(text, C("c1", "Exclude Microsoft", "EXCLUDE", "NAMED_COMPANIES", "NONE_AT_ALL", company_ids=["MICROSOFT"]),
                        C("c2", "I meant Exxon", "EXCLUDE", "NAMED_COMPANIES", "NONE_AT_ALL", company_ids=["EXXON_MOBIL"], supersedes="c1"))
-    assert rules(doc) == []
-    [question] = doc["clarifications"]
-    assert question["about_words"] == "Exclude Microsoft. Wait, I meant Exxon"
-    assert [o["option_id"] for o in question["options"]] == ["keep-1", "keep-2", "keep-qualitative"]
+    assert rules(doc) == [("exclusion", {"definition": {"kind": "named_issuers", "issuer_ids": ["EXXON_MOBIL"]}}, None)]
+    assert doc["clarifications"] == [] and doc["proposed_rules"][0]["original_words"] == "Exclude Microsoft. Wait, I meant Exxon"
 
 
 @pytest.mark.parametrize("clauses", [

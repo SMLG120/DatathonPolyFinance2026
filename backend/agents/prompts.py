@@ -45,7 +45,7 @@ def build_user_message(request: dict[str, Any]) -> str:
 
 # --------------------------------------------------------------------------- interpreter (POST /rules/interpret)
 
-INTERPRETER_PROMPT_VERSION = "interpreter-4"
+INTERPRETER_PROMPT_VERSION = "interpreter-5"
 INTERPRETER_TOOL_NAME = "submit_reading"
 FIND_COMPANIES_TOOL_NAME = "find_companies"
 DESCRIBE_SECTOR_TOOL_NAME = "describe_sector"
@@ -141,7 +141,10 @@ conflicts as DIRECT_CONTRADICTION.
 - unsupported_reason: for OUT_OF_SCOPE_ASK, GOAL and OTHER only: RECOMMENDATION, FORECAST, TRADE, OPTIMIZATION, \
 GROWTH_OR_RETURN, NOT_MEASURABLE, NO_SOURCED_DEFINITION, COMPANY_NOT_IN_DATA, SECTOR_LIMIT, OIL_PRODUCERS, \
 FOSSIL_FUELS or INSTRUCTION. Else null.
-- confidence: HIGH only when the wording leaves one reading. When unsure, say MEDIUM or LOW and add an ambiguity \
+- confidence: HIGH only when the wording leaves one reading. A number written in words or as a fraction is as exact \
+as digits, and a casual tone (slang, "lol", emojis) does not make a wish uncertain. Every rule already counts what \
+the investor holds through funds and ETFs, so wording about funds or ETFs is neither a scope question nor a reason to \
+lower the confidence. When unsure, say MEDIUM or LOW and add an ambiguity \
 code: the server will ask the investor. A question is always acceptable; a wrong rule is not.
 - ambiguity: VAGUE_SCOPE (who the wish applies to is vague), HEDGED (about, roughly, maybe, give or take), UNIT_UNCLEAR \
 (a bare number with no %), NUMBER_LOOKS_MISTYPED, SEVERAL_READINGS, UNKNOWN_COMPANY, UNKNOWN_SECTOR, DIRECTION_UNCLEAR, \

@@ -18,13 +18,9 @@ from service_fakes import REAL_DATA_PRESENT, REAL_DATA_REASON, Service, api_fixt
 API = "api.schema.json#/$defs/"
 needs_real_data = pytest.mark.skipif(not REAL_DATA_PRESENT, reason=REAL_DATA_REASON)
 SENTENCE = "I want maximum growth and strict diversification."
-# What a careful model marks in Amira's sentence (the same extraction as test_service_interpreter.AMIRA_EXTRACTION).
-EXTRACTION = {
-    "objectives": [{"words": "maximum growth", "kind": "goal"}, {"words": "strict diversification", "kind": "preference"}],
-    "rules": [],
-    "ambiguous": [{"words": "strict diversification", "topic": "DIVERSIFICATION", "objective": 1}],
-    "unsupported": [{"words": "maximum growth", "reason": "GROWTH_OR_RETURN"}],
-}
+# What a careful model reads in Amira's sentence: the shared submit_reading fixture (a diversification wish, asked,
+# and a growth goal, unsupported). The old extraction shape (rules / ambiguous) is rejected by parse_reading.
+from reading_fixtures import AMIRA_READING as EXTRACTION  # noqa: E402
 
 
 @needs_real_data

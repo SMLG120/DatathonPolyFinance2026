@@ -97,18 +97,17 @@ def test_audit_a_horizon_is_not_a_second_amount():
 
 
 def test_audit_an_abbreviation_does_not_split_the_sentence_away_from_its_number():
-    """'U.S.' is not a sentence end, so the amount stays with its subject; no rule type limits a country, so the
-    investor is asked what the number limits, with their own 10% on every option."""
+    """'Corp.' is not a sentence end, so the amount stays with its subject. (Final review: the earlier example, 'Max
+    10% in U.S. companies', names a country no rule type measures; it is now reported as unsupported, see
+    test_service_interpreter_final.test_an_amount_on_a_subject_no_rule_measures_is_reported_not_substituted.)"""
+    text = "Max 10% in Microsoft Corp. shares"
+    draft = run(text, company("c1", text, "LIMIT", "AT_MOST", "Microsoft Corp. shares", ["MICROSOFT"], direction_mention="Max",
+                              quantity_mention="10%"))
+    assert rules(draft) == [("max_issuer_exposure", {"issuer_scope": "MICROSOFT"}, 0.10)]
     text = "Max 10% in U.S. companies"
     draft = run(text, clause("c1", text, "LIMIT", "WHOLE_PORTFOLIO", "AT_MOST", subject_mention="U.S. companies", direction_mention="Max",
                              quantity_mention="10%"))
-    assert draft["proposed_rules"] == []
-    [ids] = option_ids(draft)
-    assert ids == ["single-company-cap", "replay-loss-budget", "keep-qualitative"]
-    assert {(r["threshold"], r["threshold_quote"]) for r in all_rules(draft)} == {(0.10, "10%")}
-
-
-# --------------------------------------------------------------------------- audit: several companies
+    assert draft["proposed_rules"] == [] and draft["clarifications"] == [] and [u["code"] for u in draft["unsupported"]] == ["UNSUPPORTED_RULE_TYPE"]
 
 
 def test_audit_two_companies_with_two_numbers_give_two_caps():
