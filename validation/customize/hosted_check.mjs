@@ -56,6 +56,17 @@ try {
   check(await page.getByTestId("fixtures-label").count() === 0, "the hosted site is a live build (no 'Test data: fixtures' label)");
   check(await page.getByTestId("simulation-label").isVisible(), "the simulation label is shown");
 
+  // The palette of the published build (PR #20 with the contrast fixes): read from the page, not from the source.
+  const palette = await page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement);
+    const token = (name) => root.getPropertyValue(name).trim().toLowerCase();
+    const primary = [...document.querySelectorAll("button, a")].map((element) => getComputedStyle(element).backgroundImage).find((image) => image.includes("linear-gradient") && image.includes("rgb(79, 70, 229)")) ?? "";
+    return { direct: token("--color-chart-direct"), indirect: token("--color-chart-indirect"), banner: token("--color-banner"), primary };
+  });
+  check(palette.banner === "#2448c6", "the new palette is published (banner colour)", palette.banner);
+  check(palette.direct === "#2247bd" && palette.indirect === "#5b82e6", "the exposure series use the distinguishable colours", `${palette.direct} / ${palette.indirect}`);
+  check(palette.primary.includes("rgb(124, 58, 237)") && !palette.primary.includes("rgb(139, 92, 246)"), "the primary button's gradient ends on the readable violet", palette.primary.slice(0, 120));
+
   // Amira (new in this frontend)
   await page.getByTestId("persona-amira").getByRole("button").click();
   await page.getByTestId("persona-amira").getByTestId("persona-selected").waitFor({ timeout: 30_000 });
@@ -112,6 +123,20 @@ try {
     await shot("hosted-02-report-customized");
   }
   check(consoleErrors.length === 0, "no error in the browser console", consoleErrors.slice(0, 3).join(" | "));
+
+  // Mobile layout, 390 px: the report just produced, then step 1 with Amira, without sideways scrolling.
+  const noOverflow = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(300);
+  check(await noOverflow(), "390 px: the customized report does not scroll sideways");
+  await shot("hosted-03-report-390px");
+  await go("persona");
+  await page.getByTestId("persona-amira").getByRole("button").click();
+  await page.getByTestId("persona-amira").getByTestId("persona-selected").waitFor({ timeout: 30_000 });
+  await page.getByTestId("customize-open").waitFor({ timeout: 30_000 });
+  check(await noOverflow(), "390 px: step 1 with three personas and Amira selected does not scroll sideways");
+  check(await page.getByTestId("customize-open").isVisible(), "390 px: 'Customize this profile' is reachable for Amira");
+  await shot("hosted-04-amira-390px");
 } catch (error) {
   check(false, "the hosted journey ran to the end", String(error).slice(0, 300));
   await shot("hosted-99-failure").catch(() => undefined);

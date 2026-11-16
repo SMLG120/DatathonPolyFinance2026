@@ -20,6 +20,10 @@ commits on the branch (this note, the merge of newer `origin/main`) are NOT depl
 
 ## Source of the published artifacts (audited 2026-11-15 19:41 to 19:50 EST, by file comparison)
 
+> This section is the audit as written at 19:50, BEFORE the source was committed. Where it says files "are in no commit" or
+> speaks of "the uncommitted working tree", read: at the time of the audit. That source state is commit `66b33b9` (above), merged
+> into `main` with PR #21 as `fc4841a`.
+
 This audit did not query AWS: which artifacts run there is taken from the steps recorded below. What was compared is the
 content of the local copies of those artifacts with Git and with the working tree.
 
@@ -78,3 +82,37 @@ tool was not available in that session; the AWS CLI was not used.
   (`sr-only`, since commit 0774e12; BUILD_BRIEF section 8 asks for a persistent one); a finished job's steps have no link from
   the result; some wording still names the six-stage screens.
 - Rollback was not exercised on AWS. Targets and steps: `scripts/deploy.md`, "Rollback".
+
+## Frontend republished from `main` (2026-11-15, 20:01 EST): PR #20's palette with two contrast fixes
+
+Backend and data snapshot **unchanged and not redeployed**: still `lambda/byb-backend-7c459ee17d81cff1.zip` on
+`snap-2026-11-12-2662b7a89c03` (`cloudshell_release.py verify`: `verified: true`; `scripts/package.py` at the commit below
+still produces that zip name).
+
+| Item | Value |
+| --- | --- |
+| Source commit | `fc4841ab3039418d20cf4d0ccd1f4555437c69da` = `main` after the merge of PR #21 (working tree clean at build time) |
+| `frontend.zip` | sha256 `d8c5daa96305a08c1c2f677e20ca602dc428c02ea4fa6f7d6e67e8077c8b7ea3` (replaces `393138fe...74c1184c`) |
+| API in the build | only `https://3t4hod912l.execute-api.us-east-1.amazonaws.com`, the stack's `ApiBaseUrl`; no loopback address |
+| Amplify | app `dwtdk87nismj6`, branch `main`, job `4`: `SUCCEED` at 20:01:44 |
+
+What changed on the site: the colours and gradients of PR #20 ("added color"), plus commit `931e2ac`, which restores contrast
+the new palette had lost: the primary button's gradient ends on `#7c3aed` (white label 5.70:1 at rest, 4.97:1 hovered; it was
+4.23:1 and 3.71:1 on `#8b5cf6`), and the exposure series are `#2247bd` (held directly) and `#5b82e6` (through funds), 2.14:1
+apart (they were 1.03:1 apart). Not changed: the decorative logo square still uses the `#8b5cf6` gradient (hidden from assistive
+technology, not a control).
+
+Checks before publishing, on the merged content: frontend 607 unit tests (two new contrast tests), typecheck, lint,
+`npm run contrast` 42 pairs with 0 below minimum, `frontend/e2e` 29 passed (axe included); the static review's release-bundle
+check on the new `frontend.zip`: passed. PR #21's checks (CodeRabbit, Vercel) were successful on head `931e2ac`; `main` has no
+branch protection, ruleset or required review; merged with a merge commit like PRs #16 to #20.
+
+Hosted site after publishing (`validation/customize/hosted_check.py`, headless Chromium, access code read from SSM in memory):
+**22 of 22 PASS**: live build; banner `#2448c6`; chart tokens `#2247bd` / `#5b82e6`; primary button gradient ending on
+`rgb(124, 58, 237)`; Amira's portfolio loads; Robert customized (JNJ removed, SPY 15%, cash 40%), rules confirmed, NVDA to 25%
+investigated (`inv-3d3e54e162c00588bac36e0d8fe8caa6`, agent mode `MODEL`), request bodies equal to the displayed weights, job
+stores that portfolio, report labelled "Customized fictional portfolio" with the edited weights; no console error; at 390 px
+neither the report nor step 1 with Amira selected scrolls sideways.
+
+Rollback of this step only: publish the previous `frontend.zip` (`393138fe...74c1184c`, kept in the release directory and in
+`dist/cloudshell-release-customize/`) with `cloudshell_release.py host`; the backend needs nothing.

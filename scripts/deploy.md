@@ -283,6 +283,7 @@ if queued, runs against the scenario portfolio as before.
 | --- | --- |
 | `dist/byb-backend-7c459ee17d81cff1.zip` (code key `lambda/byb-backend-7c459ee17d81cff1.zip`) | `7c459ee17d81cff1822b8a25f7b16750b4e729c4c11a3fd97959e7557475525c` |
 | `frontend.zip` in the bundle (live build against the existing API URL) | `393138fe726707d29d4dd677b5e668bbcac19f3d4b0ba09fc462d3cd74c1184c` |
+| `frontend.zip` republished at 20:01 EST from `main` fc4841a (PR #20's palette with contrast fixes; frontend only, backend untouched) | `d8c5daa96305a08c1c2f677e20ca602dc428c02ea4fa6f7d6e67e8077c8b7ea3` |
 | `dist/cloudshell-release-customize.zip` | `b2b0a76701b9613a89fc5ebf632a7724037cc39a081f93d7416285384747b1d4` |
 
 The bundle holds exactly: the backend zip, `frontend.zip`, `template.yaml`, `snapshots/snap-2026-11-12-2662b7a89c03/`,
