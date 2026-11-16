@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { describedBy, Field, Select, TextInput } from "@/components/ui/Field";
 import { Notice } from "@/components/ui/Notice";
 import type { CheckResult, DemoChallenge, InvestigationJob, Policy } from "@/lib/contracts";
+import { customPortfolioOfReport } from "@/lib/customize";
 import { EPS, fractionToPercentInput, percentInputToFraction } from "@/lib/format";
 import { draftRule, getRuleThreshold, previewRuleSet, ruleParametersText, ruleTypeLabel, thresholdHint, thresholdLabel, thresholdText, validateThreshold } from "@/lib/rules";
 import { activeRules } from "@/lib/verdict";
@@ -57,6 +58,9 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
     personaId: state.personaId,
     policy,
     purchase: result.purchase_request,
+    // A rule change re-checks the portfolio stored with this report (contracts/api.md section 2a), so the
+    // preview is asked for that portfolio, not for whatever customization is applied now.
+    customPortfolio: customPortfolioOfReport(job.portfolio, state.portfolio.data?.scenario.portfolio ?? null),
     // The rules in force, with the edited rule standing in as a draft at the new number.
     buildRules: (draft) => (rule ? previewRuleSet(policy.rules, [draftRule(rule, draft)]) : policy.rules),
   });
@@ -127,7 +131,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
         >
           {rules.map((candidate) => (
             <option key={candidate.rule_id} value={candidate.rule_id}>
-              {ruleTypeLabel(candidate.rule_type)} — now {thresholdText(candidate)}
+              {ruleTypeLabel(candidate.rule_type)}: now {thresholdText(candidate)}
             </option>
           ))}
         </Select>
@@ -143,7 +147,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
       <ThresholdInput
         id={thresholdId}
         inputRef={inputRef}
-        label={`New value — ${thresholdLabel(rule.rule_type).toLowerCase()}`}
+        label={`New value: ${thresholdLabel(rule.rule_type).toLowerCase()}`}
         hint={thresholdHint(rule.rule_type)}
         value={text}
         error={shownError}

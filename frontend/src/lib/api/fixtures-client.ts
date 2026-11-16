@@ -92,6 +92,17 @@ function noFixture(message: string): never {
   throw new ApiError("no_fixture", message);
 }
 
+/**
+ * The recordings were all made on the scenario portfolios, and this client cannot calculate. A request
+ * that carries a customized portfolio is refused, so a recorded result for the original portfolio is
+ * never shown for other weights.
+ */
+function refuseCustomPortfolio(body: { custom_portfolio?: unknown }, what: string): void {
+  if (body.custom_portfolio !== undefined && body.custom_portfolio !== null) {
+    noFixture(`The test data holds no recorded ${what} of a customized portfolio: every recording was made on the original fictional portfolio. A customized portfolio needs the live service.`);
+  }
+}
+
 function delay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -421,6 +432,7 @@ export function createFixturesClient(options: FixturesClientOptions = {}): ApiCl
       if (simulate === "check-error") {
         throw new ApiError("server", "Simulated failure (test data): the check service did not answer.", { status: 503 });
       }
+      refuseCustomPortfolio(body, "check");
       const recordedCheck = RECORDED_CHECKS.find((fixture) => {
         if (fixture.request.persona_id !== body.persona_id || !sameRequest(fixture.request.purchase_request, body.purchase_request)) return false;
         if (fixture.request.draft_rules === null || body.draft_rules === null) {
@@ -460,6 +472,8 @@ export function createFixturesClient(options: FixturesClientOptions = {}): ApiCl
     async createInvestigation(body, requestOptions) {
       await wait(requestOptions);
       const key = requireKey(requestOptions);
+      // Before the replay by key: a key that started a job on the original portfolio does not answer for a customized one.
+      refuseCustomPortfolio(body, "investigation");
       const knownId = jobByKey.get(key);
       const known = knownId ? jobs.get(knownId) : undefined;
       if (known) return clone(known.accepted);

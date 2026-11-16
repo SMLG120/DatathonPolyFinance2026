@@ -1,5 +1,6 @@
 "use client";
 
+import { PortfolioUsedLabel } from "@/components/portfolio/PortfolioChecked";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { StepTimeline } from "@/components/timeline/StepTimeline";
 import { EmptyBlock, ErrorBlock, LoadingBlock } from "@/components/ui/AsyncStates";
@@ -9,6 +10,7 @@ import { ArrowRightIcon } from "@/components/ui/icons";
 import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import type { InvestigationJob } from "@/lib/contracts";
+import { customPortfolioOfReport } from "@/lib/customize";
 import { formatDateTime, formatTime } from "@/lib/format";
 import { describePurchase } from "@/lib/portfolio";
 import { isTerminalJobStatus } from "@/lib/verdict";
@@ -72,6 +74,10 @@ export function InvestigationStage() {
   const waiting = !terminal && isActive && phase === "polling";
   const deadlineSeconds = Math.round(timing.pollDeadlineMs / 1000);
   const retryRequest = investigation?.resolved_request ?? null;
+  // "The same request" is the same purchase on the same portfolio: the one stored with the failed job, whatever
+  // customization was applied or reset since. A job stored without a portfolio was checked against the scenario's.
+  const scenario = state.portfolio.data?.scenario ?? null;
+  const retryPortfolio = customPortfolioOfReport(investigation?.portfolio, scenario?.portfolio ?? null);
 
   return (
     <StageFrame stage="investigation" lead={LEAD}>
@@ -86,7 +92,18 @@ export function InvestigationStage() {
             <Fact label="Request">
               <span className="tabular">{describeJobRequest(investigation)}</span>
             </Fact>
-            <Fact label="Checked against">Confirmed policy — version {investigation.policy_version}</Fact>
+            <Fact label="Checked against">Confirmed policy: version {investigation.policy_version}</Fact>
+            {/* The job's own stored portfolio, whatever its status and whatever is customized now. A job stored without one says nothing. */}
+            {investigation.portfolio ? (
+              <Fact label="Portfolio checked">
+                <PortfolioUsedLabel
+                  portfolio={investigation.portfolio}
+                  scenarioPortfolio={scenario?.portfolio ?? null}
+                  personaName={scenario?.persona.display_name ?? "This persona"}
+                  testId="job-portfolio-label"
+                />
+              </Fact>
+            ) : null}
             <Fact label="Started">
               <span className="tabular">{formatDateTime(investigation.created_at)}</span>
             </Fact>
@@ -146,7 +163,7 @@ export function InvestigationStage() {
           message={investigation.failure?.message ?? "The job ended without a result and gave no reason."}
           onRetry={
             // A new investigation needs a policy in force (there is none after a policy version conflict).
-            investigation.failure?.retryable !== false && retryRequest && derived.currentPolicy ? () => void actions.startInvestigation(retryRequest) : undefined
+            investigation.failure?.retryable !== false && retryRequest && derived.currentPolicy ? () => void actions.startInvestigation(retryRequest, null, retryPortfolio) : undefined
           }
           retryLabel="Run the same request again"
         >

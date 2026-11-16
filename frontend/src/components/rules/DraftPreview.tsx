@@ -1,13 +1,15 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import { RuleMeasure } from "@/components/verdict/RuleMeasure";
 import { StatusBadge } from "@/components/ui/Badge";
 import { ErrorIcon, InfoIcon } from "@/components/ui/icons";
 import { TestDataTag } from "@/components/ui/TestDataTag";
 import { useDebouncedPreview, type DebouncedPreview } from "@/hooks/useDebouncedPreview";
 import { describeError, isApiError } from "@/lib/api";
-import type { CheckResult, PersonaId, Policy, PurchaseRequest, Rule, RuleType } from "@/lib/contracts";
+import { canonical } from "@/lib/canonical";
+import type { CheckResult, CustomPortfolio, PersonaId, Policy, PurchaseRequest, Rule, RuleType } from "@/lib/contracts";
+import { withCustomPortfolio } from "@/lib/customize";
 import { formatFraction, percentInputToFraction } from "@/lib/format";
 import { describePurchase } from "@/lib/portfolio";
 import { assessResult } from "@/lib/result";
@@ -15,7 +17,7 @@ import { limitNoun, ruleTypeLabel, validateThreshold } from "@/lib/rules";
 import { useRuntime } from "@/state/runtime";
 
 /** The label every preview carries. A preview is never the confirmed result. */
-export const PREVIEW_LABEL = "Preview with draft threshold — not your confirmed policy";
+export const PREVIEW_LABEL = "Preview with draft threshold: not your confirmed policy";
 
 export interface DraftInput {
   threshold: number;
@@ -29,6 +31,12 @@ export interface UseDraftPreviewOptions {
   policy: Policy | null;
   /** The purchase the draft is tried on. A check always needs one; without it nothing is previewed. */
   purchase: PurchaseRequest | null;
+  /**
+   * The customized fictional portfolio the draft is tried on, or null for the persona's scenario portfolio.
+   * Required, so that every caller says which portfolio its preview is about: the applied customization
+   * for a rule not yet confirmed, the portfolio of the report for a rule change against that report.
+   */
+  customPortfolio: CustomPortfolio | null;
   /** The full rule set to evaluate, with the draft threshold applied to the rule being edited. */
   buildRules: (threshold: number) => Rule[];
 }
@@ -41,7 +49,7 @@ export interface UseDraftPreviewOptions {
  * report or to the workflow store, so a preview cannot replace a confirmed
  * result. Answers for an older draft are dropped (see useDebouncedPreview).
  */
-export function useDraftPreview({ personaId, policy, purchase, buildRules }: UseDraftPreviewOptions): {
+export function useDraftPreview({ personaId, policy, purchase, customPortfolio, buildRules }: UseDraftPreviewOptions): {
   preview: DraftPreviewState;
   /** Call with the field's text on every change. */
   onDraftChange: (text: string) => void;
@@ -50,18 +58,27 @@ export function useDraftPreview({ personaId, policy, purchase, buildRules }: Use
   const preview = useDebouncedPreview<DraftInput, CheckResult>(async (input, signal) => {
     if (!personaId || !purchase) throw new Error("A preview needs a persona and a purchase.");
     return api.check(
-      {
-        persona_id: personaId,
-        policy_id: policy?.policy_id ?? null,
-        policy_version: policy?.version ?? null,
-        purchase_request: purchase,
-        draft_rules: buildRules(input.threshold),
-      },
+      withCustomPortfolio(
+        {
+          persona_id: personaId,
+          policy_id: policy?.policy_id ?? null,
+          policy_version: policy?.version ?? null,
+          purchase_request: purchase,
+          draft_rules: buildRules(input.threshold),
+        },
+        customPortfolio,
+      ),
       { signal },
     );
   }, timing.previewDebounceMs);
 
   const { schedule, clear } = preview;
+  // A preview belongs to the portfolio it was asked for. When that portfolio changes, the preview on screen
+  // and any call in flight are dropped, so a figure for the earlier weights is never shown for the new ones.
+  const portfolioKey = canonical(customPortfolio);
+  useEffect(() => {
+    clear();
+  }, [portfolioKey, clear]);
   const canPreview = personaId !== null && purchase !== null;
   const onDraftChange = useCallback(
     (text: string) => {

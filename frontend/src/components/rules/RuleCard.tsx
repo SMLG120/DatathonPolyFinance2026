@@ -3,7 +3,7 @@
 import { useId, type ReactNode, type Ref } from "react";
 import { Badge, RuleStatusBadge } from "@/components/ui/Badge";
 import { TestDataTag } from "@/components/ui/TestDataTag";
-import type { Objective, PersonaId, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
+import type { CustomPortfolio, Objective, PersonaId, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { formatDateTime, percentInputToFraction } from "@/lib/format";
 import {
@@ -70,7 +70,7 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
         </div>
         {objective ? (
           <div className="sm:col-span-2">
-            <dt className="text-sm font-semibold text-ink-muted">Related objective — context only</dt>
+            <dt className="text-sm font-semibold text-ink-muted">Related objective: context only</dt>
             <dd className="text-ink">
               &ldquo;{objective.original_words}&rdquo;
               <span className="mt-0.5 block text-sm text-ink-muted">
@@ -109,6 +109,8 @@ export interface ProposedRuleCardProps {
   policy: Policy | null;
   /** The purchase a preview is tried on (the one entered in stage 3), or null. */
   purchase: PurchaseRequest | null;
+  /** The applied customization of the fictional portfolio a preview is tried on, or null for the scenario portfolio. */
+  customPortfolio: CustomPortfolio | null;
   /** The threshold field's text, as a percentage. "" = not set. */
   thresholdText: string;
   onThresholdChange: (text: string) => void;
@@ -130,7 +132,7 @@ export function thresholdProblem(text: string): string | null {
  * it, and it can only be confirmed with a threshold the user can see in the
  * field. A system-proposed rule arrives with an empty field.
  */
-export function ProposedRuleCard({ rule, objective, personaId, policy, purchase, thresholdText: text, onThresholdChange, buildPreviewRules, attempted, inputRef }: ProposedRuleCardProps) {
+export function ProposedRuleCard({ rule, objective, personaId, policy, purchase, customPortfolio, thresholdText: text, onThresholdChange, buildPreviewRules, attempted, inputRef }: ProposedRuleCardProps) {
   const headingId = useId();
   const fieldId = useId();
 
@@ -138,7 +140,7 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
   // An empty field is not an error until the user tries to confirm it.
   const shownError = problem !== null && (attempted || text.trim() !== "") ? problem : null;
 
-  const { preview, onDraftChange } = useDraftPreview({ personaId, policy, purchase, buildRules: buildPreviewRules });
+  const { preview, onDraftChange } = useDraftPreview({ personaId, policy, purchase, customPortfolio, buildRules: buildPreviewRules });
 
   return (
     <li>

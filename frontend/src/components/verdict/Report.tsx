@@ -7,7 +7,8 @@ import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
-import type { CheckResult, InvestigationJob, Objective, Policy } from "@/lib/contracts";
+import { PortfolioChecked } from "@/components/portfolio/PortfolioChecked";
+import type { CheckResult, InvestigationJob, Objective, Policy, Portfolio } from "@/lib/contracts";
 import { formatCoverage, formatDate, formatDateTime, formatFraction } from "@/lib/format";
 import { describePurchase, FUNDING_STATEMENT, instrumentName, type InstrumentRegistry } from "@/lib/portfolio";
 import { coverageText } from "@/lib/verdict";
@@ -28,6 +29,10 @@ export interface ReportProps {
   /** Objectives to quote when the policy version is not held. */
   objectives: Objective[];
   instruments: InstrumentRegistry;
+  /** The persona's scenario portfolio, to name the portfolio stored with the job as the original or a customized one. */
+  scenarioPortfolio?: Portfolio | null;
+  /** Whose fictional portfolio this is, for the caption of the "Portfolio checked" table. */
+  personaName?: string;
 }
 
 /** "SPY complete · XIU.TO partial (98.0%)": what stays visible while the coverage section is closed. */
@@ -55,7 +60,7 @@ function coverageHint(result: CheckResult): string {
  * Every figure is a field of the engine's result. Nothing is added, subtracted
  * or counted here.
  */
-export function Report({ job, result, policy, objectives, instruments }: ReportProps) {
+export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona" }: ReportProps) {
   const lookup = ruleLookup(policy);
   const purchase = result.purchase_request;
   const feasibility = result.feasibility;
@@ -109,6 +114,9 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         ) : null}
       </VerdictSummary>
       <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton></div>
+
+      {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
+      {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}
 
       {result.policy_consistency.status === "PROVEN_CONFLICT" ? (
         <Notice tone="error" title="Two confirmed rules cannot both be respected" role="alert">
@@ -182,7 +190,7 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         focusableHeading
         figures
         title="Context for the objectives"
-        eyebrow="Qualitative — not scored"
+        eyebrow="Qualitative: not scored"
         description="Objectives are not rules. What follows relates measured values to the words of each objective, without a pass or a fail."
       >
         <GoalContextList result={result} objectives={policy?.objectives ?? objectives} />

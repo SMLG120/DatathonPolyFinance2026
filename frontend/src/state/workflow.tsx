@@ -9,16 +9,19 @@ import { canonical } from "@/lib/canonical";
 import type {
   ChallengeRequest,
   ChallengeResponse,
+  CustomPortfolio,
   Interpretation,
   InvestigationJob,
   Objective,
   PersonaId,
   Policy,
+  Portfolio,
   PortfolioResponse,
   ProposedCorrection,
   PurchaseRequest,
   Rule,
 } from "@/lib/contracts";
+import { applyCustomPortfolio, isScenarioPortfolio, restatedObjective, withCustomPortfolio, type CustomizeFormInput } from "@/lib/customize";
 import { fractionToPercentInput, percentInputToFraction } from "@/lib/format";
 import { measureKey, validateThreshold } from "@/lib/rules";
 import { activeRules, isTerminalJobStatus } from "@/lib/verdict";
@@ -54,8 +57,28 @@ const failed = (error: unknown): Operation => ({
 const errorCode = (error: unknown): string | null => (isApiError(error) ? error.code : null);
 
 export interface WorkflowState {
+  /**
+   * The number of the session: it goes up each time a persona is chosen, the same one again included.
+   * A request notes it when it starts, and its answer is applied only if the number is still the same,
+   * so an answer for an earlier session never lands in a later one.
+   */
+  session: number;
   personaId: PersonaId | null;
   portfolio: { status: "idle" | "loading" | "ready" | "error"; data: PortfolioResponse | null; error: string | null };
+  /**
+   * The applied customization of the persona's fictional portfolio, or null for the scenario portfolio.
+   * This one value is what the screens show (`derived.effectivePortfolio`) and what every check and
+   * investigation sends (`derived.customPortfolio`). Never the scenario's own weights: those are null.
+   */
+  customPortfolio: CustomPortfolio | null;
+  /** True while the scenario objective carries the user's wording instead of the scenario's. */
+  objectiveEdited: boolean;
+  /**
+   * The text in the "Customize this profile" editor while it is open: typed, not applied. Null when the
+   * editor is closed. It is kept here, and not in the editor, so that leaving stage 1 does not drop it.
+   * Nothing reads it but the editor: it is never shown as the portfolio and never sent.
+   */
+  customizeDraft: CustomizeFormInput | null;
 
   /** The user's own sentence in stage 2. Empty until they type or take the scenario's sentence. */
   goalText: string;
@@ -108,8 +131,12 @@ export interface WorkflowState {
 }
 
 const INITIAL: WorkflowState = {
+  session: 0,
   personaId: null,
   portfolio: { status: "idle", data: null, error: null },
+  customPortfolio: null,
+  objectiveEdited: false,
+  customizeDraft: null,
   goalText: "",
   interpret: IDLE,
   interpretation: null,
@@ -134,31 +161,34 @@ const INITIAL: WorkflowState = {
 };
 
 type Action =
-  | { type: "persona/selected"; personaId: PersonaId }
+  | { type: "persona/selected"; session: number; personaId: PersonaId }
   | { type: "portfolio/loaded"; personaId: PersonaId; data: PortfolioResponse }
   | { type: "portfolio/failed"; personaId: PersonaId; error: string }
+  | { type: "customization/applied"; portfolio: CustomPortfolio; objectiveWords: string | null }
+  | { type: "customization/reset" }
+  | { type: "customization/draftChanged"; draft: CustomizeFormInput | null }
   | { type: "goal/changed"; text: string }
   | { type: "interpret/started" }
-  | { type: "interpret/succeeded"; personaId: PersonaId; interpretation: Interpretation }
-  | { type: "interpret/failed"; error: unknown }
+  | { type: "interpret/succeeded"; session: number; personaId: PersonaId; interpretation: Interpretation }
+  | { type: "interpret/failed"; session: number; error: unknown }
   | { type: "option/chosen"; interpretationId: string; clarificationId: string; optionId: string; draft: Rule | null }
   | { type: "threshold/changed"; ruleId: string; text: string }
   | { type: "confirm/started" }
-  | { type: "confirm/succeeded"; policy: Policy; ruleIds: string[] }
-  | { type: "confirm/failed"; error: unknown }
+  | { type: "confirm/succeeded"; session: number; policy: Policy; ruleIds: string[] }
+  | { type: "confirm/failed"; session: number; error: unknown }
   | { type: "purchase/changed"; patch: Partial<WorkflowState["purchase"]> }
   | { type: "start/started" }
-  | { type: "start/succeeded"; investigationId: string }
-  | { type: "start/failed"; error: unknown }
+  | { type: "start/succeeded"; session: number; investigationId: string }
+  | { type: "start/failed"; session: number; error: unknown }
   | { type: "investigation/updated"; investigation: InvestigationJob }
   | { type: "poll/restarted" }
   | { type: "report/viewed"; investigationId: string | null }
   | { type: "challenge/started" }
-  | { type: "challenge/failed"; error: unknown }
+  | { type: "challenge/failed"; session: number; error: unknown }
   | { type: "challenge/cleared" }
-  | { type: "challenge/factRecorded"; correction: ProposedCorrection }
-  | { type: "challenge/preferenceRecorded"; interpretation: Interpretation }
-  | { type: "challenge/ruleChanged"; policy: Policy; olderId: string; newerId: string };
+  | { type: "challenge/factRecorded"; session: number; correction: ProposedCorrection }
+  | { type: "challenge/preferenceRecorded"; session: number; interpretation: Interpretation }
+  | { type: "challenge/ruleChanged"; session: number; policy: Policy; olderId: string; newerId: string };
 
 /**
  * The key of a clarification question in `chosenOptions`, and its React key.
@@ -254,10 +284,33 @@ function adoptObjectives(known: Objective[], answer: Interpretation): { objectiv
   };
 }
 
+/**
+ * The session's objectives with the words of the scenario objective replaced. `words` null, or the
+ * scenario's own words, puts the scenario objective back.
+ *
+ * Only that one objective changes: same id, same kind, the words verbatim. No rule is created, changed,
+ * confirmed or given a number here, and the interpreter is not asked anything.
+ */
+function restateScenarioObjective(state: WorkflowState, words: string | null): Pick<WorkflowState, "objectives" | "objectiveEdited"> {
+  const original = state.portfolio.data?.scenario.objectives[0];
+  if (!original) return { objectives: state.objectives, objectiveEdited: false };
+  const edited = words !== null && words !== original.original_words;
+  const next = edited ? restatedObjective(original, words) : original;
+  return {
+    objectives: state.objectives.map((objective) => (objective.objective_id === original.objective_id ? next : objective)),
+    objectiveEdited: edited,
+  };
+}
+
 function reducer(state: WorkflowState, action: Action): WorkflowState {
+  // Choosing a persona starts a new session, under the number the provider gave it.
+  if (action.type === "persona/selected") {
+    return { ...INITIAL, session: action.session, personaId: action.personaId, portfolio: { status: "loading", data: null, error: null } };
+  }
+  // The answer to a request made in an earlier session (before another persona was chosen, or the same one
+  // again) is dropped: its policy, job, drafts or error belong to a session that no longer exists.
+  if ("session" in action && action.session !== state.session) return state;
   switch (action.type) {
-    case "persona/selected":
-      return { ...INITIAL, personaId: action.personaId, portfolio: { status: "loading", data: null, error: null } };
 
     case "portfolio/loaded": {
       if (state.personaId !== action.personaId) return state;
@@ -276,6 +329,27 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
     case "portfolio/failed":
       if (state.personaId !== action.personaId) return state;
       return { ...state, portfolio: { status: "error", data: null, error: action.error } };
+
+    case "customization/applied": {
+      const scenario = state.portfolio.data?.scenario;
+      if (!scenario) return state;
+      // Policies and reports are kept: a policy does not depend on the portfolio, and a report is immutable.
+      // A refusal of the previous request no longer describes what would be sent, so it is cleared.
+      return {
+        ...state,
+        // The scenario's own weights are the scenario portfolio (contracts/api.md section 2a, rule 5): not a customization.
+        customPortfolio: isScenarioPortfolio(action.portfolio, scenario.portfolio) ? null : action.portfolio,
+        ...restateScenarioObjective(state, action.objectiveWords),
+        customizeDraft: null,
+        start: IDLE,
+      };
+    }
+
+    case "customization/reset":
+      return { ...state, customPortfolio: null, ...restateScenarioObjective(state, null), customizeDraft: null, start: IDLE };
+
+    case "customization/draftChanged":
+      return state.portfolio.status === "ready" ? { ...state, customizeDraft: action.draft } : state;
 
     case "goal/changed":
       return { ...state, goalText: action.text };
@@ -436,6 +510,18 @@ function reducer(state: WorkflowState, action: Action): WorkflowState {
 export interface WorkflowActions {
   selectPersona: (personaId: PersonaId) => void;
   retryPortfolio: () => void;
+  /**
+   * Applies an edited fictional portfolio and, when given, the user's wording of the scenario objective.
+   * Rules, confirmed policies and reports are left exactly as they are; nothing is sent to the service.
+   */
+  applyCustomization: (portfolio: CustomPortfolio, objectiveWords: string | null) => void;
+  /** Puts the scenario portfolio and the scenario objective back. Policies and reports are kept. */
+  resetCustomization: () => void;
+  /**
+   * Keeps the text of the open customization editor (null closes it and discards the text). Nothing is
+   * applied, shown as the portfolio or sent: only Apply does that.
+   */
+  setCustomizeDraft: (draft: CustomizeFormInput | null) => void;
   setGoalText: (text: string) => void;
   /** POST /rules/interpret with the user's sentence. The answer is a draft: nothing in it is active. */
   interpretGoal: () => Promise<void>;
@@ -449,7 +535,11 @@ export interface WorkflowActions {
   confirmRules: (ruleIds: string[]) => Promise<Policy | null>;
   setPurchase: (patch: Partial<WorkflowState["purchase"]>) => void;
   /** POST /investigations under the current policy. Resolves to the job id, or null on failure. */
-  startInvestigation: (purchase: PurchaseRequest, parentInvestigationId?: string | null) => Promise<string | null>;
+  /**
+   * `portfolio` is given only to run an earlier job's request again: that job's stored portfolio (null for the
+   * scenario portfolio). Left out, the applied customization is sent: the portfolio the screens show.
+   */
+  startInvestigation: (purchase: PurchaseRequest, parentInvestigationId?: string | null, portfolio?: CustomPortfolio | null) => Promise<string | null>;
   /** Starts a fresh poll, with a fresh deadline, of the active job. */
   retryPolling: () => void;
   viewReport: (investigationId: string | null) => void;
@@ -459,6 +549,17 @@ export interface WorkflowActions {
 }
 
 export interface WorkflowDerived {
+  /**
+   * The fictional portfolio the next check starts from: the scenario's, with cash and positions replaced
+   * by `customPortfolio` when one is applied. Every screen that shows the starting portfolio reads this.
+   */
+  effectivePortfolio: Portfolio | null;
+  /**
+   * The applied customization, exactly as every POST /check and POST /investigations sends it
+   * (`withCustomPortfolio`), or null: the member is then left out. It is the value `effectivePortfolio`
+   * is built from, so what is shown and what is sent cannot differ.
+   */
+  customPortfolio: CustomPortfolio | null;
   /** The policy version in force: the newest. */
   currentPolicy: Policy | null;
   /** The stored policy version a job or result was checked against, when this session holds it (in force or set aside). */
@@ -513,6 +614,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     latest.current = state;
   }, [state]);
 
+  // The session number, counted here and not read back from the state: it is current the moment a persona is
+  // chosen, before the next render, so an answer that arrives in between is already known to be late.
+  const sessionNumber = useRef(INITIAL.session);
   const portfolioRequest = useRef<AbortController | null>(null);
   // Each selection starts a new session, even when selecting the same persona again.
   // Aborting it also invalidates responses from clients that ignore AbortSignal.
@@ -534,7 +638,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       portfolioRequest.current = controller;
       startKey.done();
       challengeKey.done();
-      dispatch({ type: "persona/selected", personaId });
+      sessionNumber.current += 1;
+      dispatch({ type: "persona/selected", session: sessionNumber.current, personaId });
       api.getPortfolio(personaId, { signal: controller.signal }).then(
         (data) => {
           if (controller.signal.aborted) return;
@@ -555,14 +660,36 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     if (personaId) selectPersona(personaId);
   }, [selectPersona]);
 
+  const applyCustomization = useCallback(
+    (portfolio: CustomPortfolio, objectiveWords: string | null) => {
+      if (latest.current.portfolio.status !== "ready") return;
+      dispatch({ type: "customization/applied", portfolio, objectiveWords });
+      announce("Customization applied. No rule was changed and nothing was checked.");
+    },
+    [announce],
+  );
+
+  const resetCustomization = useCallback(() => {
+    if (latest.current.portfolio.status !== "ready") return;
+    dispatch({ type: "customization/reset" });
+    announce("The original scenario is restored: its portfolio and its objective.");
+  }, [announce]);
+
+  const setCustomizeDraft = useCallback((draft: CustomizeFormInput | null) => dispatch({ type: "customization/draftChanged", draft }), []);
+
   const setGoalText = useCallback((text: string) => dispatch({ type: "goal/changed", text }), []);
+
+  // True once another persona was chosen (or the same one again) after a request noted `session`. Its answer is
+  // then dropped whole: no state, no announcement, no idempotency key of the new session is touched.
+  const left = useCallback((session: number) => sessionNumber.current !== session, []);
 
   const interpretGoal = useCallback(async () => {
     const current = latest.current;
-    const session = sessionRequest.current;
+    const live = sessionRequest.current;
     const personaId = current.personaId;
-    if (!personaId || !session || session.signal.aborted || current.interpret.status === "loading") return;
+    if (!personaId || !live || live.signal.aborted || current.interpret.status === "loading") return;
     const policy = current.policies.at(-1) ?? null;
+    const session = sessionNumber.current;
     dispatch({ type: "interpret/started" });
     try {
       const interpretation = await api.interpretRules({
@@ -570,9 +697,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         text: current.goalText.trim(),
         policy_id: policy?.policy_id ?? null,
         policy_version: policy?.version ?? null,
-      }, { signal: session.signal });
-      if (session.signal.aborted) return;
-      dispatch({ type: "interpret/succeeded", personaId, interpretation });
+      }, { signal: live.signal });
+      if (live.signal.aborted || left(session)) return;
+      dispatch({ type: "interpret/succeeded", session, personaId, interpretation });
       const rules = interpretation.proposed_rules.length;
       const questions = interpretation.clarifications.length;
       announce(
@@ -580,10 +707,10 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
           (questions > 0 ? `, and ${questions} ${questions === 1 ? "question" : "questions"} for you.` : "."),
       );
     } catch (error) {
-      if (session.signal.aborted || isAbortError(error)) return;
-      dispatch({ type: "interpret/failed", error });
+      if (live.signal.aborted || isAbortError(error) || left(session)) return;
+      dispatch({ type: "interpret/failed", session, error });
     }
-  }, [api, announce]);
+  }, [api, announce, left]);
 
   const chooseOption = useCallback(
     (interpretationId: string, clarificationId: string, optionId: string) => {
@@ -605,9 +732,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const confirmRules = useCallback(
     async (ruleIds: string[]) => {
       const current = latest.current;
-      const session = sessionRequest.current;
+      const live = sessionRequest.current;
       const personaId = current.personaId;
-      if (!personaId || !session || session.signal.aborted || current.confirm.status === "loading") return null;
+      if (!personaId || !live || live.signal.aborted || current.confirm.status === "loading") return null;
       const confirmations = ruleIds.flatMap((ruleId) => {
         const rule = current.proposedRules.find((candidate) => candidate.rule_id === ruleId);
         const threshold = percentInputToFraction(current.thresholdText[ruleId] ?? "");
@@ -616,6 +743,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       });
       if (confirmations.length === 0) return null;
       const base = current.policies.at(-1) ?? null;
+      const session = sessionNumber.current;
       dispatch({ type: "confirm/started" });
       try {
         const { policy } = await api.confirmRules({
@@ -626,58 +754,76 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
           confirmations,
           withdraw_rule_ids: [],
           change_note: null,
-        }, { signal: session.signal });
-        if (session.signal.aborted) return null;
-        dispatch({ type: "confirm/succeeded", policy, ruleIds: confirmations.map((confirmation) => confirmation.rule.rule_id) });
+        }, { signal: live.signal });
+        if (live.signal.aborted || left(session)) return null;
+        dispatch({ type: "confirm/succeeded", session, policy, ruleIds: confirmations.map((confirmation) => confirmation.rule.rule_id) });
         const active = activeRules(policy).length;
         announce(`Confirmed. Policy version ${policy.version} is in force with ${active} confirmed ${active === 1 ? "rule" : "rules"}.`);
         return policy;
       } catch (error) {
-        if (session.signal.aborted || isAbortError(error)) return null;
-        dispatch({ type: "confirm/failed", error });
+        if (live.signal.aborted || isAbortError(error) || left(session)) return null;
+        dispatch({ type: "confirm/failed", session, error });
         return null;
       }
     },
-    [api, announce],
+    [api, announce, left],
   );
 
   const setPurchase = useCallback((patch: Partial<WorkflowState["purchase"]>) => dispatch({ type: "purchase/changed", patch }), []);
 
   const startInvestigation = useCallback(
-    async (purchase: PurchaseRequest, parentInvestigationId: string | null = null) => {
+    async (purchase: PurchaseRequest, parentInvestigationId: string | null = null, portfolio?: CustomPortfolio | null) => {
       const current = latest.current;
-      const session = sessionRequest.current;
+      const live = sessionRequest.current;
       const policy = current.policies.at(-1);
-      if (!current.personaId || !policy || !session || session.signal.aborted || current.start.status === "loading") return null;
-      const signature = [current.personaId, policy.policy_id, policy.version, purchase.instrument_id, purchase.target_direct_weight, parentInvestigationId].join("|");
+      if (!current.personaId || !policy || !live || live.signal.aborted || current.start.status === "loading") return null;
+      // The same value the screens show. It is part of the signature: another portfolio is another body, so another key.
+      // Running a failed job's request again names that job's stored portfolio instead (contracts/api.md section 2a).
+      const customPortfolio = portfolio === undefined ? current.customPortfolio : portfolio;
+      const signature = [
+        current.personaId,
+        policy.policy_id,
+        policy.version,
+        purchase.instrument_id,
+        purchase.target_direct_weight,
+        parentInvestigationId,
+        canonical(customPortfolio),
+      ].join("|");
+      const session = sessionNumber.current;
       dispatch({ type: "start/started" });
       try {
         const accepted = await api.createInvestigation(
-          {
-            persona_id: current.personaId,
-            policy_id: policy.policy_id,
-            policy_version: policy.version,
-            request: purchase,
-            parent_investigation_id: parentInvestigationId,
-          },
-          { idempotencyKey: startKey.keyFor(signature), signal: session.signal },
+          withCustomPortfolio(
+            {
+              persona_id: current.personaId,
+              policy_id: policy.policy_id,
+              policy_version: policy.version,
+              request: purchase,
+              parent_investigation_id: parentInvestigationId,
+            },
+            customPortfolio,
+          ),
+          { idempotencyKey: startKey.keyFor(signature), signal: live.signal },
         );
-        if (session.signal.aborted) return null;
+        // Accepted for a session that was left since: the job is not attached to the one on screen, and the
+        // caller is told nothing started, so it does not move to a result that is not this session's.
+        if (live.signal.aborted || left(session)) return null;
         startKey.done();
-        dispatch({ type: "start/succeeded", investigationId: accepted.id });
+        dispatch({ type: "start/succeeded", session, investigationId: accepted.id });
         announce("Investigation accepted. Waiting for its first step.");
         return accepted.id;
       } catch (error) {
-        if (session.signal.aborted || isAbortError(error)) return null;
+        if (live.signal.aborted || isAbortError(error)) return null;
         // contracts/api.md section 6, rule 5: after 503 WORKER_INVOCATION_FAILED the job stored under this key is
         // FAILED, so the same key would replay the 503 for ever: "The client retries with a new key." After every
         // other failure (429, a network error, no answer in time) the key is kept, so a retry cannot start a second job.
+        if (left(session)) return null;
         if (errorCode(error) === "WORKER_INVOCATION_FAILED") startKey.done();
-        dispatch({ type: "start/failed", error });
+        dispatch({ type: "start/failed", session, error });
         return null;
       }
     },
-    [api, announce, startKey],
+    [api, announce, startKey, left],
   );
 
   const retryPolling = useCallback(() => dispatch({ type: "poll/restarted" }), []);
@@ -686,39 +832,41 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
 
   const submitChallenge = useCallback(
     async (investigationId: string, request: ChallengeRequest) => {
-      const session = sessionRequest.current;
-      if (!session || session.signal.aborted || latest.current.challenge.status === "loading") return null;
+      const live = sessionRequest.current;
+      if (!live || live.signal.aborted || latest.current.challenge.status === "loading") return null;
+      const session = sessionNumber.current;
       dispatch({ type: "challenge/started" });
       try {
         const response = await api.challengeInvestigation(investigationId, request, {
           idempotencyKey: challengeKey.keyFor(`${investigationId}|${canonical(request)}`),
-          signal: session.signal,
+          signal: live.signal,
         });
-        if (session.signal.aborted) return null;
+        if (live.signal.aborted || left(session)) return null;
         challengeKey.done();
         if (response.proposed_correction) {
-          dispatch({ type: "challenge/factRecorded", correction: response.proposed_correction });
+          dispatch({ type: "challenge/factRecorded", session, correction: response.proposed_correction });
           announce("Your correction is recorded as proposed and unverified. The original evidence is unchanged.");
         } else if (response.interpretation) {
-          dispatch({ type: "challenge/preferenceRecorded", interpretation: response.interpretation });
+          dispatch({ type: "challenge/preferenceRecorded", session, interpretation: response.interpretation });
           announce("Your preference is recorded as a new draft. No stored rule was changed.");
         } else if (response.policy && response.investigation) {
-          dispatch({ type: "challenge/ruleChanged", policy: response.policy, olderId: investigationId, newerId: response.investigation.id });
+          dispatch({ type: "challenge/ruleChanged", session, policy: response.policy, olderId: investigationId, newerId: response.investigation.id });
           announce(`Policy version ${response.policy.version} created. Re-checking the same purchase under it.`);
         } else {
           throw new Error("The answer to the challenge carried nothing to show.");
         }
         return response;
       } catch (error) {
-        if (session.signal.aborted || isAbortError(error)) return null;
+        if (live.signal.aborted || isAbortError(error)) return null;
         // contracts/api.md section 8, CHANGE_RULE: "The client retries the challenge with a new key" after 503
         // WORKER_INVOCATION_FAILED, and only then.
+        if (left(session)) return null;
         if (errorCode(error) === "WORKER_INVOCATION_FAILED") challengeKey.done();
-        dispatch({ type: "challenge/failed", error });
+        dispatch({ type: "challenge/failed", session, error });
         return null;
       }
     },
-    [api, announce, challengeKey],
+    [api, announce, challengeKey, left],
   );
 
   // --- Polling of the active job -------------------------------------------------
@@ -738,6 +886,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     () => ({
       selectPersona,
       retryPortfolio,
+      applyCustomization,
+      resetCustomization,
+      setCustomizeDraft,
       setGoalText,
       interpretGoal,
       chooseOption,
@@ -753,6 +904,9 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     [
       selectPersona,
       retryPortfolio,
+      applyCustomization,
+      resetCustomization,
+      setCustomizeDraft,
       setGoalText,
       interpretGoal,
       chooseOption,
@@ -771,7 +925,10 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     const latestInvestigationId = state.investigationIds.at(-1) ?? null;
     const viewedInvestigationId = state.viewedInvestigationId ?? latestInvestigationId;
     const reports = state.investigationIds.map((id) => state.investigations[id]).filter((job): job is InvestigationJob => Boolean(job?.result));
+    const scenarioPortfolio = state.portfolio.data?.scenario.portfolio ?? null;
     return {
+      effectivePortfolio: scenarioPortfolio ? applyCustomPortfolio(scenarioPortfolio, state.customPortfolio) : null,
+      customPortfolio: state.customPortfolio,
       currentPolicy: state.policies.at(-1) ?? null,
       policyFor: (reference) =>
         [...state.policies, ...state.retiredPolicies].find((policy) => policy.policy_id === reference.policy_id && policy.version === reference.policy_version) ?? null,
@@ -787,7 +944,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       },
       polling: { phase: polling.phase, error: polling.error ? describeError(polling.error) : null },
     };
-  }, [state.investigationIds, state.investigations, state.viewedInvestigationId, state.policies, state.retiredPolicies, state.corrections, polling.phase, polling.error]);
+  }, [state.portfolio.data, state.customPortfolio, state.investigationIds, state.investigations, state.viewedInvestigationId, state.policies, state.retiredPolicies, state.corrections, polling.phase, polling.error]);
 
   const value = useMemo(() => ({ state, actions, derived }), [state, actions, derived]);
   return <WorkflowContext.Provider value={value}>{children}</WorkflowContext.Provider>;
