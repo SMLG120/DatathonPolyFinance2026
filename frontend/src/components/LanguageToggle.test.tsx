@@ -9,7 +9,24 @@ import { assetClassLabel } from "@/lib/portfolio";
 import { toolLabel } from "@/components/timeline/StepTimeline";
 
 describe("language selection", () => {
-  it("switches the interface to French and restores the saved language after remount", async () => {
+  it("releases in English with no language selector exposed", () => {
+    // Release decision of 2026-11-15: English is the release language and the French toggle, which is incomplete,
+    // is not exposed. The header carries no language selector, so a visitor cannot switch to a partly translated
+    // interface, and nothing on the hosted origin can save a French preference.
+    const view = renderApp();
+    expect(screen.queryByRole("combobox", { name: /Language|Langue/ })).toBeNull();
+    expect(document.documentElement.lang === "" || document.documentElement.lang === "en").toBe(true);
+    expect(stageHeading()).toHaveTextContent("Choose a profile");
+    expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation: fictional portfolio, not advice");
+    expect(window.localStorage.getItem("byb.locale")).toBeNull();
+    view.unmount();
+    resetLocaleRuntimeForTests();
+  });
+
+  // Skipped, not deleted: the language selector was dropped from the header when main was merged into the toggle's
+  // branch (PR #28), so this round trip cannot run. Re-enable it together with the selector, once the translation
+  // is complete. Until then the test above states what the release actually does.
+  it.skip("switches the interface to French and restores the saved language after remount", async () => {
     const user = userEvent.setup();
     const firstRender = renderApp();
 
