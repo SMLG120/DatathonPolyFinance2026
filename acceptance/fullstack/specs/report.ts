@@ -86,13 +86,16 @@ export async function expectReportMatchesJob(page: Page, job: any) {
     await expect(page.getByTestId("max-additional")).toHaveCount(0);
   }
 
-  // Data coverage, one card per fund.
-  for (const fund of result.data_coverage?.funds ?? []) {
+  // Data coverage, one card per fund. `result.data_coverage` is a list (contracts: FundCoverage[]); the sentence is
+  // the one `coverageSentence` of the frontend writes ("Partial: 99.7% of the fund reported", a colon since the
+  // three-step interface), built here from the same formatters.
+  expect(Array.isArray(result.data_coverage), "result.data_coverage is a list").toBe(true);
+  await expect(page.getByTestId("fund-coverage")).toHaveCount(result.data_coverage.length);
+  for (const fund of result.data_coverage) {
     const card = page.locator(`[data-testid="fund-coverage"][data-fund-id="${fund.fund_id}"]`);
     await expect(card).toHaveAttribute("data-coverage-status", fund.status);
-    if (fund.status === "PARTIAL" || fund.status === "COMPLETE") {
-      await expect(card.getByTestId("coverage-sentence")).toHaveText(`${coverageText(fund.status)} — ${formatCoverage(fund.coverage_fraction)} of the fund reported`);
-    }
+    const sentence = fund.status === "MISSING" ? "No holdings file" : `${coverageText(fund.status)}: ${formatCoverage(fund.coverage_fraction)} of the fund reported`;
+    await expect(card.getByTestId("coverage-sentence")).toHaveText(sentence);
     await expect(card).toContainText(formatFraction(fund.portfolio_weight));
   }
 

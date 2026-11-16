@@ -1,10 +1,13 @@
 import { expect, test, type Locator, type Page } from "@playwright/test";
 import { formatFractionRange } from "../../../frontend/src/lib/format";
-import { confirmOfferedRules, expectNoTestDataMarkers, goToGoals, goToPurchase, openApp, percentTokens, resetBackend, shot, Traffic } from "./helpers";
+import { confirmOfferedRules, expectNoTestDataMarkers, goToGoals, goToPurchase, openApp, openPreview, percentTokens, resetBackend, shot, startAndOpenVerdict, Traffic } from "./helpers";
 
 /**
- * The exposure explorer of the verdict screen in live mode: its drawing arrives in its own script, its table holds
+ * The exposure explorer of the result screen in live mode: its drawing arrives in its own script, its table holds
  * the API's values, and the flat chart takes its place on a phone-width viewport and without WebGL.
+ *
+ * On the current interface the explorer sits in two panels that are closed by default: "Preview cash and exposures"
+ * (step 2) and "Explore my exposures" (the report). Each case opens the panel the way a reader does.
  */
 
 /** three.js announces itself on `window` when its code runs, and that name is in its source. */
@@ -68,10 +71,14 @@ async function expectExplorerTable(page: Page, result: any, issuerId: string) {
   return issuer;
 }
 
+/** "Check my idea", then the report's own link "Explore my exposures", which opens that closed section. */
 async function toVerdict(page: Page, traffic: Traffic) {
-  await page.getByTestId("start-investigation").click();
-  await page.getByTestId("see-verdict").click({ timeout: 60_000 });
-  await expect(page.getByTestId("report")).toBeVisible();
+  await startAndOpenVerdict(page);
+  const section = page.locator("#report-exposure");
+  await expect(section, "the exposure section of the report is closed until asked for").not.toHaveAttribute("open", "");
+  await page.getByTestId("summary-links").getByRole("link", { name: "Explore my exposures" }).click();
+  await expect(section).toHaveAttribute("open", "");
+  await expect(section.getByTestId("exposure-explorer")).toBeVisible();
   return (await traffic.last("GET", /^\/investigations\/inv-[0-9a-f]+$/, (call) => call.body?.status === "SUCCEEDED")).body;
 }
 
@@ -94,6 +101,7 @@ test.describe("exposure explorer, live against the local backend", () => {
     expect(await threeHasRun(page)).toBe(false);
 
     await goToPurchase(page);
+    await openPreview(page);
     const explorer = page.getByTestId("exposure-explorer");
     await expect(explorer).toHaveAttribute("data-mode", "3D");
     await expect(explorer.getByTestId("explorer-scene").locator("canvas")).toBeVisible();
@@ -126,7 +134,7 @@ test.describe("exposure explorer, live against the local backend", () => {
     await goToGoals(page);
     await confirmOfferedRules(page);
     await goToPurchase(page);
-    await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toBeVisible();
+    await expect((await openPreview(page)).getByTestId("cash-after")).toBeVisible();
     const job = await toVerdict(page, traffic);
     const portfolio = (await traffic.last("GET", /^\/portfolios\/robert$/)).body;
     const issuerId = portfolio.instruments[job.resolved_request.instrument_id].issuer_id;
@@ -164,7 +172,7 @@ test.describe("exposure explorer, live against the local backend", () => {
     await goToGoals(page);
     await confirmOfferedRules(page);
     await goToPurchase(page);
-    await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toBeVisible();
+    await expect((await openPreview(page)).getByTestId("cash-after")).toBeVisible();
     const job = await toVerdict(page, traffic);
     const portfolio = (await traffic.last("GET", /^\/portfolios\/robert$/)).body;
     const explorer = page.getByTestId("exposure-explorer");
