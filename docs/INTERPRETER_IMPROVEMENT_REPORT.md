@@ -16,7 +16,7 @@ Branch `feat/interpreter-multiclause`, from `origin/main` 1f582bf. Code commit `
 Clause-level number scoping ("less than 10% in X, but at least 5% in Y" in one sentence). It contradicts validation F-23 (`validation/tests/test_v36_interpreter.py`: a draft carries a number only when the text holds one percentage) and let "At most 20% but at least 10% in NVIDIA" through. Such sentences still get one draft per limit with no number and a question.
 
 ## Tests
-- New `backend/tests/service/test_service_interpreter_clauses.py`: 17 cases, all pass.
+- New `backend/tests/service/test_service_interpreter_clauses.py`: 15 cases, all pass.
 - `validation/tests backend/tests contracts/python/tests` with the real data present: 3257 passed, 6 skipped, 21 xfailed, 1 failed. The failure, `test_v36_the_model_is_offered_one_tool_without_any_numeric_member_and_is_not_forced`, is about the lookup tools added in PR #17; this change does not touch tools.
 - Frontend: not changed, not run.
 
