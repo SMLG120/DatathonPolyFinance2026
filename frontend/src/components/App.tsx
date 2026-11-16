@@ -16,7 +16,7 @@ import { RuntimeProvider, useRuntime } from "@/state/runtime";
 import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
 
-const APP_NAME = "Before You Buy: fictional simulation";
+const APP_NAME = "ETHOS: fictional simulation";
 
 const subscribeToNothing = () => () => {};
 
@@ -130,7 +130,7 @@ export function App() {
         <PageTitle>{APP_NAME}</PageTitle>
         <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{SIMULATION_LABEL}</div>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Before You Buy</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">ETHOS</h1>
           <p className="mt-2 text-lg text-ink-muted" role="status">
             Loading the simulation…
           </p>

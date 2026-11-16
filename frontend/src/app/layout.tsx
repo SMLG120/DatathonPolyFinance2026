@@ -5,8 +5,14 @@ import "./globals.css";
 // No `title` here on purpose: the application renders the one <title> itself
 // (see PageTitle in components/App.tsx), so that it can name the current stage.
 export const metadata: Metadata = {
+  applicationName: "ETHOS",
   description:
-    "A fictional simulation that checks a proposed portfolio purchase against rules the investor explicitly confirmed, and shows the evidence. Not financial advice.",
+    "ETHOS: your AI-powered investment decision investigator. Uncover hidden exposure, verify your financial rules, and understand every trade before you commit. A fictional simulation, not financial advice.",
+  openGraph: {
+    siteName: "ETHOS",
+    title: "ETHOS: Invest with conviction. Not contradiction.",
+    description: "ETHOS — The AI Agent That Challenges Your Investments Before the Market Does. A fictional simulation, not financial advice.",
+  },
   robots: { index: false, follow: false },
 };
 

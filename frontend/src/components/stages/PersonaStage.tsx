@@ -2,6 +2,7 @@
 
 import { CustomizePanel } from "@/components/portfolio/CustomizePanel";
 import { PortfolioTable } from "@/components/portfolio/PortfolioTable";
+import { BrandHero } from "@/components/shell/BrandHero";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/AsyncStates";
 import { Badge } from "@/components/ui/Badge";
@@ -115,6 +116,8 @@ export function PersonaStage() {
   const scenario = portfolio.data?.scenario ?? null;
 
   return (
+    <div className="space-y-8">
+    <BrandHero />
     <StageFrame
       stage="persona"
       lead="Pick a fictional investor to try a portfolio decision."
@@ -195,5 +198,6 @@ export function PersonaStage() {
       {/* Keyed by persona: another persona starts with a closed editor and no customization. */}
       <CustomizePanel key={personaId ?? "none"} />
     </StageFrame>
+    </div>
   );
 }

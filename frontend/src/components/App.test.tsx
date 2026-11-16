@@ -55,7 +55,7 @@ describe("App shell", () => {
 
     await go("goals");
     expect(stageHeading()).toHaveFocus();
-    expect(document.title).toBe("Your limits: Before You Buy: fictional simulation");
+    expect(document.title).toBe("Your limits: ETHOS: fictional simulation");
   });
 
   it("has one main landmark, one banner notice and one h1", async () => {

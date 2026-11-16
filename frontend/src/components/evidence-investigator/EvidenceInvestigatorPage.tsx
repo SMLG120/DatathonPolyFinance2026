@@ -17,7 +17,7 @@ function Content() {
   const [personaId, setPersonaId] = useState<string>(DEFAULT_PERSONA);
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6 sm:px-6">
-      <title>{`${TITLE}: Before You Buy (fictional simulation)`}</title>
+      <title>{`${TITLE}: ETHOS (fictional simulation)`}</title>
       <p className="rounded-md bg-sunken px-3 py-2 text-sm font-semibold text-ink">
         {SIMULATION_LABEL}
         {config.mode === "fixtures" ? ` · ${FIXTURES_LABEL}` : ""}
