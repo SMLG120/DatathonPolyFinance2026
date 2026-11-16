@@ -54,9 +54,8 @@ test.describe("keyboard-only journey through the three steps", () => {
       stepLink(page, 2),
       stepLink(page, 3),
       stepLink(page, 4),
-      // The brand message opens the first screen: its two calls to action come before the profiles.
-      page.getByTestId("brand-cta-primary"),
-      page.getByTestId("brand-cta-secondary"),
+      // The brand message opens the first screen: its call to action comes before the profiles.
+      page.getByTestId("brand-cta-start"),
       page.getByTestId("persona-robert").locator("summary"),
       page.getByTestId("persona-mateo").locator("summary"),
       page.getByRole("button", { name: "Use Mateo’s portfolio" }),
