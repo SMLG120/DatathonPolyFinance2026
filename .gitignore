@@ -32,3 +32,9 @@ data/starter/corporate_actions.csv
 data/raw/
 frontend/.scratch/
 work/
+
+# Browser-run screenshots: regenerated on every run of validation/customize/run_browser.sh, hosted_check.py and
+# acceptance/fullstack/run.sh. Kept locally as evidence of a run, not versioned.
+validation/customize/screenshots/
+validation/customize/screenshots-hosted/
+acceptance/fullstack/screenshots-2026-11-15/

@@ -5,6 +5,10 @@
 > 2026-11-14 and say what changes for the next deploy: a new zip (engine and contracts included by default), a
 > data snapshot uploaded first (section 3b), two parameters to pass (`DataSnapshotId`, `AllowedOrigin`), and a
 > CORS guard in `02_deploy.py`. Read "Next deploy: checklist" at the end before starting.
+>
+> **Update 2026-11-15.** A full release was deployed that day with the CloudShell helper, not with the MCP sequence
+> below: see `infra/evidence/release-2026-11-15.md`. The procedure for the next release is the last section of this
+> file, "Customize this profile (2026-11-15)". Sections 1 to 8 are kept as the record of the first deployment.
 
 This is the sequence that was actually used on 2026-11-14 to create and then
 update stack `before-you-buy` in account `010928212265`, region `us-east-1`.
@@ -246,3 +250,120 @@ The whole account is deleted after 2026-11-16, which removes all of it anyway.
 `scripts/e2e_probe.sh` still sends the phase-1 request shapes and will fail against the milestone-5 API; it was
 not updated (it starts 12 real investigations per run and cannot be tried without AWS).
 
+
+## Customize this profile (2026-11-15)
+
+Written for the owner. **Status: this release was carried out on 2026-11-15** (backend `UPDATE_COMPLETE` 19:35 EST,
+Amplify job `3` `SUCCEED` 19:44 EST); the evidence, with the exact artifacts and the audit of their source, is in
+`infra/evidence/release-2026-11-15-customize.md`. The text below is the procedure as it was written before the
+release: where it says "now deployed" or "not uploaded", read it as the state before 19:34 EST. It replaces the
+stack's code and its data snapshot and republishes the site. The bundle was built from an uncommitted working tree
+on top of `origin/main` 1f582bf, so it is identified by its hashes below, not by a commit.
+
+### What changes
+
+- **Code** (`CodeS3Key`): "Customize this profile" (`custom_portfolio` on `POST /check` and `POST /investigations`,
+  the job's stored `portfolio`), the review fixes that followed, and origin's PR #17 (interpreter as a bounded
+  agent, prompt `interpreter-3`) and PR #18 (audit fixes). Investigator prompt version `investigator-5`.
+- **Data snapshot** (`DataSnapshotId`): `snap-2026-11-12-c2289f2b406d` (deployed today, built from an XIU.TO file
+  dated 2026-11-13, one day after the valuation date) is replaced by `snap-2026-11-12-2662b7a89c03`, built from
+  the original file as of 2026-11-12. Same instruments. Figures move slightly: Robert's NVIDIA upper bound
+  26.2803% becomes 26.2763%.
+- **Frontend**: the editor, the Amira persona, the review fixes.
+- **Not changed**: `infra/template.yaml` (byte-identical to the deployed one), IAM, routes, CORS, the model id,
+  the access code. No resource is added, removed or replaced, apart from the authorizer invocation permission
+  that SAM may recreate (already reviewed for the previous release).
+
+Stored objects need no migration: a job stored by the previous build has no `portfolio`; it is served as is and,
+if queued, runs against the scenario portfolio as before.
+
+### Artifacts (built locally on 2026-11-15, bundle zipped at 19:28 EST, not uploaded; `dist/` is git-ignored: do not commit the bundle)
+
+| Artifact | SHA-256 |
+| --- | --- |
+| `dist/byb-backend-7c459ee17d81cff1.zip` (code key `lambda/byb-backend-7c459ee17d81cff1.zip`) | `7c459ee17d81cff1822b8a25f7b16750b4e729c4c11a3fd97959e7557475525c` |
+| `frontend.zip` in the bundle (live build against the existing API URL) | `393138fe726707d29d4dd677b5e668bbcac19f3d4b0ba09fc462d3cd74c1184c` |
+| `dist/cloudshell-release-customize.zip` | `b2b0a76701b9613a89fc5ebf632a7724037cc39a081f93d7416285384747b1d4` |
+
+The bundle holds exactly: the backend zip, `frontend.zip`, `template.yaml`, `snapshots/snap-2026-11-12-2662b7a89c03/`,
+`cloudshell_release.py`, `cloudshell_smoke.py`, `cloudshell_customize_check.py`, `live_check.py`, `mateo_invariants.py`.
+
+Values to recognise during the release:
+
+| | Now deployed | After this release |
+| --- | --- | --- |
+| `CodeS3Key` | `lambda/byb-backend-bd73f44e273534f8.zip` | `lambda/byb-backend-7c459ee17d81cff1.zip` |
+| `DataSnapshotId` | `snap-2026-11-12-c2289f2b406d` | `snap-2026-11-12-2662b7a89c03` |
+| Frontend | `frontend.zip` of `dist/cloudshell-release.zip` | `frontend.zip` of this bundle |
+
+### Procedure (CloudShell; backend first, the site last)
+
+Upload `dist/cloudshell-release-customize.zip`, extract it into a **fresh** directory, `cd cloudshell-release`.
+
+1. `python3 cloudshell_release.py prepare`
+   Uploads the snapshot and the code zip, creates a change set, executes nothing. It refuses a directory holding
+   more than one snapshot or backend zip.
+2. `python3 cloudshell_release.py status`
+   Review before going on: `change_set_parameters` shows the new `CodeS3Key` and `DataSnapshotId` from the table
+   above, `change_set_differs_from_plan` is `{}`, and `changes` lists only the three functions being modified (and
+   possibly the authorizer invocation permission with a conditional replacement). No removal, no IAM change.
+3. `python3 cloudshell_release.py execute --change-set-id '<the reviewed ARN>'`
+   Refuses a change set that removes or replaces a resource, or whose code key, snapshot or origin are not the
+   planned ones. Then repeat `status` until `UPDATE_COMPLETE`.
+4. `python3 cloudshell_release.py verify`
+   Exit 0 only if the stack runs exactly the planned code key and data snapshot.
+5. `python3 cloudshell_smoke.py`
+   The existing Mateo flow with the real interpreter and a real investigation in `MODEL` mode. Must print `PASS`.
+6. `python3 cloudshell_customize_check.py`
+   API-level check of this release: Amira is served; no fund holdings are dated after the valuation date and
+   Robert's NVIDIA upper bound is 0.262763304 (the corrected snapshot); a customized portfolio is checked and
+   investigated as sent; weights totalling 90% are refused. Must print `PASS`. It reads the access code from SSM
+   in memory and never prints it.
+7. `python3 cloudshell_release.py host`
+   Publishes the site. It refuses unless the stack runs the planned backend **and** steps 5 and 6 both recorded a
+   pass on exactly that code key and snapshot (`backend-checks.json`). Wait for the Amplify job to succeed.
+8. On the hosted site, without `fixtures=1`: select Amira (her portfolio loads); select Robert, customize, apply,
+   confirm the rules, run an investigation; the report shows "Customized fictional portfolio" with the edited
+   weights. Only then may the site be described as including this feature.
+9. Record the release in `infra/evidence/`: the change-set id, the stack parameters printed by `verify`, the
+   Amplify job id and the output of steps 5 and 6.
+
+If step 5 or 6 fails, do not run step 7: the previous site keeps working against the new backend (it never sends
+`custom_portfolio` and ignores the job's extra `portfolio` member). Decide between fixing forward and rolling the
+backend back (below).
+
+### Rollback
+
+Targets: code `lambda/byb-backend-bd73f44e273534f8.zip`; frontend `frontend.zip` of `dist/cloudshell-release.zip`
+(SHA-256 of that bundle `1befff72429af6c8afc5ed7eb236075fccc9bd2f7c3df7dd9cc72caac631e5c9`).
+Data snapshot: **keep `snap-2026-11-12-2662b7a89c03`**. The previous code was run locally on it (it loads, validates
+and gives the Nov 12 figures); going back to `c2289f2b406d` would restore the look-ahead file and is not advised.
+
+- **The site first, if it was already published (step 7 ran).** Before running `rollback`, while the release plan is
+  still the current one: replace `frontend.zip` in the directory with the previous one and run
+  `python3 cloudshell_release.py host`; wait for the Amplify job. The previous site works with either backend. (In
+  the other order the new site would sit in front of the old backend, where `custom_portfolio` is refused with 400.)
+- **The backend.**
+  1. `python3 cloudshell_release.py rollback --code-key lambda/byb-backend-bd73f44e273534f8.zip`
+     Creates a change set with the template the stack already has, the previous code key and the snapshot in use.
+     It uploads nothing and executes nothing. Add `--snapshot-id snap-2026-11-12-c2289f2b406d` only on an explicit
+     decision to restore the earlier data as well.
+  2. `python3 cloudshell_release.py status`, review, then `execute --change-set-id '<ARN>'`, then `status` until
+     `UPDATE_COMPLETE`, then `verify`.
+  3. `python3 cloudshell_smoke.py` (must pass on the rolled-back backend).
+- If the stack itself ended in `UPDATE_ROLLBACK_COMPLETE`, CloudFormation already put the previous code and
+  snapshot back: run `status` to confirm the `running` values, and `prepare` again when ready. `host` refuses until
+  the stack is `UPDATE_COMPLETE`.
+- Do not re-run the old bundle's own helper for a rollback: it refuses the authorizer-permission replacement and
+  its change-set name was already executed. The helper in this bundle handles both.
+
+Jobs created while the new backend ran keep their extra `portfolio` member in S3; the previous code ignores it
+(and would run such a queued job against the scenario portfolio).
+
+### Local validation behind this bundle
+
+See `/tmp/datathon-coordination/main-status.md` of 2026-11-15 for the full list. In short: Python suites
+(contracts, backend, validation, acceptance/mateo), frontend unit tests, typecheck and lint, the browser journeys
+of `validation/customize/run_browser.sh` against the real handlers on loopback, the data quality checks
+(74 passed, 0 failed) and `cloudshell_customize_check.py` against the same handlers. Not exercised: real AWS,
+real Bedrock, the hosted site.
