@@ -82,6 +82,35 @@ Model: Claude Sonnet 5.5 on Amazon Bedrock through the inference profile `us.ant
 versions at the freeze: `investigator-5`, `interpreter-3`. Details: `docs/INTERPRETER.md`,
 `backend/agents/prompts.py`.
 
+### The evidence page is not a third agent
+
+The header link "Evidence Investigator" opens `/evidence/` in a new tab; the main page keeps its progress.
+It is separate from the rule interpreter and from the investigation agent above. Checked on the deployed service at
+the freeze:
+
+- **No model.** `POST /evidence/investigate` runs in the API function and makes no Bedrock call in this release
+  (`MODEL_WORDING_ENABLED = False` in `backend/api/holdings_evidence/route.py`). Every answer reports
+  `explanation_source: "template"`: calculated figures with fixed wording.
+- **Each question is independent.** The request carries one question and no history; unknown keys are refused (400).
+  The same question returns the same answer. The page lists the questions asked in that tab; the service stores nothing.
+- **What it answers.** The question is matched by keywords to one topic: missing data, coverage, impact on a limit,
+  sources, next evidence. Advice, forecast and trade wording is refused with a fixed message (`supported: false`).
+  Any other text, including an off-topic question or a follow-up such as "and for the other one?", gets the general
+  evidence overview, not a refusal.
+- **What it reads.** The stored data snapshot only: the chosen fictional investor's original scenario portfolio, as a
+  whole or one fund held in it. It does not read a portfolio customized on the main page, and it searches nothing
+  outside the snapshot.
+- **Which rules.** The page sends no policy, so limits are the scenario's suggested rules and are labelled as not
+  confirmed. The route accepts a confirmed policy version, but the page does not send one.
+- **The percentages.** For the whole portfolio they are shares of the portfolio: verified (cash, direct holdings,
+  fund holdings looked through), unresolved (fund weight not attributed to a holding; a fund without a usable file
+  counts in full) and not looked through (bond and commodity funds). Example, Robert: 69.95% + 0.05% + 30%. For one
+  fund they are shares of that fund's holdings file (XIU.TO: 99.77% verified, 0.23% unresolved), not of the
+  portfolio. The deployed page shows the verified and unresolved figures only, so for a whole portfolio they do not
+  add up to 100%: the not-looked-through share is in the API response and in the answer text, not in the summary.
+  A value that cannot be measured is returned as null and shown as "Unknown", never as 0%.
+- It changes nothing: no portfolio, rule, verdict or report.
+
 Why this split: the challenge asks for explanations faithful to data and observable actions. Keeping the verdict in
 auditable code and giving the model a bounded, visible role makes every statement traceable and makes a model failure
 harmless to correctness.

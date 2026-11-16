@@ -81,7 +81,7 @@ from `main` at `22b2d9d`), and the results of the live checks listed in the tech
 | `POST /investigations` | API, then worker | Creates a job and starts it asynchronously. |
 | `GET /investigations/{id}` | API | Job state, steps, result. |
 | `POST /investigations/{id}/challenge` | API | Correct a fact, clarify a preference, or change a rule (new policy version, new job). |
-| `POST /evidence/investigate` | API | Read-only answers about missing or partial fund holdings. Model wording is switched off in this release, so it makes no Bedrock call. |
+| `POST /evidence/investigate` | API | Read-only answers about missing or partial fund holdings, for the Evidence Investigator page (`/evidence/`). Deterministic: model wording is switched off in this release, so it makes no Bedrock call. One independent question per request, no history; reads the scenario portfolio in the snapshot, not a customized one. |
 
 The contract of each route is in `contracts/api.md`.
 
