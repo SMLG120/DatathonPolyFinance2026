@@ -6,7 +6,7 @@ import { activeRules } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
 
 /** "Maximum exposure to a single company — any single company" */
-export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)} — ${ruleParametersText(rule)}`;
+export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)}: ${ruleParametersText(rule)}`;
 
 /**
  * Where a drafted rule ended up, in words: listed as proposed, already listed

@@ -16,7 +16,7 @@ import { RuntimeProvider, useRuntime } from "@/state/runtime";
 import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
 
-const APP_NAME = "Before You Buy — fictional simulation";
+const APP_NAME = "Before You Buy: fictional simulation";
 
 const subscribeToNothing = () => () => {};
 
@@ -80,7 +80,7 @@ function StageRouter() {
 
   return (
     <>
-      <PageTitle>{`${SCREEN_TITLES[stage]} — ${APP_NAME}`}</PageTitle>
+      <PageTitle>{`${SCREEN_TITLES[stage]}: ${APP_NAME}`}</PageTitle>
       <StageView stage={stage} />
     </>
   );
@@ -92,7 +92,7 @@ function Gate() {
     <AppShell>
       {needsAccessCode ? (
         <>
-          <PageTitle>{`Access code — ${APP_NAME}`}</PageTitle>
+          <PageTitle>{`Access code: ${APP_NAME}`}</PageTitle>
           <AccessCodeForm />
         </>
       ) : (

@@ -178,7 +178,7 @@ describe("Evidence drawer, marking and challenge", () => {
     const [first] = preview.evidence;
     if (!first) throw new Error("The recorded preview has no evidence.");
     const { records } = renderEvidence(preview, [first.evidence_id]);
-    expect(screen.getByText("Preview with draft rules — not a confirmed policy")).toBeInTheDocument();
+    expect(screen.getByText("Preview with draft rules: not a confirmed policy")).toBeInTheDocument();
     expect(within(records[0] as HTMLElement).queryByRole("link", { name: "Challenge this figure" })).toBeNull();
   });
 });

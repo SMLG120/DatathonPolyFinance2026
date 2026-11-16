@@ -10,8 +10,8 @@ import { type StageId, useStage } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 import { Stepper } from "./Stepper";
 
-export const SIMULATION_LABEL = "Simulation — fictional portfolio, not advice";
-export const FIXTURES_LABEL = "Test data — fixtures";
+export const SIMULATION_LABEL = "Simulation: fictional portfolio, not advice";
+export const FIXTURES_LABEL = "Test data: fixtures";
 
 const FIXTURES_REASONS = {
   "no-base-url": "This build has no service address, so every figure comes from recorded test data.",
