@@ -1,8 +1,8 @@
 {
   "generated": "GENERATED — DO NOT EDIT. Extracted by `npm run sync:contracts` from the files listed in `extracted_from`.",
   "extracted_from": [
-    "contracts/fixtures/engine/mateo_synthetic_universe.json  sha256:a3312fdc2f3b0926af1380bf79dbdb80bd77e5f3964a07082e595635e215e966",
-    "contracts/fixtures/engine/robert_synthetic_universe.json  sha256:fffc1ed4ffebc4c1ce0e11be656f6c52218f64156a822848a8455d8e5cf80931"
+    "contracts/fixtures/engine/mateo_synthetic_universe.json  sha256:362aee429409ec94cb00a01a6478921f8aaf94a745121f0871cb7b6cdf723cdd",
+    "contracts/fixtures/engine/robert_synthetic_universe.json  sha256:d282610afff61b62e4938722d2e1c909c601281ef81e04d7cd717fdbb7de3504"
   ],
   "universes": {
     "mateo_synthetic_universe": {
