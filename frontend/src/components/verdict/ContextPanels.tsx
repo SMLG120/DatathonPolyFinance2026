@@ -9,7 +9,8 @@ import { EPS, formatCoverage, formatDate, formatFraction } from "@/lib/format";
 import { ruleTypeLabel } from "@/lib/rules";
 import { bindingConstraintText, coverageText } from "@/lib/verdict";
 import type { RuleLookup } from "./RuleResults";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
+import { tn } from "@/lib/i18n-nodes";
 
 export const CONTEXT_LABEL: Record<GoalContextType, string> = {
   LINKED_RULE_RESULTS: "Rules linked to this objective",
@@ -38,10 +39,12 @@ export function GoalContextList({ result, objectives }: { result: CheckResult; o
             {objective ? (
               <figure>
                 <figcaption className="text-sm font-semibold text-ink-muted">{t("Objective, in the words it was given")}</figcaption>
-                <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">{t("&ldquo;")}{objective.original_words}{t("&rdquo;")}</blockquote>
+                <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">
+                  {tn("“{words}”", { words: <span lang="en">{objective.original_words}</span> })}
+                </blockquote>
               </figure>
             ) : (
-              <p className="text-sm font-semibold text-ink-muted">{t("Objective")} {objectiveId}</p>
+              <p className="text-sm font-semibold text-ink-muted">{tf("Objective {id}", { id: objectiveId })}</p>
             )}
             <ul className="mt-3 space-y-3">
               {items
@@ -60,11 +63,13 @@ export function GoalContextList({ result, objectives }: { result: CheckResult; o
 function ContextItem({ result, item }: { result: CheckResult; item: GoalContext }) {
   return (
     <li data-testid="goal-context-item" data-context-type={item.context_type}>
-      <p className="text-sm font-semibold text-ink-muted">{CONTEXT_LABEL[item.context_type]}</p>
-      <p className="text-ink">{item.text}</p>
+      <p className="text-sm font-semibold text-ink-muted">{t(CONTEXT_LABEL[item.context_type])}</p>
+      <p className="text-ink" lang="en">
+        {item.text}
+      </p>
       {item.evidence_ids.length > 0 ? (
         <div className="mt-1">
-          <EvidenceButton label={`${CONTEXT_LABEL[item.context_type].toLowerCase()} (objective context)`} result={result} evidenceIds={item.evidence_ids} />
+          <EvidenceButton label={tf("{label} (objective context)", { label: t(CONTEXT_LABEL[item.context_type]).toLowerCase() })} result={result} evidenceIds={item.evidence_ids} />
         </div>
       ) : null}
     </li>
@@ -94,7 +99,9 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
     return (
       <div data-testid="max-compliant" data-status="WITHHELD">
         <UnknownBlock title={t("No maximum is shown")}>
-          <p data-testid="max-reason">{maxCompliant.reason}</p>
+          <p data-testid="max-reason" lang="en">
+            {maxCompliant.reason}
+          </p>
           <p>{t("A maximum is given only when every confirmed rule can be evaluated at the boundary. A guess is not shown in its place.")}</p>
         </UnknownBlock>
       </div>
@@ -104,8 +111,10 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
     return (
       <div className="space-y-3" data-testid="max-compliant" data-status="NO_FEASIBLE_PURCHASE">
         <Notice tone="caution" title={t("No purchase of this instrument respects every confirmed rule")}>
-          <p data-testid="max-reason">{maxCompliant.reason}</p>
-          <p>{t("What stands in the way:")} {bindingConstraintText(maxCompliant.binding_constraint, ruleLabel)}.</p>
+          <p data-testid="max-reason" lang="en">
+            {maxCompliant.reason}
+          </p>
+          <p>{tf("What stands in the way: {constraint}.", { constraint: bindingConstraintText(maxCompliant.binding_constraint, ruleLabel) })}</p>
         </Notice>
         <EvidenceButton label={t("why no purchase is compliant")} result={result} evidenceIds={maxCompliant.evidence_ids} />
       </div>
@@ -137,18 +146,17 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
           </dd>
         </div>
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Checked at the boundary</dt>
-          <dd className="text-ink">Yes: the same checks were run again at this weight.</dd>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Checked at the boundary")}</dt>
+          <dd className="text-ink">{t("Yes: the same checks were run again at this weight.")}</dd>
         </div>
       </dl>
-      <p className="text-ink" data-testid="max-reason">
+      <p className="text-ink" data-testid="max-reason" lang="en">
         {maxCompliant.reason}
       </p>
       <p className="text-sm text-ink-muted">
-        Both figures are shown rounded down, so they never overstate the boundary. This is where your own confirmed rules stop: not a suggestion to
-        buy that amount.
+        {t("Both figures are shown rounded down, so they never overstate the boundary. This is where your own confirmed rules stop: not a suggestion to buy that amount.")}
       </p>
-      <EvidenceButton label="the largest compliant purchase" result={result} evidenceIds={maxCompliant.evidence_ids} />
+      <EvidenceButton label={t("the largest compliant purchase")} result={result} evidenceIds={maxCompliant.evidence_ids} />
     </div>
   );
 }
@@ -159,8 +167,8 @@ export function MaxCompliantBlock({ result, lookup, maxCompliant }: { result: Ch
  * "100.0%" beside the word "Partial".
  */
 export function coverageSentence(fund: Pick<FundCoverage, "status" | "coverage_fraction">): string {
-  if (fund.status === "MISSING") return "No holdings file";
-  return `${coverageText(fund.status)}: ${formatCoverage(fund.coverage_fraction)} of the fund reported`;
+  if (fund.status === "MISSING") return t("No holdings file");
+  return tf("{status}: {pct} of the fund reported", { status: coverageText(fund.status), pct: formatCoverage(fund.coverage_fraction) });
 }
 
 /** How much of the fund holdings behind the numbers is actually reported, fund by fund. */
@@ -199,19 +207,19 @@ export function CoverageBlock({ funds, instrumentName }: { funds: FundCoverage[]
               </div>
               <div>
                 <dt className="font-semibold text-ink-muted">{t("Portfolio weight not reported")}</dt>
-                <dd className="tabular text-ink">{fund.uncovered_portfolio_weight > EPS ? formatFraction(fund.uncovered_portfolio_weight) : "None"}</dd>
+                <dd className="tabular text-ink">{fund.uncovered_portfolio_weight > EPS ? formatFraction(fund.uncovered_portfolio_weight) : t("None")}</dd>
               </div>
               <div>
                 <dt className="font-semibold text-ink-muted">{t("Holdings with a sector label")}</dt>
-                <dd className="tabular text-ink">{fund.sector_labelled_fraction > EPS ? `${formatCoverage(fund.sector_labelled_fraction)} of the fund` : "None"}</dd>
+                <dd className="tabular text-ink">{fund.sector_labelled_fraction > EPS ? tf("{pct} of the fund", { pct: formatCoverage(fund.sector_labelled_fraction) }) : t("None")}</dd>
               </div>
               <div>
                 <dt className="font-semibold text-ink-muted">{t("Holdings dated")}</dt>
-                <dd className="tabular text-ink">{fund.holdings_date ? formatDate(fund.holdings_date) : "No holdings file"}</dd>
+                <dd className="tabular text-ink">{fund.holdings_date ? formatDate(fund.holdings_date) : t("No holdings file")}</dd>
               </div>
               <div className="col-span-2">
                 <dt className="font-semibold text-ink-muted">{t("Source")}</dt>
-                <dd className="text-ink [overflow-wrap:anywhere]">{fund.source_id ?? "None"}</dd>
+                <dd className="text-ink [overflow-wrap:anywhere]">{fund.source_id ?? t("None")}</dd>
               </div>
             </dl>
           </li>

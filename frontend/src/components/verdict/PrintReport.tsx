@@ -9,6 +9,8 @@ import type { CheckResult, FundCoverage, InvestigationJob, Objective, Policy, Po
 import { isCustomizedPortfolio, portfolioCheckedLabel } from "@/lib/customize";
 import { metricLabel } from "@/lib/evidence";
 import { EPS, formatChange, formatDate, formatDateTime, formatFraction, formatFractionRange, formatGap, formatReturn, isRange } from "@/lib/format";
+import { t, tf } from "@/lib/i18n";
+import { tn } from "@/lib/i18n-nodes";
 import { describePurchase, FUNDING_STATEMENT, instrumentName, portfolioRows, type InstrumentRegistry } from "@/lib/portfolio";
 import { limitNoun, ruleDirection, ruleParametersText, ruleStatusLabel, ruleTypeLabel } from "@/lib/rules";
 import { bindingConstraintText, issuerName, measuredNoun, statusText, verdictHeadline } from "@/lib/verdict";
@@ -27,7 +29,7 @@ export const PRINT_NOT_ADVICE =
 
 /** The browser proposes the page title as the PDF file name. */
 export function printDocumentTitle(job: Pick<InvestigationJob, "id" | "persona_id">): string {
-  return `${BRAND_NAME} simulation report - ${job.persona_id} - ${job.id}`;
+  return tf("{brand} simulation report - {persona} - {job}", { brand: BRAND_NAME, persona: job.persona_id, job: job.id });
 }
 
 /**
@@ -136,46 +138,50 @@ function RuleBlock({ result, lookup, ruleResult }: { result: CheckResult; lookup
           <dd data-testid="print-rule-limit">{formatFraction(ruleResult.limit)}</dd>
         </div>
         <div>
-          <dt>Gap</dt>
+          <dt>{t("Gap")}</dt>
           <dd data-testid="print-rule-gap">{formatGap(ruleResult.gap, ruleDirection(ruleResult.rule_type), noun.toLowerCase(), measureDecimals(ruleResult.rule_type))}</dd>
         </div>
         <div>
-          <dt>Before the purchase</dt>
+          <dt>{t("Before the purchase")}</dt>
           <dd>
             {statusText(ruleResult.starting.status)}: {measuredText(ruleResult.rule_type, ruleResult.starting.measured).toLowerCase()}
           </dd>
         </div>
       </dl>
-      {ranged ? <p className="pr-note">Measured as a range: proven at least the first figure, possibly as much as the second.</p> : null}
-      <p>{ruleResult.reason}</p>
+      {ranged ? <p className="pr-note">{t("Measured as a range: proven at least the first figure, possibly as much as the second.")}</p> : null}
+      <p lang="en">{ruleResult.reason}</p>
       {ruleResult.unknown_causes.length > 0 ? (
         <p data-testid="print-unknown-causes">
-          <strong>{ruleResult.status === "UNKNOWN" ? "Why this is unknown: " : "What is still unknown: "}</strong>
-          {ruleResult.status === "UNKNOWN" ? "the limit lies inside the possible range, because " : "part of the range is unproven, because "}
-          {unknownCausesText(ruleResult.unknown_causes)}. Missing data is never counted as zero.
+          <strong>{ruleResult.status === "UNKNOWN" ? t("Why this is unknown: ") : t("What is still unknown: ")}</strong>
+          {tf(
+            ruleResult.status === "UNKNOWN"
+              ? "the limit lies inside the possible range, because {causes}. Missing data is never counted as zero."
+              : "part of the range is unproven, because {causes}. Missing data is never counted as zero.",
+            { causes: unknownCausesText(ruleResult.unknown_causes) },
+          )}
         </p>
       ) : null}
       {ruleResult.status === "UNKNOWN" ? (
         <p className="pr-unknown-note" data-testid="print-unknown-note">
-          <strong>Unknown is not a pass.</strong> The data needed to decide is missing or partial, so this rule is reported as not determined rather
-          than assumed to be respected.
+          <strong>{t("Unknown is not a pass.")}</strong>{" "}
+          {t("The data needed to decide is missing or partial, so this rule is reported as not determined rather than assumed to be respected.")}
         </p>
       ) : null}
       {ruleResult.breaching_subjects.length > 0 ? (
         <p>
-          <strong>Companies whose proven exposure causes the breach: </strong>
+          <strong>{t("Companies whose proven exposure causes the breach: ")}</strong>
           {ruleResult.breaching_subjects.map((subject) => `${issuerName(result, subject.subject_id)} ${formatFractionRange(subject.lower, subject.upper)}`).join("; ")}
         </p>
       ) : null}
       {ruleResult.out_of_scope.length > 0 ? (
         <div>
           <p>
-            <strong>Positions outside the scope of this rule:</strong>
+            <strong>{t("Positions outside the scope of this rule:")}</strong>
           </p>
           <ul>
             {ruleResult.out_of_scope.map((position) => (
               <li key={position.instrument_id}>
-                {position.instrument_id} {formatFraction(position.weight)}: {position.reason}
+                {position.instrument_id} {formatFraction(position.weight)}: <span lang="en">{position.reason}</span>
               </li>
             ))}
           </ul>
@@ -202,8 +208,10 @@ function limitationsOf(result: CheckResult, lookup: RuleLookup, instruments: Ins
         key: `unknown-${ruleResult.rule_id}`,
         text: (
           <>
-            <strong>{ruleTypeLabel(ruleResult.rule_type)}: UNKNOWN.</strong> It could not be determined
-            {ruleResult.unknown_causes.length > 0 ? `, because ${unknownCausesText(ruleResult.unknown_causes)}` : ""}. It is not counted as respected.
+            <strong>{tf("{rule}: UNKNOWN.", { rule: ruleTypeLabel(ruleResult.rule_type) })}</strong>{" "}
+            {ruleResult.unknown_causes.length > 0
+              ? tf("It could not be determined, because {causes}. It is not counted as respected.", { causes: unknownCausesText(ruleResult.unknown_causes) })
+              : t("It could not be determined. It is not counted as respected.")}
           </>
         ),
       });
@@ -212,10 +220,8 @@ function limitationsOf(result: CheckResult, lookup: RuleLookup, instruments: Ins
         key: `partial-${ruleResult.rule_id}`,
         text: (
           <>
-            <strong>
-              {ruleTypeLabel(ruleResult.rule_type)}: {statusText(ruleResult.status)}, with part of the measured range unproven
-            </strong>
-            , because {unknownCausesText(ruleResult.unknown_causes)}.
+            <strong>{tf("{rule}: {status}, with part of the measured range unproven", { rule: ruleTypeLabel(ruleResult.rule_type), status: statusText(ruleResult.status) })}</strong>
+            {tf(", because {causes}.", { causes: unknownCausesText(ruleResult.unknown_causes) })}
           </>
         ),
       });
@@ -226,10 +232,8 @@ function limitationsOf(result: CheckResult, lookup: RuleLookup, instruments: Ins
       key: `not-evaluated-${item.rule_id}`,
       text: (
         <>
-          <strong>
-            {ruleName(lookup, item.rule_id)} ({ruleStatusLabel(item.status)}): not evaluated.
-          </strong>{" "}
-          {item.reason}
+          <strong>{tf("{rule} ({status}): not evaluated.", { rule: ruleName(lookup, item.rule_id), status: ruleStatusLabel(item.status) })}</strong>{" "}
+          <span lang="en">{item.reason}</span>
         </>
       ),
     });
@@ -243,7 +247,7 @@ function limitationsOf(result: CheckResult, lookup: RuleLookup, instruments: Ins
           <strong>
             {instrumentName(instruments, fund.fund_id)} ({fund.fund_id}): {coverageSentence(fund).toLowerCase()}.
           </strong>{" "}
-          {fund.uncovered_portfolio_weight > EPS ? `${formatFraction(fund.uncovered_portfolio_weight)} of the portfolio is held through it without reported holdings.` : ""}
+          {fund.uncovered_portfolio_weight > EPS ? tf("{weight} of the portfolio is held through it without reported holdings.", { weight: formatFraction(fund.uncovered_portfolio_weight) }) : ""}
         </>
       ),
     });
@@ -253,34 +257,36 @@ function limitationsOf(result: CheckResult, lookup: RuleLookup, instruments: Ins
       key: "possible-extra",
       text: (
         <>
-          <strong>{formatFraction(result.exposure.possible_extra.proposed)} of the portfolio</strong> is fund weight that the holdings files do not
-          attribute to any company. It could belong to any of them, so company exposures are ranges from what is proven to what is possible.
+          <strong>{tf("{weight} of the portfolio", { weight: formatFraction(result.exposure.possible_extra.proposed) })}</strong>{" "}
+          {t("is fund weight that the holdings files do not attribute to any company. It could belong to any of them, so company exposures are ranges from what is proven to what is possible.")}
         </>
       ),
     });
   }
   if (result.exposure === null || result.exposure.issuers.length === 0) {
-    items.push({ key: "no-exposure", text: "This result carries no company exposure rows. That is not an exposure of zero: the exposure was not reported." });
+    items.push({ key: "no-exposure", text: t("This result carries no company exposure rows. That is not an exposure of zero: the exposure was not reported.") });
   }
   if (result.scenario?.status === "INSUFFICIENT_HISTORY") {
     items.push({
       key: "scenario-history",
       text: (
         <>
-          <strong>Historical replay: not computed.</strong>{" "}
-          {result.scenario.missing_instruments.length > 0 ? `No usable price history for: ${result.scenario.missing_instruments.join(", ")}.` : "The price history is insufficient."}
+          <strong>{t("Historical replay: not computed.")}</strong>{" "}
+          {result.scenario.missing_instruments.length > 0
+            ? tf("No usable price history for: {instruments}.", { instruments: result.scenario.missing_instruments.join(", ") })
+            : t("The price history is insufficient.")}
         </>
       ),
     });
   } else if (result.scenario && result.scenario.missing_instruments.length > 0) {
-    items.push({ key: "scenario-missing", text: `Historical replay: no usable price history for ${result.scenario.missing_instruments.join(", ")}.` });
+    items.push({ key: "scenario-missing", text: tf("Historical replay: no usable price history for {instruments}.", { instruments: result.scenario.missing_instruments.join(", ") }) });
   }
   if (result.max_compliant?.status === "WITHHELD") {
     items.push({
       key: "max-withheld",
       text: (
         <>
-          <strong>Largest compliant purchase: no figure is shown.</strong> {result.max_compliant.reason}
+          <strong>{t("Largest compliant purchase: no figure is shown.")}</strong> <span lang="en">{result.max_compliant.reason}</span>
         </>
       ),
     });
@@ -303,7 +309,12 @@ function sourcesOf(result: CheckResult, instruments: InstrumentRegistry): Source
     lines.set(sourceId, uses);
   };
   for (const fund of result.data_coverage) {
-    if (fund.source_id) add(fund.source_id, `holdings of ${instrumentName(instruments, fund.fund_id)} (${fund.fund_id})${fund.holdings_date ? `, dated ${formatDate(fund.holdings_date)}` : ""}`);
+    if (fund.source_id) add(
+        fund.source_id,
+        fund.holdings_date
+          ? tf("holdings of {fund} ({id}), dated {date}", { fund: instrumentName(instruments, fund.fund_id), id: fund.fund_id, date: formatDate(fund.holdings_date) })
+          : tf("holdings of {fund} ({id})", { fund: instrumentName(instruments, fund.fund_id), id: fund.fund_id }),
+      );
   }
   for (const record of result.evidence) {
     for (const sourceId of record.source_ids) add(sourceId, metricLabel(record.metric_id).toLowerCase());
@@ -332,8 +343,8 @@ function CoverageRow({ fund, instruments }: { fund: FundCoverage; instruments: I
       </td>
       <td>{coverageSentence(fund)}</td>
       <td className="pr-num">{formatFraction(fund.portfolio_weight)}</td>
-      <td className="pr-num">{fund.uncovered_portfolio_weight > EPS ? formatFraction(fund.uncovered_portfolio_weight) : "None"}</td>
-      <td className="pr-nowrap">{fund.holdings_date ? formatDate(fund.holdings_date) : "No holdings file"}</td>
+      <td className="pr-num">{fund.uncovered_portfolio_weight > EPS ? formatFraction(fund.uncovered_portfolio_weight) : t("None")}</td>
+      <td className="pr-nowrap">{fund.holdings_date ? formatDate(fund.holdings_date) : t("No holdings file")}</td>
     </tr>
   );
 }
@@ -367,98 +378,119 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
     <div className="print-report" data-testid="print-report" data-job-id={job.id}>
       <header className="pr-header">
         <p className="pr-banner" data-testid="print-simulation-label">
-          {SIMULATION_LABEL}
-          {testData ? ` · ${FIXTURES_LABEL}` : ""}
+          {t(SIMULATION_LABEL)}
+          {testData ? ` · ${t(FIXTURES_LABEL)}` : ""}
         </p>
-        <h1>{PRINT_REPORT_TITLE}</h1>
-        <p data-testid="print-not-advice">{PRINT_NOT_ADVICE}</p>
+        <h1>{tf("{brand}: simulation report", { brand: BRAND_NAME })}</h1>
+        <p data-testid="print-not-advice">{t(PRINT_NOT_ADVICE)}</p>
         {testData ? (
           <p data-testid="print-test-data">
-            <strong>Recorded test data.</strong> This page was not connected to the service: every figure below comes from recorded test data.
+            <strong>{t("Recorded test data.")}</strong> {t("This page was not connected to the service: every figure below comes from recorded test data.")}
           </p>
         ) : null}
       </header>
 
       <dl className="pr-facts" data-testid="print-facts">
         <div>
-          <dt>Persona</dt>
+          <dt>{t("Persona")}</dt>
           <dd data-testid="print-persona">
-            {personaName ?? "Not available on this page"} <span className="pr-id">({result.persona_id})</span>
+            {personaName ?? t("Not available on this page")} <span className="pr-id">({result.persona_id})</span>
           </dd>
         </div>
         <div>
-          <dt>Portfolio checked</dt>
+          <dt>{t("Portfolio checked")}</dt>
           <dd data-testid="print-portfolio-label" data-customized={portfolio ? String(customized) : undefined}>
-            {portfolio ? portfolioCheckedLabel(portfolio, scenarioPortfolio, personaName ?? "This persona") : "Not stored with this report"}{" "}
+            {portfolio ? portfolioCheckedLabel(portfolio, scenarioPortfolio, personaName ?? t("This persona")) : t("Not stored with this report")}{" "}
             <span className="pr-id">({result.portfolio_id})</span>
           </dd>
         </div>
         <div>
-          <dt>Valuation date</dt>
+          <dt>{t("Valuation date")}</dt>
           <dd data-testid="print-valuation-date">{formatDate(result.valuation_date)}</dd>
         </div>
         <div>
-          <dt>Simulated purchase</dt>
+          <dt>{t("Simulated purchase")}</dt>
           <dd data-testid="print-purchase">{describePurchase(purchase)}</dd>
         </div>
         <div>
-          <dt>Finished</dt>
+          <dt>{t("Finished")}</dt>
           <dd>{formatDateTime(job.updated_at)}</dd>
         </div>
         <div>
-          <dt>Confirmed policy</dt>
+          <dt>{t("Confirmed policy")}</dt>
           <dd data-testid="print-policy">
-            {result.policy_version === null ? "None" : `Version ${result.policy_version}`}
+            {result.policy_version === null ? t("None") : tf("Version {version}", { version: result.policy_version })}
             {result.policy_id ? <span className="pr-id"> ({result.policy_id})</span> : null}
           </dd>
         </div>
         <div className="pr-wide">
-          <dt>Investigation</dt>
+          <dt>{t("Investigation")}</dt>
           <dd className="pr-id pr-nowrap" data-testid="print-investigation-id">
             {job.id}
           </dd>
         </div>
         <div>
-          <dt>Calculation version</dt>
+          <dt>{t("Calculation version")}</dt>
           <dd className="pr-id">{result.calculation_version}</dd>
         </div>
         <div className="pr-wide">
-          <dt>How it was run</dt>
-          <dd>{job.agent.mode === "MODEL" ? `A model chose the tool calls (${job.agent.model_id ?? "model not reported"}); the verdict is the calculation's` : "Fixed sequence of tools, no model"}</dd>
+          <dt>{t("How it was run")}</dt>
+          <dd>
+            {job.agent.mode === "MODEL"
+              ? tf("A model chose the tool calls ({model}); the verdict is the calculation's", { model: job.agent.model_id ?? t("model not reported") })
+              : t("Fixed sequence of tools, no model")}
+          </dd>
         </div>
       </dl>
-      <p className="pr-note">{FUNDING_STATEMENT}</p>
+      <p className="pr-note">{t(FUNDING_STATEMENT)}</p>
 
       <section className={`pr-verdict pr-verdict-${headline.tone}`} data-testid="print-verdict" data-headline={result.summary.headline}>
-        <h2>Verdict on the portfolio after the purchase</h2>
+        <h2>{t("Verdict on the portfolio after the purchase")}</h2>
         <p className="pr-headline" data-testid="print-headline">
           {headline.title}
         </p>
         <p data-testid="print-counts">
-          {headline.detail} Confirmed rules evaluated: {result.summary.rules_evaluated}. Pass: {result.summary.counts.pass}. Fail: {result.summary.counts.fail}. Unknown:{" "}
-          {result.summary.counts.unknown}.{result.summary.rules_not_evaluated > 0 ? ` Not evaluated: ${result.summary.rules_not_evaluated}.` : ""}
+          {headline.detail}{" "}
+          {tf("Confirmed rules evaluated: {evaluated}. Pass: {pass}. Fail: {fail}. Unknown: {unknown}.", {
+            evaluated: result.summary.rules_evaluated,
+            pass: result.summary.counts.pass,
+            fail: result.summary.counts.fail,
+            unknown: result.summary.counts.unknown,
+          })}
+          {result.summary.rules_not_evaluated > 0 ? ` ${tf("Not evaluated: {count}.", { count: result.summary.rules_not_evaluated })}` : ""}
         </p>
         {feasibility ? (
           <p data-testid="print-feasibility" data-feasibility={feasibility.status}>
-            <strong>Feasibility, reported separately from the rules:</strong>{" "}
-            {feasibility.status === "FEASIBLE" ? "the purchase can be funded from cash. Cash goes from " : "not feasible with cash alone. Cash would go from "}
-            {formatFraction(feasibility.cash_before)} to {formatFraction(feasibility.cash_after)} of the portfolio.
+            <strong>{t("Feasibility, reported separately from the rules:")}</strong>{" "}
+            {tf(
+              feasibility.status === "FEASIBLE"
+                ? "the purchase can be funded from cash. Cash goes from {before} to {after} of the portfolio."
+                : "not feasible with cash alone. Cash would go from {before} to {after} of the portfolio.",
+              { before: formatFraction(feasibility.cash_before), after: formatFraction(feasibility.cash_after) },
+            )}
           </p>
         ) : null}
         <p>
-          <strong>Before any purchase:</strong>{" "}
+          <strong>{t("Before any purchase:")}</strong>{" "}
           {startingBreaches === 0
-            ? "no confirmed rule was already failing."
-            : `${startingBreaches} confirmed ${startingBreaches === 1 ? "rule was" : "rules were"} already not respected; ${startingBreaches === 1 ? "it is" : "they are"} listed apart from the effect of the purchase.`}
+            ? t("no confirmed rule was already failing.")
+            : tf(
+                startingBreaches === 1
+                  ? "{count} confirmed rule was already not respected; it is listed apart from the effect of the purchase."
+                  : "{count} confirmed rules were already not respected; they are listed apart from the effect of the purchase.",
+                { count: startingBreaches },
+              )}
         </p>
         {result.policy_consistency.status === "PROVEN_CONFLICT" ? (
           <div data-testid="print-policy-conflicts">
             <p>
-              <strong>Two confirmed rules cannot both be respected:</strong>
+              <strong>{t("Two confirmed rules cannot both be respected:")}</strong>
             </p>
             <ul>
               {result.policy_consistency.conflicts.map((conflict) => (
-                <li key={conflict.rule_ids.join("|")}>{conflict.calculation}</li>
+                <li key={conflict.rule_ids.join("|")} lang="en">
+                  {conflict.calculation}
+                </li>
               ))}
             </ul>
           </div>
@@ -466,10 +498,10 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
       </section>
 
       <section className="pr-limits" data-testid="print-limitations" data-count={limitations.length}>
-        <h2>What is unknown or not measured</h2>
+        <h2>{t("What is unknown or not measured")}</h2>
         {limitations.length > 0 ? (
           <>
-            <p>Missing data is never counted as zero, and an unknown result is never counted as a pass.</p>
+            <p>{t("Missing data is never counted as zero, and an unknown result is never counted as a pass.")}</p>
             <ul>
               {limitations.map((item) => (
                 <li key={item.key}>{item.text}</li>
@@ -478,25 +510,24 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
           </>
         ) : (
           <p>
-            This result reports no unknown rule, no rule left unevaluated and no fund with missing or partial holdings. The assumptions and what the
-            simulation leaves out are listed at the end.
+            {t("This result reports no unknown rule, no rule left unevaluated and no fund with missing or partial holdings. The assumptions and what the simulation leaves out are listed at the end.")}
           </p>
         )}
       </section>
 
-      <Section title="Confirmed rules, on the portfolio after the purchase" testId="print-rules">
+      <Section title={t("Confirmed rules, on the portfolio after the purchase")} testId="print-rules">
         {result.rule_results.length > 0 ? (
           result.rule_results.map((ruleResult) => <RuleBlock key={ruleResult.rule_id} result={result} lookup={lookup} ruleResult={ruleResult} />)
         ) : (
-          <p>This report contains no rule result, so it says nothing about whether the purchase fits the rules.</p>
+          <p>{t("This report contains no rule result, so it says nothing about whether the purchase fits the rules.")}</p>
         )}
         {result.rules_not_evaluated.length > 0 ? (
           <div data-testid="print-rules-not-evaluated">
-            <h3>Rules in this policy version that were not evaluated</h3>
+            <h3>{t("Rules in this policy version that were not evaluated")}</h3>
             <ul>
               {result.rules_not_evaluated.map((item) => (
                 <li key={item.rule_id}>
-                  <strong>{ruleName(lookup, item.rule_id)}</strong> ({ruleStatusLabel(item.status)}): {item.reason}
+                  <strong>{ruleName(lookup, item.rule_id)}</strong> ({ruleStatusLabel(item.status)}): <span lang="en">{item.reason}</span>
                 </li>
               ))}
             </ul>
@@ -506,8 +537,8 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
 
       {result.starting_portfolio_findings.length > 0 ? (
         <Section
-          title="Already not respected before the purchase"
-          note="These describe the portfolio as it is today. They would be there whether or not anything is bought."
+          title={t("Already not respected before the purchase")}
+          note={t("These describe the portfolio as it is today. They would be there whether or not anything is bought.")}
           testId="print-starting"
         >
           {result.starting_portfolio_findings.map((finding) => {
@@ -517,30 +548,30 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
               <article key={finding.rule_id} className="pr-rule pr-status-fail" data-testid="print-starting-finding">
                 <header>
                   <h3>{ruleType ? ruleTypeLabel(ruleType) : finding.rule_id}</h3>
-                  <Status status={finding.status} prefix="Before the purchase:" />
+                  <Status status={finding.status} prefix={t("Before the purchase:")} />
                 </header>
                 <dl className="pr-figures">
                   <div>
-                    <dt>{ruleType ? measuredNoun(ruleType) : "Measured"}</dt>
+                    <dt>{ruleType ? measuredNoun(ruleType) : t("Measured")}</dt>
                     <dd>{ruleType ? measuredText(ruleType, finding.measured) : formatFractionRange(finding.measured.lower, finding.measured.upper)}</dd>
                   </div>
                   <div>
-                    <dt>{ruleType ? limitNoun(ruleType) : "Limit"}</dt>
+                    <dt>{ruleType ? limitNoun(ruleType) : t("Limit")}</dt>
                     <dd>{formatFraction(finding.limit)}</dd>
                   </div>
                   <div>
-                    <dt>Gap</dt>
+                    <dt>{t("Gap")}</dt>
                     <dd>{ruleType ? formatGap(finding.gap, ruleDirection(ruleType), limitNoun(ruleType).toLowerCase(), measureDecimals(ruleType)) : formatFraction(finding.gap)}</dd>
                   </div>
                   <div>
-                    <dt>What the purchase adds</dt>
+                    <dt>{t("What the purchase adds")}</dt>
                     <dd>
-                      {formatFractionRange(finding.purchase_effect.lower_change, finding.purchase_effect.upper_change, { signed: true })} of the portfolio
-                      {resolved ? "" : " (unresolved: proven at least the first figure, at most the second)"}
+                      {tf("{change} of the portfolio", { change: formatFractionRange(finding.purchase_effect.lower_change, finding.purchase_effect.upper_change, { signed: true }) })}
+                      {resolved ? "" : ` ${t("(unresolved: proven at least the first figure, at most the second)")}`}
                     </dd>
                   </div>
                 </dl>
-                <p>{finding.reason}</p>
+                <p lang="en">{finding.reason}</p>
               </article>
             );
           })}
@@ -551,16 +582,16 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
       {portfolio ? (
         <Section
           keep
-          title="Portfolio checked"
-          note="The weights this report was checked against, as the service stored them with the investigation."
+          title={t("Portfolio checked")}
+          note={t("The weights this report was checked against, as the service stored them with the investigation.")}
           testId="print-portfolio"
         >
           <table>
             <thead>
               <tr>
-                <th>Position</th>
-                <th>Kind</th>
-                <th className="pr-num">Weight</th>
+                <th>{t("Position")}</th>
+                <th>{t("Kind")}</th>
+                <th className="pr-num">{t("Weight")}</th>
               </tr>
             </thead>
             <tbody>
@@ -580,28 +611,28 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
       ) : null}
 
       {feasibility ? (
-        <Section keep title="The purchase and the cash that funds it" note={FUNDING_STATEMENT} testId="print-cash">
+        <Section keep title={t("The purchase and the cash that funds it")} note={t(FUNDING_STATEMENT)} testId="print-cash">
           <table>
             <thead>
               <tr>
                 <th>{instrumentName(instruments, purchase.instrument_id)}</th>
-                <th className="pr-num">Before</th>
-                <th className="pr-num">After</th>
-                <th className="pr-num">Change</th>
+                <th className="pr-num">{t("Before")}</th>
+                <th className="pr-num">{t("After")}</th>
+                <th className="pr-num">{t("Change")}</th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td>Direct weight of {purchase.instrument_id}</td>
+                <td>{tf("Direct weight of {instrument}", { instrument: purchase.instrument_id })}</td>
                 <td className="pr-num">{formatFraction(feasibility.starting_direct_weight)}</td>
                 <td className="pr-num">{formatFraction(feasibility.target_direct_weight)}</td>
                 <td className="pr-num">{formatChange(feasibility.additional_purchase)}</td>
               </tr>
               <tr>
-                <td>Cash</td>
+                <td>{t("Cash")}</td>
                 <td className="pr-num">{formatFraction(feasibility.cash_before)}</td>
                 <td className="pr-num">{formatFraction(feasibility.cash_after)}</td>
-                <td className="pr-num">{feasibility.status === "FEASIBLE" ? "Sufficient" : "Insufficient cash"}</td>
+                <td className="pr-num">{feasibility.status === "FEASIBLE" ? t("Sufficient") : t("Insufficient cash")}</td>
               </tr>
             </tbody>
           </table>
@@ -613,18 +644,18 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
       {result.exposure && result.exposure.issuers.length > 0 ? (
         <Section
           keep
-          title="Exposure to single companies"
-          note="Direct holdings plus holdings through funds. A range runs from what is proven to what is possible."
+          title={t("Exposure to single companies")}
+          note={t("Direct holdings plus holdings through funds. A range runs from what is proven to what is possible.")}
           testId="print-exposure"
         >
           <table>
             <thead>
               <tr>
-                <th>Company</th>
-                <th className="pr-num">Before the purchase</th>
-                <th className="pr-num">After: held directly</th>
-                <th>After: through funds</th>
-                <th className="pr-num">After: total</th>
+                <th>{t("Company")}</th>
+                <th className="pr-num">{t("Before the purchase")}</th>
+                <th className="pr-num">{t("After: held directly")}</th>
+                <th>{t("After: through funds")}</th>
+                <th className="pr-num">{t("After: total")}</th>
               </tr>
             </thead>
             <tbody>
@@ -636,60 +667,69 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
                   <td>
                     {issuer.proposed.indirect_by_fund.length > 0
                       ? issuer.proposed.indirect_by_fund.map((part) => `${part.fund_id} ${formatFraction(part.known, { decimals: 2 })}`).join(", ")
-                      : "None reported"}
+                      : t("None reported")}
                   </td>
                   <td className="pr-num">{formatFractionRange(issuer.proposed.lower, issuer.proposed.upper)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
-          <p className="pr-note">{result.exposure.selection_note}</p>
+          <p className="pr-note" lang="en">
+            {result.exposure.selection_note}
+          </p>
         </Section>
       ) : null}
 
       {scenario ? (
-        <Section title={`Historical replay: ${scenario.label}`} note="A replay of the past on an assumed allocation. It is a separate test, not a forecast." testId="print-scenario">
-          <p>
-            Period: {formatDate(scenario.base_date)} to {formatDate(scenario.end_date)}.
-          </p>
+        <Section
+          title={tf("Historical replay: {label}", { label: scenario.label })}
+          note={t("A replay of the past on an assumed allocation. It is a separate test, not a forecast.")}
+          testId="print-scenario"
+        >
+          <p>{tf("Period: {start} to {end}.", { start: formatDate(scenario.base_date), end: formatDate(scenario.end_date) })}</p>
           {scenario.status === "COMPUTED" ? (
             <table>
               <thead>
                 <tr>
-                  <th>Portfolio</th>
-                  <th className="pr-num">Return over the period</th>
-                  <th className="pr-num">Deepest fall (context only)</th>
+                  <th>{t("Portfolio")}</th>
+                  <th className="pr-num">{t("Return over the period")}</th>
+                  <th className="pr-num">{t("Deepest fall (context only)")}</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td>Before the purchase</td>
-                  <td className="pr-num">{scenario.starting ? formatReturn(scenario.starting.scenario_terminal_return) : "Not computed"}</td>
-                  <td className="pr-num">{scenario.starting ? formatReturn(scenario.starting.scenario_max_drawdown) : "Not computed"}</td>
+                  <td>{t("Before the purchase")}</td>
+                  <td className="pr-num">{scenario.starting ? formatReturn(scenario.starting.scenario_terminal_return) : t("Not computed")}</td>
+                  <td className="pr-num">{scenario.starting ? formatReturn(scenario.starting.scenario_max_drawdown) : t("Not computed")}</td>
                 </tr>
                 <tr>
-                  <td>After the purchase</td>
-                  <td className="pr-num">{scenario.proposed ? formatReturn(scenario.proposed.scenario_terminal_return) : "Not computed"}</td>
-                  <td className="pr-num">{scenario.proposed ? formatReturn(scenario.proposed.scenario_max_drawdown) : "Not computed"}</td>
+                  <td>{t("After the purchase")}</td>
+                  <td className="pr-num">{scenario.proposed ? formatReturn(scenario.proposed.scenario_terminal_return) : t("Not computed")}</td>
+                  <td className="pr-num">{scenario.proposed ? formatReturn(scenario.proposed.scenario_max_drawdown) : t("Not computed")}</td>
                 </tr>
               </tbody>
             </table>
           ) : (
             <p data-testid="print-scenario-insufficient">
-              <strong>Not computed.</strong>{" "}
-              {scenario.missing_instruments.length > 0 ? `No usable price history for: ${scenario.missing_instruments.join(", ")}.` : "The price history is insufficient."}
+              <strong>{t("Not computed.")}</strong>{" "}
+              {scenario.missing_instruments.length > 0
+                ? tf("No usable price history for: {instruments}.", { instruments: scenario.missing_instruments.join(", ") })
+                : t("The price history is insufficient.")}
             </p>
           )}
           {scenario.status === "COMPUTED" && scenario.target_instrument_return !== null ? (
             <p>
-              {purchase.instrument_id} alone over the same period: {formatReturn(scenario.target_instrument_return)}, in the portfolio&apos;s currency.
+              {tf("{instrument} alone over the same period: {return}, in the portfolio's currency.", {
+                instrument: purchase.instrument_id,
+                return: formatReturn(scenario.target_instrument_return),
+              })}
             </p>
           ) : null}
-          {scenario.status === "COMPUTED" && scenario.missing_instruments.length > 0 ? <p>No usable price history for: {scenario.missing_instruments.join(", ")}.</p> : null}
+          {scenario.status === "COMPUTED" && scenario.missing_instruments.length > 0 ? <p>{tf("No usable price history for: {instruments}.", { instruments: scenario.missing_instruments.join(", ") })}</p> : null}
           {scenario.assumptions.length > 0 ? (
             <div className="pr-keep" data-testid="print-scenario-assumptions">
-              <h3>Assumptions of the replay</h3>
-              <ul className="pr-columns">
+              <h3>{t("Assumptions of the replay")}</h3>
+              <ul className="pr-columns" lang="en">
                 {scenario.assumptions.map((assumption) => (
                   <li key={assumption}>{assumption}</li>
                 ))}
@@ -699,51 +739,60 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
         </Section>
       ) : null}
 
-      <Section keep title="Largest purchase that respects every confirmed rule" testId="print-max">
-        {!maxCompliant ? <p>The service returned no maximum, so none is shown.</p> : null}
+      <Section keep title={t("Largest purchase that respects every confirmed rule")} testId="print-max">
+        {!maxCompliant ? <p>{t("The service returned no maximum, so none is shown.")}</p> : null}
         {maxCompliant?.status === "SUPPORTED" ? (
           <>
             <p data-testid="print-max-supported">
-              As a final direct weight: <strong>{formatFraction(maxCompliant.final_direct_weight, { rounding: "down" })}</strong>. As an additional purchase:{" "}
-              <strong>{formatFraction(maxCompliant.additional_purchase, { rounding: "down" })}</strong>. Limited by:{" "}
-              {bindingConstraintText(maxCompliant.binding_constraint, (ruleId) => ruleName(lookup, ruleId))}. The same checks were run again at this weight.
+              {tn("As a final direct weight: {final}. As an additional purchase: {additional}. Limited by: {constraint}. The same checks were run again at this weight.", {
+                final: <strong>{formatFraction(maxCompliant.final_direct_weight, { rounding: "down" })}</strong>,
+                additional: <strong>{formatFraction(maxCompliant.additional_purchase, { rounding: "down" })}</strong>,
+                constraint: bindingConstraintText(maxCompliant.binding_constraint, (ruleId) => ruleName(lookup, ruleId)),
+              })}
             </p>
-            <p>{maxCompliant.reason}</p>
+            <p lang="en">{maxCompliant.reason}</p>
             <p className="pr-note">
-              Both figures are shown rounded down, so they never overstate the boundary. This is where the confirmed rules stop: not a suggestion to buy
-              that amount.
+              {t("Both figures are shown rounded down, so they never overstate the boundary. This is where the confirmed rules stop: not a suggestion to buy that amount.")}
             </p>
           </>
         ) : null}
         {maxCompliant?.status === "WITHHELD" ? (
           <p data-testid="print-max-withheld">
-            <strong>No maximum is shown.</strong> {maxCompliant.reason} A maximum is given only when every confirmed rule can be evaluated at the boundary.
-            A guess is not shown in its place.
+            <strong>{t("No maximum is shown.")}</strong> <span lang="en">{maxCompliant.reason}</span>{" "}
+            {t("A maximum is given only when every confirmed rule can be evaluated at the boundary. A guess is not shown in its place.")}
           </p>
         ) : null}
         {maxCompliant?.status === "NO_FEASIBLE_PURCHASE" ? (
           <p data-testid="print-max-none">
-            <strong>No purchase of this instrument respects every confirmed rule.</strong> {maxCompliant.reason} What stands in the way:{" "}
-            {bindingConstraintText(maxCompliant.binding_constraint, (ruleId) => ruleName(lookup, ruleId))}.
+            <strong>{t("No purchase of this instrument respects every confirmed rule.")}</strong> <span lang="en">{maxCompliant.reason}</span>{" "}
+            {tf("What stands in the way: {constraint}.", { constraint: bindingConstraintText(maxCompliant.binding_constraint, (ruleId) => ruleName(lookup, ruleId)) })}
           </p>
         ) : null}
       </Section>
 
       {result.goal_context.length > 0 ? (
-        <Section title="Context for the objectives" note="Objectives are not rules. This is qualitative context: it is not scored and has no pass or fail." testId="print-objectives">
+        <Section
+          title={t("Context for the objectives")}
+          note={t("Objectives are not rules. This is qualitative context: it is not scored and has no pass or fail.")}
+          testId="print-objectives"
+        >
           {contextObjectiveIds.map((objectiveId) => {
             const objective = quoted.find((candidate) => candidate.objective_id === objectiveId);
             return (
               <div key={objectiveId} className="pr-objective">
                 <p>
-                  <strong>{objective ? `Objective, in the words it was given: “${objective.original_words}”` : `Objective ${objectiveId}`}</strong>
+                  <strong>
+                    {objective
+                      ? tn("Objective, in the words it was given: “{words}”", { words: <span lang="en">{objective.original_words}</span> })
+                      : tf("Objective {id}", { id: objectiveId })}
+                  </strong>
                 </p>
                 <ul>
                   {result.goal_context
                     .filter((item) => item.objective_id === objectiveId)
                     .map((item) => (
                       <li key={`${item.context_type}-${item.text}`}>
-                        {CONTEXT_LABEL[item.context_type]}: {item.text}
+                        {t(CONTEXT_LABEL[item.context_type])}: <span lang="en">{item.text}</span>
                       </li>
                     ))}
                 </ul>
@@ -753,17 +802,17 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
         </Section>
       ) : null}
 
-      <Section keep title="Data coverage" note="How much of each fund's holdings behind these numbers was actually reported." testId="print-coverage">
+      <Section keep title={t("Data coverage")} note={t("How much of each fund's holdings behind these numbers was actually reported.")} testId="print-coverage">
         {result.data_coverage.length > 0 ? (
           <>
             <table>
               <thead>
                 <tr>
-                  <th>Fund</th>
-                  <th>Holdings reported</th>
-                  <th className="pr-num">Weight in the portfolio</th>
-                  <th className="pr-num">Portfolio weight not reported</th>
-                  <th>Holdings dated</th>
+                  <th>{t("Fund")}</th>
+                  <th>{t("Holdings reported")}</th>
+                  <th className="pr-num">{t("Weight in the portfolio")}</th>
+                  <th className="pr-num">{t("Portfolio weight not reported")}</th>
+                  <th>{t("Holdings dated")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -773,36 +822,40 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
               </tbody>
             </table>
             {result.data_coverage.some((fund) => fund.status !== "COVERED") ? (
-              <p>Holdings that are not reported widen results into ranges. They are never counted as zero, and reported holdings are never rescaled to 100%.</p>
+              <p>{t("Holdings that are not reported widen results into ranges. They are never counted as zero, and reported holdings are never rescaled to 100%.")}</p>
             ) : null}
           </>
         ) : (
-          <p>This result lists no fund, so nothing was looked through.</p>
+          <p>{t("This result lists no fund, so nothing was looked through.")}</p>
         )}
       </Section>
 
-      <Section keep title="Assumptions" testId="print-assumptions">
+      <Section keep title={t("Assumptions")} testId="print-assumptions">
         {assumptions.length > 0 ? (
-          <ul className="pr-columns">
+          <ul className="pr-columns" lang="en">
             {assumptions.map((assumption) => (
               <li key={assumption}>{assumption}</li>
             ))}
           </ul>
         ) : (
-          <p>{scenario && scenario.assumptions.length > 0 ? "No other assumption is recorded with the figures of this result." : "No assumption is recorded with the figures of this result."}</p>
+          <p>
+            {scenario && scenario.assumptions.length > 0
+              ? t("No other assumption is recorded with the figures of this result.")
+              : t("No assumption is recorded with the figures of this result.")}
+          </p>
         )}
-        {scenario && scenario.assumptions.length > 0 ? <p className="pr-note">The assumptions of the historical replay are listed with the replay, above.</p> : null}
+        {scenario && scenario.assumptions.length > 0 ? <p className="pr-note">{t("The assumptions of the historical replay are listed with the replay, above.")}</p> : null}
         <p className="pr-note">
-          Consistency of the confirmed rules:{" "}
+          {t("Consistency of the confirmed rules:")}{" "}
           {result.policy_consistency.status === "PROVEN_CONFLICT"
-            ? "a contradiction between confirmed rules was proven (see the verdict)."
+            ? t("a contradiction between confirmed rules was proven (see the verdict).")
             : result.policy_consistency.status === "CONSISTENT"
-              ? "no supported calculation proved a contradiction between the confirmed rules."
-              : "not assessed."}
+              ? t("no supported calculation proved a contradiction between the confirmed rules.")
+              : t("not assessed.")}
         </p>
       </Section>
 
-      <Section keep title="Sources recorded with the figures" testId="print-sources">
+      <Section keep title={t("Sources recorded with the figures")} testId="print-sources">
         {sources.length > 0 ? (
           <ul>
             {sources.map((source) => (
@@ -812,24 +865,24 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
             ))}
           </ul>
         ) : (
-          <p>No source id is recorded with the figures of this result.</p>
+          <p>{t("No source id is recorded with the figures of this result.")}</p>
         )}
         <p className="pr-note" data-testid="print-source-note">
-          {SOURCE_DETAILS_NOTE}
+          {t(SOURCE_DETAILS_NOTE)}
         </p>
       </Section>
 
       {job.explanation.length > 0 ? (
         <Section
           keep
-          title="The result in sentences"
-          note="The sentences restate the figures above. The verdict is the list of confirmed rules, decided by the calculation, never by these words."
+          title={t("The result in sentences")}
+          note={t("The sentences restate the figures above. The verdict is the list of confirmed rules, decided by the calculation, never by these words.")}
           testId="print-sentences"
         >
           <ul>
             {job.explanation.map((statement) => (
               <li key={statement.statement_id}>
-                {statement.text} <span className="pr-note">[{originOf(statement.rendered_by).label}]</span>
+                <span lang="en">{statement.text}</span> <span className="pr-note">[{t(originOf(statement.rendered_by).label)}]</span>
               </li>
             ))}
           </ul>
@@ -837,17 +890,23 @@ export function PrintReport({ job, result, policy, objectives, instruments, scen
       ) : null}
 
       <div className="pr-keep">
-        <Section title="What this simulation is and is not" testId="print-disclosures">
+        <Section title={t("What this simulation is and is not")} testId="print-disclosures">
           <ul className="pr-columns">
             {result.disclosures.map((disclosure) => (
-              <li key={disclosure}>{disclosure}</li>
+              <li key={disclosure} lang="en">
+                {disclosure}
+              </li>
             ))}
-            <li>It is not personalized financial advice, not a recommendation to buy or sell, and not a forecast.</li>
+            <li>{t("It is not personalized financial advice, not a recommendation to buy or sell, and not a forecast.")}</li>
           </ul>
         </Section>
         <p className="pr-footer" data-testid="print-footer">
-          {BRAND_NAME} · {job.id} · policy version {result.policy_version ?? "none"} · valuation date {formatDate(result.valuation_date)} · simulation on a fictional
-          portfolio, not advice
+          {tf("{brand} · {job} · policy version {version} · valuation date {date} · simulation on a fictional portfolio, not advice", {
+            brand: BRAND_NAME,
+            job: job.id,
+            version: result.policy_version ?? t("none"),
+            date: formatDate(result.valuation_date),
+          })}
         </p>
       </div>
     </div>

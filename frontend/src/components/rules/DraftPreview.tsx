@@ -15,7 +15,7 @@ import { describePurchase } from "@/lib/portfolio";
 import { assessResult } from "@/lib/result";
 import { limitNoun, ruleTypeLabel, validateThreshold } from "@/lib/rules";
 import { useRuntime } from "@/state/runtime";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /** The label every preview carries. A preview is never the confirmed result. */
 export const PREVIEW_LABEL = "Preview with draft threshold: not your confirmed policy";
@@ -57,7 +57,7 @@ export function useDraftPreview({ personaId, policy, purchase, customPortfolio, 
 } {
   const { api, timing } = useRuntime();
   const preview = useDebouncedPreview<DraftInput, CheckResult>(async (input, signal) => {
-    if (!personaId || !purchase) throw new Error("A preview needs a persona and a purchase.");
+    if (!personaId || !purchase) throw new Error(t("A preview needs a persona and a purchase."));
     return api.check(
       withCustomPortfolio(
         {
@@ -113,21 +113,21 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
     // A named group, not a landmark: there is one of these per rule card, and landmarks must be few and uniquely named.
     <div
       role="group"
-      aria-label={`Draft preview: ${ruleTypeLabel(ruleType)}`}
+      aria-label={tf("Draft preview: {rule}", { rule: ruleTypeLabel(ruleType) })}
       className="rounded-md border border-dashed border-line-strong bg-sunken p-3 sm:p-4"
       data-testid="draft-preview"
       data-figures={preview.status === "ready" ? "true" : undefined}
     >
       <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-ink">
-        {PREVIEW_LABEL}
+        {t(PREVIEW_LABEL)}
         {preview.status === "ready" ? <TestDataTag /> : null}
       </p>
 
       {preview.status === "idle" ? (
         <p className="mt-1 text-sm text-ink-muted">
           {purchase
-            ? `Change the number to see how the portfolio after the purchase entered in stage 3 (${describePurchase(purchase)}) compares with it. A preview is never saved; it changes no confirmed rule and no report.`
-            : "A preview tries a number on a purchase. Enter a purchase in stage 3 first; until then nothing is previewed."}
+            ? tf("Change the number to see how the portfolio after the purchase entered in stage 3 ({purchase}) compares with it. A preview is never saved; it changes no confirmed rule and no report.", { purchase: describePurchase(purchase) })
+            : t("A preview tries a number on a purchase. Enter a purchase in stage 3 first; until then nothing is previewed.")}
         </p>
       ) : null}
 
@@ -146,7 +146,7 @@ export function DraftPreviewPanel({ preview, ruleId, ruleType, purchase }: Draft
                 <StatusBadge status={ruleResult.status} prefix="Preview:" />
                 <span className="text-ink">
                   {t("draft")} {noun} <span className="tabular font-semibold">{draftText}</span>
-                  {purchase ? `, after ${describePurchase(purchase)}` : ""}
+                  {purchase ? tf(", after {purchase}", { purchase: describePurchase(purchase) }) : ""}
                 </span>
               </p>
               <RuleMeasure

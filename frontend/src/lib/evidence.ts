@@ -1,5 +1,6 @@
 import type { CheckResult, EvidenceLabel, EvidencePeriod, EvidenceRecord, EvidenceSubject, EvidenceUnit, MetricId } from "@/lib/contracts";
 import { formatDate, formatFraction } from "@/lib/format";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * Wording for evidence records. A record is shown exactly as the service sent
@@ -35,7 +36,8 @@ const METRIC_LABELS: Record<MetricId, string> = {
 };
 
 export function metricLabel(metricId: MetricId): string {
-  return METRIC_LABELS[metricId] ?? metricId;
+  const label = METRIC_LABELS[metricId];
+  return label ? t(label) : metricId;
 }
 
 const LABEL_TEXT: Record<EvidenceLabel, string> = {
@@ -53,11 +55,11 @@ const LABEL_MEANING: Record<EvidenceLabel, string> = {
 };
 
 export function evidenceLabelText(label: EvidenceLabel): string {
-  return LABEL_TEXT[label] ?? label;
+  return LABEL_TEXT[label] ? t(LABEL_TEXT[label]) : label;
 }
 
 export function evidenceLabelMeaning(label: EvidenceLabel): string {
-  return LABEL_MEANING[label] ?? "";
+  return LABEL_MEANING[label] ? t(LABEL_MEANING[label]) : "";
 }
 
 const UNIT_TEXT: Record<EvidenceUnit, string> = {
@@ -71,12 +73,12 @@ const UNIT_TEXT: Record<EvidenceUnit, string> = {
 };
 
 export function unitText(unit: EvidenceUnit): string {
-  return UNIT_TEXT[unit] ?? unit;
+  return UNIT_TEXT[unit] ? t(UNIT_TEXT[unit]) : unit;
 }
 
 /** A value in the unit the record declares. Fractions are shown as percentages to two decimals; nothing is ever shown as 0 when it is missing. */
 export function formatValueInUnit(value: number | string | null, unit: EvidenceUnit, currency: string | null = null): string {
-  if (value === null) return "Not available";
+  if (value === null) return t("Not available");
   if (typeof value === "string") return unit === "date" ? formatDate(value) : value;
   switch (unit) {
     case "fraction":
@@ -86,7 +88,7 @@ export function formatValueInUnit(value: number | string | null, unit: EvidenceU
     case "fx_rate":
       return value.toFixed(4);
     case "days":
-      return `${value} ${value === 1 ? "day" : "days"}`;
+      return tf(value === 1 ? "{count} day" : "{count} days", { count: value });
     case "count":
     case "date":
     case "text":
@@ -115,15 +117,18 @@ const KIND_TEXT: Record<EvidenceSubject["kind"], string> = {
 
 /** "Company NVIDIA, through SPY, after the purchase" */
 export function subjectText(subject: EvidenceSubject): string {
-  const parts = [`${KIND_TEXT[subject.kind] ?? subject.kind} ${subject.id}`];
-  if (subject.via_fund_id) parts.push(`through ${subject.via_fund_id}`);
+  const kind = KIND_TEXT[subject.kind] ? t(KIND_TEXT[subject.kind]) : subject.kind;
+  const parts = [`${kind} ${subject.id}`];
+  if (subject.via_fund_id) parts.push(tf("through {fund}", { fund: subject.via_fund_id }));
   const state = STATE_TEXT[subject.portfolio_state];
-  if (state) parts.push(state);
+  if (state) parts.push(t(state));
   return parts.join(", ");
 }
 
 export function periodText(period: EvidencePeriod): string {
-  return period.type === "AS_OF" ? `As of ${formatDate(period.date)}` : `${formatDate(period.start_date)} to ${formatDate(period.end_date)}`;
+  return period.type === "AS_OF"
+    ? tf("As of {date}", { date: formatDate(period.date) })
+    : tf("{start} to {end}", { start: formatDate(period.start_date), end: formatDate(period.end_date) });
 }
 
 /** The records a calculated value was computed from, in the order the service lists them. Missing ids are reported, not dropped. */

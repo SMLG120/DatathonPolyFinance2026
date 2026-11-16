@@ -29,6 +29,11 @@ export interface VerdictCounts {
 }
 
 /** The engine's own counts for the portfolio after the purchase. Nothing is counted here. */
+/** French agreement: 0 and 1 take the singular ("0 règle respectée", "2 règles respectées"). */
+function frN(count: number, one: string, many: string): string {
+  return count <= 1 ? one : many;
+}
+
 export function summaryCounts(summary: Summary): VerdictCounts {
   const { pass, fail, unknown } = summary.counts;
   return { pass, fail, unknown, total: summary.rules_evaluated };
@@ -66,7 +71,7 @@ export function verdictHeadline(summary: Summary): VerdictHeadline {
         tone: "none",
         title: t("Two confirmed rules cannot both be met"),
         detail: french
-          ? `${fail} règle(s) non respectée(s), ${unknown} indéterminée(s), ${pass} respectée(s).`
+          ? `Les règles ont tout de même été vérifiées une à une : ${fail} ${frN(fail, "non respectée", "non respectées")}, ${unknown} ${frN(unknown, "indéterminée", "indéterminées")}, ${pass} ${frN(pass, "respectée", "respectées")}.`
           : `The rules were still checked one by one: ${fail} not respected, ${unknown} unknown, ${pass} passed.`,
       };
     case "HAS_FAIL":
@@ -87,15 +92,15 @@ export function verdictHeadline(summary: Summary): VerdictHeadline {
     return {
       tone: "fail",
       title: french
-        ? `${fail} sur ${total} règle(s) confirmée(s) non respectée(s)`
+        ? `${fail} sur ${total} ${frN(total, "règle confirmée", "règles confirmées")} ${frN(fail, "n’est pas respectée", "ne sont pas respectées")}`
         : `${fail} of ${total} confirmed ${plural(total, "rule", "rules")} ${plural(fail, "is", "are")} not respected`,
       detail:
         unknown > 0
           ? french
-            ? `${unknown} autre(s) n’ont pas pu être déterminée(s) et ${pass} règle(s) respectée(s). Les vérifications indéterminées ne sont pas comptées comme respectées.`
+            ? `${unknown} ${frN(unknown, "autre n’a pas pu être déterminée", "autres n’ont pas pu être déterminées")} et ${pass} ${frN(pass, "est respectée", "sont respectées")}. Les vérifications indéterminées ne sont pas comptées comme respectées.`
             : `${unknown} more could not be determined and ${pass} passed. The unknown ${plural(unknown, "check is", "checks are")} not counted as passed.`
           : french
-            ? `${pass} règle(s) respectée(s) et aucune n’est indéterminée.`
+            ? `${pass} ${frN(pass, "règle respectée", "règles respectées")}, et aucune n’est indéterminée.`
             : `${pass} passed and none are unknown.`,
     };
   }
@@ -104,10 +109,10 @@ export function verdictHeadline(summary: Summary): VerdictHeadline {
     return {
       tone: "unknown",
       title: french
-        ? `Indéterminé : ${unknown} sur ${total} règle(s) confirmée(s) n’ont pas pu être vérifiée(s)`
+        ? `Indéterminé : ${unknown} sur ${total} ${frN(total, "règle confirmée", "règles confirmées")} ${frN(unknown, "n’a pas pu être vérifiée", "n’ont pas pu être vérifiées")}`
         : `Not determined: ${unknown} of ${total} confirmed ${plural(total, "rule", "rules")} could not be checked`,
       detail: french
-        ? `${pass} règle(s) respectée(s), aucune en échec, mais cela ne signifie pas que tout est respecté. Les données manquantes ne sont jamais considérées comme nulles.`
+        ? `${pass} ${frN(pass, "règle respectée", "règles respectées")}, aucune en échec, mais cela ne signifie pas que tout est respecté. Les données manquantes ne sont jamais considérées comme nulles.`
         : `${pass} passed and none failed, but this is not a pass. Missing data is never treated as zero.`,
     };
   }

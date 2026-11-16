@@ -30,7 +30,7 @@ export function AccessCodeForm() {
     event.preventDefault();
     if (busy) return;
     if (code.trim() === "") {
-      setFieldError("Enter the access code you were given.");
+      setFieldError(t("Enter the access code you were given."));
       setRequestError(null);
       inputRef.current?.focus();
       return;
@@ -43,7 +43,7 @@ export function AccessCodeForm() {
       // On success the form is replaced by the simulation.
     } catch (error) {
       if (isApiError(error) && error.kind === "unauthorized") {
-        setFieldError("The service did not accept this code. Check it and try again.");
+        setFieldError(t("The service did not accept this code. Check it and try again."));
         inputRef.current?.focus();
       } else {
         setRequestError(describeError(error));
@@ -103,7 +103,7 @@ export function AccessCodeForm() {
           </Notice>
         ) : null}
 
-        <Button type="submit" variant="primary" busy={busy} busyLabel="Checking the code…" icon={<LockIcon />}>
+        <Button type="submit" variant="primary" busy={busy} busyLabel={t("Checking the code…")} icon={<LockIcon />}>
           {t("Continue")}</Button>
       </form>
 

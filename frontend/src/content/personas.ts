@@ -1,4 +1,5 @@
 import type { PersonaId } from "@/lib/contracts";
+import { t } from "@/lib/i18n";
 
 /**
  * Persona facts shown on the picker before any portfolio is loaded.
@@ -65,5 +66,5 @@ export const PERSONAS: PersonaCard[] = [
 export const DEFAULT_PERSONA: PersonaId = "robert";
 
 export function personaName(personaId: PersonaId | null): string {
-  return PERSONAS.find((p) => p.persona_id === personaId)?.name ?? "No persona";
+  return PERSONAS.find((p) => p.persona_id === personaId)?.name ?? t("No persona");
 }

@@ -26,6 +26,7 @@ import { fractionToPercentInput, percentInputToFraction } from "@/lib/format";
 import { measureKey, validateThreshold } from "@/lib/rules";
 import { activeRules, isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "./runtime";
+import { t, tf } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // State
@@ -644,7 +645,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         (data) => {
           if (controller.signal.aborted) return;
           dispatch({ type: "portfolio/loaded", personaId, data });
-          announce("Portfolio loaded.");
+          announce(t("Portfolio loaded."));
         },
         (error: unknown) => {
           if (controller.signal.aborted || isAbortError(error)) return;
@@ -664,7 +665,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     (portfolio: CustomPortfolio, objectiveWords: string | null) => {
       if (latest.current.portfolio.status !== "ready") return;
       dispatch({ type: "customization/applied", portfolio, objectiveWords });
-      announce("Customization applied. No rule was changed and nothing was checked.");
+      announce(t("Customization applied. No rule was changed and nothing was checked."));
     },
     [announce],
   );
@@ -672,7 +673,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const resetCustomization = useCallback(() => {
     if (latest.current.portfolio.status !== "ready") return;
     dispatch({ type: "customization/reset" });
-    announce("The original scenario is restored: its portfolio and its objective.");
+    announce(t("The original scenario is restored: its portfolio and its objective."));
   }, [announce]);
 
   const setCustomizeDraft = useCallback((draft: CustomizeFormInput | null) => dispatch({ type: "customization/draftChanged", draft }), []);
@@ -703,8 +704,10 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
       const rules = interpretation.proposed_rules.length;
       const questions = interpretation.clarifications.length;
       announce(
-        `Interpretation ready: ${rules} drafted ${rules === 1 ? "rule" : "rules"}, inactive until confirmed` +
-          (questions > 0 ? `, and ${questions} ${questions === 1 ? "question" : "questions"} for you.` : "."),
+        (rules === 1
+          ? t("Interpretation ready: 1 drafted rule, inactive until confirmed")
+          : tf("Interpretation ready: {count} drafted rules, inactive until confirmed", { count: rules })) +
+          (questions > 0 ? (questions === 1 ? t(", and 1 question for you.") : tf(", and {count} questions for you.", { count: questions })) : "."),
       );
     } catch (error) {
       if (live.signal.aborted || isAbortError(error) || left(session)) return;
@@ -722,7 +725,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         ?.options.find((candidate) => candidate.option_id === optionId);
       if (!option || !option.supported) return;
       dispatch({ type: "option/chosen", interpretationId, clarificationId, optionId, draft: option.proposed_rule });
-      announce(option.proposed_rule ? "Definition chosen. Its rule is listed as proposed, without a number until you enter one." : "Definition chosen.");
+      announce(option.proposed_rule ? t("Definition chosen. Its rule is listed as proposed, without a number until you enter one.") : t("Definition chosen."));
     },
     [announce],
   );
@@ -758,7 +761,11 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         if (live.signal.aborted || left(session)) return null;
         dispatch({ type: "confirm/succeeded", session, policy, ruleIds: confirmations.map((confirmation) => confirmation.rule.rule_id) });
         const active = activeRules(policy).length;
-        announce(`Confirmed. Policy version ${policy.version} is in force with ${active} confirmed ${active === 1 ? "rule" : "rules"}.`);
+        announce(
+          active === 1
+            ? tf("Confirmed. Policy version {version} is in force with 1 confirmed rule.", { version: policy.version })
+            : tf("Confirmed. Policy version {version} is in force with {count} confirmed rules.", { version: policy.version, count: active }),
+        );
         return policy;
       } catch (error) {
         if (live.signal.aborted || isAbortError(error) || left(session)) return null;
@@ -810,7 +817,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         if (live.signal.aborted || left(session)) return null;
         startKey.done();
         dispatch({ type: "start/succeeded", session, investigationId: accepted.id });
-        announce("Investigation accepted. Waiting for its first step.");
+        announce(t("Investigation accepted. Waiting for its first step."));
         return accepted.id;
       } catch (error) {
         if (live.signal.aborted || isAbortError(error)) return null;
@@ -845,15 +852,15 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
         challengeKey.done();
         if (response.proposed_correction) {
           dispatch({ type: "challenge/factRecorded", session, correction: response.proposed_correction });
-          announce("Your correction is recorded as proposed and unverified. The original evidence is unchanged.");
+          announce(t("Your correction is recorded as proposed and unverified. The original evidence is unchanged."));
         } else if (response.interpretation) {
           dispatch({ type: "challenge/preferenceRecorded", session, interpretation: response.interpretation });
-          announce("Your preference is recorded as a new draft. No stored rule was changed.");
+          announce(t("Your preference is recorded as a new draft. No stored rule was changed."));
         } else if (response.policy && response.investigation) {
           dispatch({ type: "challenge/ruleChanged", session, policy: response.policy, olderId: investigationId, newerId: response.investigation.id });
-          announce(`Policy version ${response.policy.version} created. Re-checking the same purchase under it.`);
+          announce(tf("Policy version {version} created. Re-checking the same purchase under it.", { version: response.policy.version }));
         } else {
-          throw new Error("The answer to the challenge carried nothing to show.");
+          throw new Error(t("The answer to the challenge carried nothing to show."));
         }
         return response;
       } catch (error) {

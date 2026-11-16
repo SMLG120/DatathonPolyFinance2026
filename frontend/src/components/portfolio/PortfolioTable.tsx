@@ -1,7 +1,7 @@
 import type { Portfolio } from "@/lib/contracts";
 import { formatDate, formatFraction } from "@/lib/format";
 import { portfolioRows, type InstrumentRegistry } from "@/lib/portfolio";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * The holdings of a portfolio as a plain table: name, type and weight, in the
@@ -13,7 +13,8 @@ export function PortfolioTable({ portfolio, instruments, personaName, customized
   return (
     <table className="w-full border-collapse text-left" data-testid="portfolio-table">
       <caption className="pb-3 text-left text-sm text-ink-muted">
-        {customized ? `Customized fictional portfolio, edited from ${personaName}’s.` : <>{personaName}&rsquo;s fictional portfolio.</>} Each weight is a share of the whole portfolio in {portfolio.base_currency}, valued on{" "}
+        {customized ? tf("Customized fictional portfolio, edited from {name}’s.", { name: personaName }) : tf("{name}’s fictional portfolio.", { name: personaName })}{" "}
+        {tf("Each weight is a share of the whole portfolio in {currency}, valued on", { currency: portfolio.base_currency })}{" "}
         <span className="tabular">{formatDate(portfolio.valuation_date)}</span>.
       </caption>
       <thead>

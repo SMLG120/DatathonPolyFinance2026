@@ -12,7 +12,7 @@ import { PurchaseStage } from "@/components/stages/PurchaseStage";
 import { VerdictStage } from "@/components/stages/VerdictStage";
 import { AnnouncerProvider } from "@/components/ui/Announcer";
 import { DEFAULT_PERSONA } from "@/content/personas";
-import { t, useLocale } from "@/lib/i18n";
+import { t, tf, useLocale } from "@/lib/i18n";
 import { RuntimeProvider, useRuntime } from "@/state/runtime";
 import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
@@ -83,7 +83,7 @@ function StageRouter() {
 
   return (
     <>
-      <PageTitle>{`${SCREEN_TITLES[stage]}: ${APP_NAME}`}</PageTitle>
+      <PageTitle>{tf("{stage}: {app}", { stage: t(SCREEN_TITLES[stage]), app: t(APP_NAME) })}</PageTitle>
       <StageView stage={stage} />
     </>
   );
@@ -95,7 +95,7 @@ function Gate() {
     <AppShell>
       {needsAccessCode ? (
         <>
-          <PageTitle>{`Access code: ${APP_NAME}`}</PageTitle>
+          <PageTitle>{tf("Access code: {app}", { app: t(APP_NAME) })}</PageTitle>
           <AccessCodeForm />
         </>
       ) : (
@@ -134,7 +134,7 @@ export function App() {
     // The prerendered HTML: the notice is already there before any script runs.
     return (
       <div className="flex min-h-screen flex-col">
-        <PageTitle>{APP_NAME}</PageTitle>
+        <PageTitle>{t(APP_NAME)}</PageTitle>
         <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{t(SIMULATION_LABEL)}</div>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
           <h1 className="text-3xl font-bold tracking-tight text-ink">ETHOS</h1>

@@ -12,7 +12,7 @@ import { EPS, fractionToPercentInput, percentInputToFraction } from "@/lib/forma
 import { draftRule, getRuleThreshold, previewRuleSet, ruleParametersText, ruleTypeLabel, thresholdHint, thresholdLabel, thresholdText, validateThreshold } from "@/lib/rules";
 import { activeRules } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 export interface ChangeRuleFormProps {
   job: InvestigationJob;
@@ -46,10 +46,10 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
   const threshold = percentInputToFraction(text);
   const problem =
     text.trim() !== "" && threshold === null
-      ? "Enter a number such as 10 or 12.5."
+      ? t("Enter a number such as 10 or 12.5.")
       : (validateThreshold(threshold) ??
         (threshold !== null && current !== null && Math.abs(threshold - current) <= EPS
-          ? "This is the number already confirmed. Enter a different value to change the rule."
+          ? t("This is the number already confirmed. Enter a different value to change the rule.")
           : null));
   const canSubmit = rule !== undefined && problem === null;
   const shownError = problem !== null && (attempted || text.trim() !== "") ? problem : null;
@@ -117,7 +117,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
         </p>
       ) : null}
 
-      <Field htmlFor={ruleFieldId} label={t("Rule to change")} hint={`The rules in force in policy version ${policy.version}.`}>
+      <Field htmlFor={ruleFieldId} label={t("Rule to change")} hint={tf("The rules in force in policy version {version}.", { version: policy.version })}>
         <Select
           id={ruleFieldId}
           value={ruleId}
@@ -131,7 +131,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
         >
           {rules.map((candidate) => (
             <option key={candidate.rule_id} value={candidate.rule_id}>
-              {ruleTypeLabel(candidate.rule_type)}: now {thresholdText(candidate)}
+              {tf("{rule}: now {threshold}", { rule: ruleTypeLabel(candidate.rule_type), threshold: thresholdText(candidate) })}
             </option>
           ))}
         </Select>
@@ -147,7 +147,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
       <ThresholdInput
         id={thresholdId}
         inputRef={inputRef}
-        label={`New value: ${thresholdLabel(rule.rule_type).toLowerCase()}`}
+        label={tf("New value: {label}", { label: thresholdLabel(rule.rule_type).toLowerCase() })}
         hint={thresholdHint(rule.rule_type)}
         value={text}
         error={shownError}
@@ -172,7 +172,7 @@ export function ChangeRuleForm({ job, result, policy, example }: ChangeRuleFormP
         </ul>
       </Notice>
 
-      <Button variant="primary" softDisabled={!canSubmit} busy={busy} busyLabel="Creating the new version…" onClick={() => void submit()} data-testid="submit-rule-change">
+      <Button variant="primary" softDisabled={!canSubmit} busy={busy} busyLabel={t("Creating the new version…")} onClick={() => void submit()} data-testid="submit-rule-change">
         {t("Confirm the change and check again under a new version")}</Button>
     </div>
   );

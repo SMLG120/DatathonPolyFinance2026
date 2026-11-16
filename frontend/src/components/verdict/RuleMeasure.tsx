@@ -2,7 +2,7 @@ import type { RuleType, UnknownCause, VerdictStatus } from "@/lib/contracts";
 import { formatFraction, formatFractionRange, formatGap, isRange } from "@/lib/format";
 import { limitNoun, ruleDirection } from "@/lib/rules";
 import { measuredNoun, unknownCauseText } from "@/lib/verdict";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 export interface RuleMeasureProps {
   ruleType: RuleType;
@@ -21,7 +21,7 @@ export function measureDecimals(ruleType: RuleType): number {
 
 /** What was measured for a rule, as one value or as the range it lies in. */
 export function measuredText(ruleType: RuleType, measured: { lower: number; upper: number } | null): string {
-  return measured ? formatFractionRange(measured.lower, measured.upper, { decimals: measureDecimals(ruleType) }) : "Could not be measured";
+  return measured ? formatFractionRange(measured.lower, measured.upper, { decimals: measureDecimals(ruleType) }) : t("Could not be measured");
 }
 
 /** "a fund has no holdings file; a fund's holdings file reports only part of the fund" */
@@ -61,10 +61,15 @@ export function RuleMeasure({ ruleType, status, measured, limit, gap, unknownCau
       </div>
       {unknownCauses.length > 0 ? (
         <div className="sm:col-span-3" data-testid="unknown-causes">
-          <dt className="text-sm font-semibold text-ink-muted">{status === "UNKNOWN" ? "Why this is unknown" : "What is still unknown"}</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{status === "UNKNOWN" ? t("Why this is unknown") : t("What is still unknown")}</dt>
           <dd className="text-ink">
-            {status === "UNKNOWN" ? "The limit lies inside the possible range, because " : "Part of the range is unproven, because "}
-            {unknownCausesText(unknownCauses)}{t(". Missing data is never counted as zero.")}</dd>
+            {tf(
+              status === "UNKNOWN"
+                ? "The limit lies inside the possible range, because {causes}. Missing data is never counted as zero."
+                : "Part of the range is unproven, because {causes}. Missing data is never counted as zero.",
+              { causes: unknownCausesText(unknownCauses) },
+            )}
+          </dd>
         </div>
       ) : null}
     </dl>

@@ -17,7 +17,7 @@ import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 const LEAD = "Each step below is one the investigation actually completed. Steps appear as the job reports them; nothing is scripted in advance.";
 
@@ -25,7 +25,7 @@ const LEAD = "Each step below is one the investigation actually completed. Steps
 export function describeJobRequest(job: InvestigationJob): string {
   if (job.resolved_request) return describePurchase(job.resolved_request);
   if (job.request.instrument_id !== null && job.request.target_direct_weight !== null) return describePurchase(job.request);
-  return `“${job.request.original_words}” (free text, not resolved into a request yet)`;
+  return tf("“{words}” (free text, not resolved into a request yet)", { words: job.request.original_words });
 }
 
 function HowItIsRun({ job }: { job: InvestigationJob }) {
@@ -33,10 +33,10 @@ function HowItIsRun({ job }: { job: InvestigationJob }) {
   return (
     <>
       {agent.mode === "MODEL"
-        ? "A model chooses which tool to call next; the final checks are always run by the service."
-        : "The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools."}{" "}
+        ? t("A model chooses which tool to call next; the final checks are always run by the service.")
+        : t("The model was unavailable or its output was rejected, so the service ran its fixed sequence of tools.")}{" "}
       {t("Either way, every number comes from the deterministic engine and every sentence of the report is written by the service.")}<span className="mt-0.5 block text-sm text-ink-muted" data-testid="agent-mode" data-agent-mode={agent.mode}>
-        {agent.mode === "MODEL" ? `Model: ${agent.model_id ?? "not reported"}` : "Deterministic fallback"} {t("· tool rounds:")}{" "}
+        {agent.mode === "MODEL" ? tf("Model: {model}", { model: agent.model_id ?? t("not reported") }) : t("Deterministic fallback")} {t("· tool rounds:")}{" "}
         <span className="tabular">{agent.tool_rounds}</span>
         {agent.note ? ` · ${agent.note}` : ""}
       </span>
@@ -54,12 +54,12 @@ export function InvestigationStage() {
 
   if (!id) {
     return (
-      <StageFrame stage="investigation" lead={LEAD}>
+      <StageFrame stage="investigation" lead={t(LEAD)}>
         <EmptyBlock
           title={t("No investigation has been started")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Test an idea
+              {t("Go to Test an idea")}
             </LinkButton>
           }
         >
@@ -80,7 +80,7 @@ export function InvestigationStage() {
   const retryPortfolio = customPortfolioOfReport(investigation?.portfolio, scenario?.portfolio ?? null);
 
   return (
-    <StageFrame stage="investigation" lead={LEAD}>
+    <StageFrame stage="investigation" lead={t(LEAD)}>
       <Panel
         title={t("Investigation")}
         eyebrow={<span className="font-mono text-[0.8125rem]">{id}</span>}
@@ -92,19 +92,19 @@ export function InvestigationStage() {
             <Fact label={t("Request")}>
               <span className="tabular">{describeJobRequest(investigation)}</span>
             </Fact>
-            <Fact label="Checked against">Confirmed policy: version {investigation.policy_version}</Fact>
+            <Fact label={t("Checked against")}>{tf("Confirmed policy: version {version}", { version: investigation.policy_version })}</Fact>
             {/* The job's own stored portfolio, whatever its status and whatever is customized now. A job stored without one says nothing. */}
             {investigation.portfolio ? (
-              <Fact label="Portfolio checked">
+              <Fact label={t("Portfolio checked")}>
                 <PortfolioUsedLabel
                   portfolio={investigation.portfolio}
                   scenarioPortfolio={scenario?.portfolio ?? null}
-                  personaName={scenario?.persona.display_name ?? "This persona"}
+                  personaName={scenario?.persona.display_name ?? t("This persona")}
                   testId="job-portfolio-label"
                 />
               </Fact>
             ) : null}
-            <Fact label="Started">
+            <Fact label={t("Started")}>
               <span className="tabular">{formatDateTime(investigation.created_at)}</span>
             </Fact>
             <Fact label={t("Steps reported")}>
@@ -141,17 +141,21 @@ export function InvestigationStage() {
         <Notice
           tone="info"
           role="status"
-          title={`The investigation is complete: ${investigation.steps.length} ${investigation.steps.length === 1 ? "step" : "steps"} reported`}
+          title={
+            investigation.steps.length === 1
+              ? t("The investigation is complete: 1 step reported")
+              : tf("The investigation is complete: {count} steps reported", { count: investigation.steps.length })
+          }
           action={
             <Button variant="primary" iconAfter={<ArrowRightIcon />} onClick={() => goToStage("verdict")} data-testid="see-verdict">
-              {investigation.result ? "See the verdict and evidence" : "See what the investigation needs"}
+              {investigation.result ? t("See the verdict and evidence") : t("See what the investigation needs")}
             </Button>
           }
         >
           <p>
             {investigation.result
-              ? "Completion says the checks ran, not how they came out."
-              : "The request was ambiguous, so nothing was checked: the investigation asks a question instead of guessing."}
+              ? t("Completion says the checks ran, not how they came out.")
+              : t("The request was ambiguous, so nothing was checked: the investigation asks a question instead of guessing.")}
           </p>
         </Notice>
       ) : null}
@@ -159,7 +163,7 @@ export function InvestigationStage() {
       {investigation?.status === "FAILED" ? (
         <ErrorBlock
           title={t("The investigation failed")}
-          message={investigation.failure?.message ?? "The job ended without a result and gave no reason."}
+          message={investigation.failure?.message ?? t("The job ended without a result and gave no reason.")}
           onRetry={
             // A new investigation needs a policy in force (there is none after a policy version conflict).
             investigation.failure?.retryable !== false && retryRequest && derived.currentPolicy ? () => void actions.startInvestigation(retryRequest, null, retryPortfolio) : undefined
@@ -189,11 +193,11 @@ export function InvestigationStage() {
 
       {!terminal && isActive && phase === "timed_out" ? (
         <ErrorBlock
-          title={`No final answer within ${deadlineSeconds} seconds`}
+          title={tf("No final answer within {seconds} seconds", { seconds: deadlineSeconds })}
           message={
             error
-              ? "No final status was received within the time limit, so checking was stopped. The investigation may still be running."
-              : "The investigation did not finish within the time limit, so checking was stopped. It may still be running."
+              ? t("No final status was received within the time limit, so checking was stopped. The investigation may still be running.")
+              : t("The investigation did not finish within the time limit, so checking was stopped. It may still be running.")
           }
           onRetry={actions.retryPolling}
           retryLabel={t("Keep waiting")}
@@ -206,7 +210,7 @@ export function InvestigationStage() {
       {!terminal && isActive && phase === "failed" ? (
         <ErrorBlock
           title={t("The status of the investigation could not be fetched")}
-          message={error ?? "The request for its status failed."}
+          message={error ?? t("The request for its status failed.")}
           onRetry={actions.retryPolling}
           retryLabel={t("Check again")}
         >
@@ -215,7 +219,7 @@ export function InvestigationStage() {
       ) : null}
 
       {state.start.status === "error" ? (
-        <ErrorBlock title={t("A new investigation could not be started")} message={state.start.error ?? "The request failed."} />
+        <ErrorBlock title={t("A new investigation could not be started")} message={state.start.error ?? t("The request failed.")} />
       ) : null}
     </StageFrame>
   );

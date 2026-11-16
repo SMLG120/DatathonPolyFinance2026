@@ -48,7 +48,8 @@ test.describe("keyboard-only journey through the three steps", () => {
     await expect(continueLink).toHaveAttribute("href", "#/goals");
     const expectedOrder = [
       page.getByRole("link", { name: "Skip to main content" }),
-      // The header's link to the separate /evidence/ page comes before the steps, in reading order.
+      // The header's tools come before the steps, in reading order: the language choice, then the link to /evidence/.
+      page.getByRole("combobox", { name: "Language" }),
       page.getByRole("link", { name: /^Evidence Investigator/ }),
       stepLink(page, 1),
       stepLink(page, 2),

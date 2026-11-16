@@ -5,7 +5,7 @@ import { describedBy, errorId, hintId } from "@/components/ui/Field";
 import { ErrorIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
 import { percentInputToFraction } from "@/lib/format";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 export interface ThresholdInputProps {
   id: string;
@@ -77,8 +77,8 @@ export function ThresholdInput({ id, label, hint, value, onChange, error, slider
             step={SLIDER_STEP}
             value={percent === null ? 0 : Math.min(percent, max)}
             data-unset={isSet ? undefined : "true"}
-            aria-label={`${label}, slider from 0 to ${max} percent`}
-            aria-valuetext={isSet ? `${value.trim().replace(/%$/, "")} percent` : "Not set"}
+            aria-label={tf("{label}, slider from 0 to {max} percent", { label, max })}
+            aria-valuetext={isSet ? tf("{value} percent", { value: value.trim().replace(/%$/, "") }) : t("Not set")}
             onChange={(event) => onChange(event.target.value)}
           />
           <div className="tabular mt-0.5 flex justify-between text-sm text-ink-muted" aria-hidden="true">

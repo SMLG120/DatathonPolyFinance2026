@@ -6,7 +6,7 @@ import { EvidenceIcon } from "@/components/ui/icons";
 import type { CheckResult } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { EvidenceContent } from "./EvidenceContent";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 export interface EvidenceRequest {
   /** What the figure is, in words: "NVDA exposure after the purchase". */
@@ -55,9 +55,9 @@ export function EvidenceProvider({ children }: { children: ReactNode }) {
       <Drawer
         open={isOpen}
         onOpenChange={setIsOpen}
-        title={request ? `Evidence: ${request.title}` : "Evidence"}
+        title={request ? tf("Evidence: {title}", { title: t(request.title) }) : t("Evidence")}
         description={t("Where this figure comes from: dates, sources, coverage, assumptions and how it was calculated.")}
-        closeLabel="Close evidence"
+        closeLabel={t("Close evidence")}
         returnFocusTo={() => opener.current}
       >
         {request ? (
@@ -103,7 +103,7 @@ export function EvidenceButton({ label, result, evidenceIds, className }: Eviden
   return (
     <button
       type="button"
-      aria-label={`Evidence for ${label}`}
+      aria-label={tf("Evidence for {label}", { label: t(label) })}
       onClick={(event) => open({ title: label, result, evidenceIds }, event.currentTarget)}
       className={cn(
         "inline-flex min-h-9 items-center gap-1.5 rounded-md px-1.5 text-sm font-semibold text-accent underline decoration-1 underline-offset-4 hover:text-accent-strong hover:decoration-2",

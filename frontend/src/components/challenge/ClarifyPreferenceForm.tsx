@@ -9,7 +9,7 @@ import { Notice } from "@/components/ui/Notice";
 import type { DemoChallenge, InvestigationJob, Objective } from "@/lib/contracts";
 import { stageHref } from "@/state/stage";
 import { clarificationKey, useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * Path 2: clarify a preference. The text goes back through the interpreter.
@@ -23,7 +23,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
   const [text, setText] = useState("");
   const [objectiveId, setObjectiveId] = useState("");
   const [attempted, setAttempted] = useState(false);
-  const error = attempted && text.trim() === "" ? "Write what should be understood differently." : null;
+  const error = attempted && text.trim() === "" ? t("Write what should be understood differently.") : null;
   const busy = state.challenge.status === "loading";
   const response = state.preferenceResponse;
   const exampleText = example?.type === "CLARIFY_PREFERENCE" && typeof example.payload.text === "string" ? example.payload.text : null;
@@ -89,7 +89,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
             </Select>
           </Field>
         ) : null}
-        <Button type="submit" variant="primary" busy={busy} busyLabel="Reading your text…" data-testid="submit-preference">
+        <Button type="submit" variant="primary" busy={busy} busyLabel={t("Reading your text…")} data-testid="submit-preference">
           {t("Record this clarification")}</Button>
       </form>
 
@@ -115,7 +115,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
               <ul className="mt-1 space-y-2">
                 {response.unsupported.map((item) => (
                   <li key={`${item.code}-${item.words}`} className="rounded-md border border-dashed border-line-strong bg-canvas p-3 text-ink" data-testid="unsupported-request">
-                    <span className="block font-semibold">{t("&ldquo;")}{item.words}{t("&rdquo;")}</span>
+                    <span className="block font-semibold">&ldquo;{item.words}&rdquo;</span>
                     <span className="block text-sm">{item.reason}</span>
                   </li>
                 ))}
@@ -126,8 +126,9 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
           {response.clarifications.length > 0 ? (
             <div>
               <h4 className="font-semibold text-ink">
-                {response.clarifications.length === 1 ? "One question needs your answer" : `${response.clarifications.length} questions need your answer`}{" "}
-                {t("before a rule can be written")}</h4>
+                {response.clarifications.length === 1
+                  ? t("One question needs your answer before a rule can be written")
+                  : tf("{count} questions need your answer before a rule can be written", { count: response.clarifications.length })}</h4>
               <ul className="mt-2 space-y-4">
                 {response.clarifications.map((clarification) => {
                   // Named by this answer as well as by its id: the question asked in Goals & rules can have the same id.
@@ -149,7 +150,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
 
           {response.proposed_rules.length > 0 ? (
             <div>
-              <h4 className="font-semibold text-ink">Rules drafted from your words: inactive until you confirm them</h4>
+              <h4 className="font-semibold text-ink">{t("Rules drafted from your words: inactive until you confirm them")}</h4>
               <ul className="mt-1 space-y-2">
                 {response.proposed_rules.map((draft) => (
                   <li key={draft.rule_id} className="rounded-md border border-line bg-canvas p-3" data-testid="drafted-rule">
@@ -168,7 +169,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
               <h4 className="font-semibold text-ink">{t("Kept as an objective, word for word")}</h4>
               <ul className="mt-1 list-disc pl-5 text-ink">
                 {response.objectives.map((objective) => (
-                  <li key={objective.objective_id}>{t("&ldquo;")}{objective.original_words}{t("&rdquo;")}</li>
+                  <li key={objective.objective_id}>&ldquo;{objective.original_words}&rdquo;</li>
                 ))}
               </ul>
             </div>

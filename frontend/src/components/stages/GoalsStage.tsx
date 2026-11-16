@@ -19,7 +19,7 @@ import { draftRule, previewRuleSet, ruleSummary, validateThreshold } from "@/lib
 import { activeRules } from "@/lib/verdict";
 import { usePurchaseForm } from "@/state/purchase";
 import { clarificationKey, useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 const OBJECTIVE_SOURCE: Record<Objective["source"], string> = {
   USER_STATED: "Stated by you",
@@ -41,17 +41,17 @@ function ObjectiveList({ objectives, edited }: { objectives: Objective[]; edited
           {edited && edited.objective_id === objective.objective_id ? (
             <p className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink" data-testid="objective-edited-note">
               <Badge tone="accent" dashed>
-                Your wording
+                {t("Your wording")}
               </Badge>
               <span>
-                You edited this objective in step 1. The scenario said: &ldquo;{edited.original_words}&rdquo; It is context only: editing it created,
-                changed and confirmed no rule.
+                {t("You edited this objective in step 1. The scenario said:")} &ldquo;{edited.original_words}&rdquo;{" "}
+                {t("It is context only: editing it created, changed and confirmed no rule.")}
               </span>
             </p>
           ) : null}
-          <blockquote className="text-ink">&ldquo;{objective.original_words}&rdquo;</blockquote>
+          <blockquote className="text-ink" lang={objective.source === "FICTIONAL_SCENARIO" ? "en" : undefined}>&ldquo;{objective.original_words}&rdquo;</blockquote>
           <p className="mt-1 text-sm text-ink-muted">
-            {OBJECTIVE_SOURCE[objective.source]} · {OBJECTIVE_KIND[objective.kind]} {t("· recorded word for word · not scored")}{objective.case_reference ? ` · ${objective.case_reference}` : ""}
+            {t(OBJECTIVE_SOURCE[objective.source])} · {t(OBJECTIVE_KIND[objective.kind])} {t("· recorded word for word · not scored")}{objective.case_reference ? ` · ${objective.case_reference}` : ""}
           </p>
         </li>
       ))}
@@ -78,10 +78,10 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
       focusableHeading
       figures
       title={t("Your confirmed limits")}
-      eyebrow="In force"
+      eyebrow={t("In force")}
       aside={
         <Badge tone="accent" icon={<CheckIcon size={16} />}>
-          {active.length} {t("active")} {active.length === 1 ? "rule" : "rules"}
+          {active.length === 1 ? t("1 active rule") : tf("{count} active rules", { count: active.length })}
         </Badge>
       }
       description={t("These limits will be used to check your idea.")}
@@ -94,8 +94,8 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
           <Fact label={t("Created")}>
             <span className="tabular">{formatDateTime(policy.created_at)}</span>
           </Fact>
-          <Fact label="Replaces">{policy.parent_version === null ? "Nothing: first version" : `Version ${policy.parent_version}`}</Fact>
-          <Fact label="Change note" wide>
+          <Fact label={t("Replaces")}>{policy.parent_version === null ? t("Nothing: first version") : tf("Version {version}", { version: policy.parent_version })}</Fact>
+          <Fact label={t("Change note")} wide>
             {policy.change_note}
           </Fact>
         </Facts></details>
@@ -107,7 +107,7 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
         {superseded.length > 0 ? (
           <details className="rounded-md border border-line bg-canvas p-3">
             <summary className="min-h-6 cursor-pointer font-semibold text-ink">
-              Superseded rules ({superseded.length}): kept for the record, not checked
+              {tf("Superseded rules ({count}): kept for the record, not checked", { count: superseded.length })}
             </summary>
             <ul className="mt-3 space-y-4">
               {superseded.map((rule) => (
@@ -205,7 +205,7 @@ export function GoalsStage() {
 
   function interpret() {
     if (state.goalText.trim() === "") {
-      setGoalError("Write what you want in a sentence first.");
+      setGoalError(t("Write what you want in a sentence first."));
       goalRef.current?.focus();
       return;
     }
@@ -217,12 +217,12 @@ export function GoalsStage() {
     <StageFrame
       stage="goals"
       lead={t("Review these limits and confirm the ones you want to use.")}
-      continueNote={policy ? null : "You can continue, but a purchase can only be checked once at least one rule is confirmed."}
+      continueNote={policy ? null : t("You can continue, but a purchase can only be checked once at least one rule is confirmed.")}
     >
       {state.proposedRules.length > 0 || !policy ? (
       <Panel
         title={t("Your limits")}
-        eyebrow="Inactive until confirmed"
+        eyebrow={t("Inactive until confirmed")}
         aside={
           <Badge tone="neutral" dashed>
             {state.proposedRules.length} {t("proposed")}</Badge>
@@ -257,17 +257,19 @@ export function GoalsStage() {
                 variant="primary"
                 softDisabled={confirmable.length === 0}
                 busy={confirming}
-                busyLabel="Confirming…"
+                busyLabel={t("Confirming…")}
                 icon={<CheckIcon />}
                 data-testid="confirm-rules"
                 onClick={() => void confirmAll()}
               >
                 {confirmable.length === 0
-                  ? "Confirm the rules"
-                  : `Confirm ${confirmable.length === 1 ? "this 1 rule" : `these ${confirmable.length} rules`} with ${confirmable.length === 1 ? "its number" : "their numbers"}`}
+                  ? t("Confirm the rules")
+                  : confirmable.length === 1
+                    ? t("Confirm this 1 rule with its number")
+                    : tf("Confirm these {count} rules with their numbers", { count: confirmable.length })}
               </Button>
               <p className="text-sm text-ink-muted" data-testid="confirm-hint">
-                {t("Only the limits you confirm will be checked.")}{leftOut > 0 ? ` ${leftOut} ${leftOut === 1 ? "rule has" : "rules have"} no valid number and ${leftOut === 1 ? "stays" : "stay"} proposed.` : ""}
+                {t("Only the limits you confirm will be checked.")}{leftOut > 0 ? ` ${leftOut === 1 ? t("1 rule has no valid number and stays proposed.") : tf("{count} rules have no valid number and stay proposed.", { count: leftOut })}` : ""}
               </p>
               {attempted && confirmable.length === 0 ? (
                 <p role="alert" className="text-sm font-semibold text-fail">
@@ -276,18 +278,18 @@ export function GoalsStage() {
             </div>
           </div>
         ) : (
-          <EmptyBlock title={policy ? "No rule is waiting for confirmation" : "No rule is proposed"}>
+          <EmptyBlock title={policy ? t("No rule is waiting for confirmation") : t("No rule is proposed")}>
             <p>
               {policy
-                ? "Everything proposed so far has been confirmed. A confirmed number is changed in the Challenge stage, which creates a new policy version."
-                : "The scenario offers no rule for this persona. Write one in your own words above."}
+                ? t("Everything proposed so far has been confirmed. A confirmed number is changed in the Challenge stage, which creates a new policy version.")
+                : t("The scenario offers no rule for this persona. Write one in your own words above.")}
             </p>
           </EmptyBlock>
         )}
         {state.confirm.status === "error" ? (
           state.confirm.code === "POLICY_VERSION_CONFLICT" ? (
             // No "Try again": the same request would be refused again. The stage has started again instead.
-            <ErrorBlock className="mt-4" title={t("The rules could not be confirmed")} message={state.confirm.error ?? "The policy has a newer version than the one this page held."}>
+            <ErrorBlock className="mt-4" title={t("The rules could not be confirmed")} message={state.confirm.error ?? t("The policy has a newer version than the one this page held.")}>
               <div className="space-y-1" data-testid="policy-conflict">
                 <p>
                   {t("The policy was changed after this page last received it: from another tab or session, or by a request whose answer never arrived. The service cannot send this page the newer version.")}</p>
@@ -296,7 +298,7 @@ export function GoalsStage() {
               </div>
             </ErrorBlock>
           ) : (
-            <ErrorBlock className="mt-4" title={t("The rules could not be confirmed")} message={state.confirm.error ?? "The request failed."} onRetry={() => void confirmAll()}>
+            <ErrorBlock className="mt-4" title={t("The rules could not be confirmed")} message={state.confirm.error ?? t("The request failed.")} onRetry={() => void confirmAll()}>
               <p>{t("They are still proposed and inactive. The confirmed policy is unchanged.")}</p>
             </ErrorBlock>
           )
@@ -306,10 +308,10 @@ export function GoalsStage() {
       ) : null}
       {policy ? <PolicyPanel policy={policy} earlier={state.policies.slice(0, -1)} /> : null}
       <Panel
-        title="Why these limits?"
+        title={t("Why these limits?")}
         // An edited objective is stored with the next rule confirmation, if there is one, so it stays on screen while the user confirms.
         collapsible={!state.objectiveEdited}
-        eyebrow="Context, not rules"
+        eyebrow={t("Context, not rules")}
         description={t("An objective is kept word for word to give results their context. It is never marked pass or fail, and it never implies a number.")}
       >
         {state.portfolio.status !== "ready" ? (
@@ -331,7 +333,7 @@ export function GoalsStage() {
       <Panel
         title={t("Add a limit in your own words")}
         collapsible
-        eyebrow="Optional"
+        eyebrow={t("Optional")}
         description={t("Write a limit or an exclusion in a sentence. The service drafts the kind of rule from it and asks when a word has more than one meaning. It never invents a number.")}
       >
         <div className="space-y-4">
@@ -350,8 +352,8 @@ export function GoalsStage() {
             />
           </Field>
           <div className="flex flex-wrap items-center gap-3">
-            <Button softDisabled={state.goalText.trim() === ""} busy={interpreting} busyLabel="Reading your words…" onClick={interpret} data-testid="interpret-words">
-              {state.interpretation ? "Interpret these words again" : "Interpret these words"}
+            <Button softDisabled={state.goalText.trim() === ""} busy={interpreting} busyLabel={t("Reading your words…")} onClick={interpret} data-testid="interpret-words">
+              {state.interpretation ? t("Interpret these words again") : t("Interpret these words")}
             </Button>
             {scenarioSentence ? (
               <Button
@@ -363,7 +365,7 @@ export function GoalsStage() {
                 }}
                 data-testid="use-scenario-sentence"
               >
-                {t("Use the scenario&rsquo;s sentence")}</Button>
+                {t("Use the scenario’s sentence")}</Button>
             ) : null}
           </div>
 
@@ -374,7 +376,7 @@ export function GoalsStage() {
                 <p data-testid="interpret-not-recorded">{state.interpret.error}</p>
               </Notice>
             ) : (
-              <ErrorBlock title={t("Your words could not be read")} message={state.interpret.error ?? "The request failed."} onRetry={interpret}>
+              <ErrorBlock title={t("Your words could not be read")} message={state.interpret.error ?? t("The request failed.")} onRetry={interpret}>
                 <p>{t("No rule was created or changed. The rules offered below can still be confirmed by hand.")}</p>
               </ErrorBlock>
             )
@@ -383,7 +385,7 @@ export function GoalsStage() {
           {state.interpretation ? (
             <div className="space-y-4 border-t border-line pt-4" data-testid="interpretation">
               <p className="text-ink">
-                <span className="font-semibold">{t("Draft read from:")}</span> {t("&ldquo;")}{state.interpretation.original_words}{t("&rdquo;")}{" "}
+                <span className="font-semibold">{t("Draft read from:")}</span> &ldquo;{state.interpretation.original_words}&rdquo;{" "}
                 <span className="text-sm text-ink-muted">{t("Nothing in a draft is active, and no stored rule was changed.")}</span>
               </p>
 
@@ -414,7 +416,7 @@ export function GoalsStage() {
                     {state.interpretation.proposed_rules.map((draft) => (
                       <li key={draft.rule_id} className="rounded-md border border-line bg-canvas p-3" data-testid="drafted-rule">
                         <span className="block text-ink">
-                          {ruleName(draft)} <span className="text-sm text-ink-muted">{t("· from &ldquo;")}{draft.original_words}{t("&rdquo;")}</span>
+                          {ruleName(draft)} <span className="text-sm text-ink-muted">{t("· from")} &ldquo;{draft.original_words}&rdquo;</span>
                         </span>
                         <span className="block text-sm text-ink">
                           <DraftOutcome draft={draft} />
@@ -431,7 +433,7 @@ export function GoalsStage() {
                   <ul className="mt-1 space-y-2">
                     {state.interpretation.unsupported.map((item) => (
                       <li key={`${item.code}-${item.words}`} className="rounded-md border border-dashed border-line-strong bg-canvas p-3" data-testid="unsupported-request">
-                        <blockquote className="text-ink">{t("&ldquo;")}{item.words}{t("&rdquo;")}</blockquote>
+                        <blockquote className="text-ink">&ldquo;{item.words}&rdquo;</blockquote>
                         <p className="mt-1 text-sm text-ink-muted">{item.reason}</p>
                       </li>
                     ))}

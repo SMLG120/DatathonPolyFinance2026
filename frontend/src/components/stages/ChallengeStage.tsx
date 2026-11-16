@@ -19,7 +19,7 @@ import { assessResult } from "@/lib/result";
 import { verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 const LEAD = "Disagree with a figure, with how your preference was read, or with one of your own rules? Each path keeps the earlier report exactly as it was.";
 
@@ -52,12 +52,12 @@ export function ChallengeStage() {
 
   if (!job || assessment?.kind !== "ok") {
     return (
-      <StageFrame stage="challenge" lead={LEAD}>
+      <StageFrame stage="challenge" lead={t(LEAD)}>
         <EmptyBlock
           title={t("There is no report to challenge yet")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Test an idea
+              {t("Go to Test an idea")}
             </LinkButton>
           }
         >
@@ -70,14 +70,14 @@ export function ChallengeStage() {
 
   const result = assessment.result;
   const scenarioPortfolio = state.portfolio.data?.scenario.portfolio ?? null;
-  const personaLabel = state.portfolio.data?.scenario.persona.display_name ?? "This persona";
+  const personaLabel = state.portfolio.data?.scenario.persona.display_name ?? t("This persona");
   const policy = derived.policyFor(job);
   const current = derived.currentPolicy;
   const isCurrentPolicy = policy !== null && current !== null && policy.policy_id === current.policy_id && policy.version === current.version;
   const headline = verdictHeadline(result.summary);
 
   return (
-    <StageFrame stage="challenge" lead={LEAD}>
+    <StageFrame stage="challenge" lead={t(LEAD)}>
       <Panel title={t("Report being challenged")} tone="sunken" figures>
         <Facts className="sm:grid-cols-3">
           <Fact label={t("Result")}>
@@ -86,14 +86,14 @@ export function ChallengeStage() {
           <Fact label={t("Request")}>
             <span className="tabular">{describePurchase(result.purchase_request)}</span>
           </Fact>
-          <Fact label="Checked against">
-            Confirmed policy: version <span className="tabular">{job.policy_version}</span>
+          <Fact label={t("Checked against")}>
+            {t("Confirmed policy: version")} <span className="tabular">{job.policy_version}</span>
           </Fact>
           {job.portfolio ? (
-            <Fact label="Portfolio checked" wide>
+            <Fact label={t("Portfolio checked")} wide>
               <span data-testid="report-portfolio-label">{portfolioCheckedLabel(job.portfolio, scenarioPortfolio, personaLabel)}</span>
               <span className="block text-sm text-ink-muted">
-                Stored with this report. A rule change re-checks this same portfolio, whatever customization is applied now.
+                {t("Stored with this report. A rule change re-checks this same portfolio, whatever customization is applied now.")}
               </span>
             </Fact>
           ) : null}
@@ -115,31 +115,31 @@ export function ChallengeStage() {
           items={[
             {
               value: "fact",
-              label: "Correct a fact",
+              label: t("Correct a fact"),
               // Remount when a figure is chosen from the evidence drawer, so it arrives preselected.
               content: <CorrectFactForm key={`${job.id}|${challengeEvidenceId ?? "none"}`} job={job} result={result} example={example} />,
             },
             {
               value: "preference",
-              label: "Clarify a preference",
+              label: t("Clarify a preference"),
               content: <ClarifyPreferenceForm job={job} objectives={policy?.objectives ?? state.objectives} example={example} />,
             },
             {
               value: "rule",
-              label: "Change a rule",
+              label: t("Change a rule"),
               content:
                 policy && isCurrentPolicy ? (
                   <ChangeRuleForm key={job.id} job={job} result={result} policy={policy} example={example} />
                 ) : (
                   <Notice
                     tone="caution"
-                    title={`This report was checked against policy version ${job.policy_version}, which is no longer the one in force`}
+                    title={tf("This report was checked against policy version {version}, which is no longer the one in force", { version: job.policy_version })}
                     action={
                       <Button size="sm" onClick={() => actions.viewReport(null)}>
                         {t("Use the latest report instead")}</Button>
                     }
                   >
-                    <p>{t("A rule is changed starting from the version in force")}{current ? ` (version ${current.version})` : ""}.</p>
+                    <p>{current ? tf("A rule is changed starting from the version in force (version {version}).", { version: current.version }) : t("A rule is changed starting from the version in force.")}</p>
                   </Notice>
                 ),
             },
@@ -152,7 +152,7 @@ export function ChallengeStage() {
               <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </Notice>
           ) : (
-            <ErrorBlock className="mt-5" title={t("Your challenge could not be recorded")} message={state.challenge.error ?? "The request failed."}>
+            <ErrorBlock className="mt-5" title={t("Your challenge could not be recorded")} message={state.challenge.error ?? t("The request failed.")}>
               <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </ErrorBlock>
           )
@@ -175,9 +175,9 @@ function ComparisonPanel() {
         id="rule-change-comparison"
         focusableHeading
         className="border-2 border-accent"
-        eyebrow="Outcome of the rule change: separate from the form above"
-        title="Version comparison: before and after the rule change"
-        description="The earlier report was not edited. It still says what it said under the earlier policy version."
+        eyebrow={t("Outcome of the rule change: separate from the form above")}
+        title={t("Version comparison: before and after the rule change")}
+        description={t("The earlier report was not edited. It still says what it said under the earlier policy version.")}
       >
         <RuleChangeComparison />
       </Panel>

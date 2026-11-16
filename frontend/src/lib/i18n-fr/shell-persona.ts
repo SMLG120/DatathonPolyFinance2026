@@ -1,0 +1,211 @@
+/** French catalog for the shell-persona screens. Keys are the exact English text passed to t() or tf(); values are French. */
+export const FR: Record<string, string> = {
+  // App shell, page titles, header and footer
+  "ETHOS: fictional simulation": "ETHOS : simulation fictive",
+  "{stage}: {app}": "{stage} : {app}",
+  "Access code: {app}": "Code d’accès : {app}",
+  "Simulation: fictional portfolio, not advice": "Simulation — portefeuille fictif, pas un conseil financier",
+  "Test data: fixtures": "Données de test — exemples",
+  "Tools": "Outils",
+  "Evidence Investigator": "Analyse des preuves",
+  "(opens in a new tab; your progress on this page is kept)": "(s’ouvre dans un nouvel onglet ; votre progression sur cette page est conservée)",
+
+  // Brand hero
+  "Invest with conviction.": "Investissez avec conviction.",
+  "Not contradiction.": "Sans contradiction.",
+  "Your AI-powered investment decision investigator. Uncover hidden exposure, verify your financial rules, and understand every trade before you commit.":
+    "Votre outil d’analyse des décisions d’investissement, assisté par l’IA. Repérez les expositions cachées, vérifiez vos règles financières et comprenez chaque opération avant de vous engager.",
+  "ETHOS — The AI Agent That Challenges Your Investments Before the Market Does.": "ETHOS — L’agent d’IA qui met vos placements à l’épreuve avant que le marché ne le fasse.",
+  "Start with a profile": "Commencer par un profil",
+
+  // Stage frame and stepper
+  "your limits": "vos limites",
+
+  // Access code form
+  "Enter the access code you were given.": "Saisissez le code d’accès qui vous a été fourni.",
+  "The service did not accept this code. Check it and try again.": "Le service n’a pas accepté ce code. Vérifiez-le et réessayez.",
+  "Checking the code…": "Vérification du code…",
+
+  // Persona stage
+  "What this tool does": "Ce que fait cet outil",
+  "Before you buy something, it checks whether the purchase would break limits you set for yourself, such as “no more than 10% of my money in one company”. It counts what you hold directly and what you hold inside funds, and it says plainly when the data cannot prove an answer. Everything is fictional: it gives no advice and places no trade.":
+    "Avant un achat, il vérifie si cet achat enfreindrait des limites que vous vous êtes fixées, par exemple « pas plus de 10 % de mon argent dans une seule entreprise ». Il compte ce que vous détenez directement et ce que vous détenez à travers des fonds, et il indique clairement quand les données ne permettent pas de conclure. Tout est fictif : il ne donne aucun conseil et ne passe aucun ordre.",
+  "Pick a fictional investor and look at what they own.": "Choisissez un investisseur fictif et examinez ce qu’il détient.",
+  "Confirm the limits you want checked. Nothing is checked until you confirm it.": "Confirmez les limites à vérifier. Rien n’est vérifié tant que vous ne l’avez pas confirmé.",
+  "Pick one investment and the share of the portfolio it would have after buying.": "Choisissez un placement et la part du portefeuille qu’il représenterait après l’achat.",
+  "See which limits pass or fail, what is still unknown, and the evidence behind each figure.":
+    "Voyez quelles limites sont respectées ou non, ce qui reste indéterminé et les preuves derrière chaque chiffre.",
+  "Use {name}’s portfolio": "Utiliser le portefeuille de {name}",
+  "What the case says about {name} ({reference})": "Ce que le scénario indique sur {name} ({reference})",
+  "Fictional simulation": "Simulation fictive",
+  "Loading {name}’s portfolio…": "Chargement du portefeuille de {name}…",
+  "These weights were entered by you in place of {name}’s original fictional portfolio. They are still invented, and they are the weights every check is asked for.":
+    "Ces pondérations ont été saisies par vous à la place du portefeuille fictif d’origine de {name}. Elles restent inventées, et ce sont elles que chaque vérification utilise.",
+
+  // Persona cards (content/personas.ts)
+  "Preserve capital while keeping some growth potential.": "Préserver le capital tout en conservant un certain potentiel de croissance.",
+  "Balanced capital growth over the medium and long term.": "Croissance équilibrée du capital à moyen et long terme.",
+  "Grow capital over the long term.": "Faire croître le capital sur le long terme.",
+  "3 to 5 years": "3 à 5 ans",
+  "8 to 12 years": "8 à 12 ans",
+  "15 years or more": "15 ans ou plus",
+  "Low to moderate": "Faible à modéré",
+  "Moderate": "Modéré",
+  "High": "Élevé",
+  "A purchase that is tempting but may not fit the rules he confirmed.": "Un achat tentant qui pourrait ne pas respecter les règles qu’il a confirmées.",
+  "A preference that must be defined before it can be checked, and data that is missing.": "Une préférence à préciser avant de pouvoir être vérifiée, et des données manquantes.",
+  "Wording that needs clarification rather than a verdict.": "Une formulation qui demande une précision plutôt qu’un résultat.",
+  "No persona": "Aucun profil",
+
+  // Portfolio tables
+  "Customized fictional portfolio, edited from {name}’s.": "Portefeuille fictif personnalisé, modifié à partir de celui de {name}.",
+  "{name}’s fictional portfolio.": "Portefeuille fictif de {name}.",
+  "Each weight is a share of the whole portfolio in {currency}, valued on": "Chaque pondération est une part de l’ensemble du portefeuille en {currency}, évaluée au",
+  "Fictional portfolio stored with this report": "Portefeuille fictif enregistré avec ce rapport",
+  "{name}’s original fictional portfolio": "Portefeuille fictif d’origine de {name}",
+  "The weights this report was checked against, as the service stored them with the investigation. They do not change when the portfolio is customized or reset afterwards.":
+    "Les pondérations sur lesquelles ce rapport a été vérifié, telles que le service les a enregistrées avec l’analyse. Elles ne changent pas si le portefeuille est personnalisé ou réinitialisé par la suite.",
+
+  // Customize panel
+  "This wording is not in your stored policy": "Cette formulation ne figure pas dans votre politique enregistrée",
+  "is stored exactly as it was confirmed and keeps the wording it had then, so reports made under it show that earlier wording. The new wording is stored only if you confirm another rule, which creates a new policy version. Changing the number of a rule from a result keeps the stored wording. No rule was created, changed or confirmed by editing the objective.":
+    "est enregistrée exactement telle qu’elle a été confirmée et conserve la formulation d’alors : les rapports établis dans cette version affichent donc l’ancienne formulation. La nouvelle formulation n’est enregistrée que si vous confirmez une autre règle, ce qui crée une nouvelle version de la politique. Modifier le chiffre d’une règle depuis un résultat conserve la formulation enregistrée. Aucune règle n’a été créée, modifiée ni confirmée en modifiant l’objectif.",
+  "Cash: {error}": "Liquidités : {error}",
+  "Objective: {error}": "Objectif : {error}",
+  "Edit the fictional portfolio and the objective": "Modifier le portefeuille fictif et l’objectif",
+  "Enter each weight as a percentage of the whole portfolio, with at most 2 decimals. Nothing is applied until you choose Apply, and no rule is created, changed or confirmed here.":
+    "Saisissez chaque pondération en pourcentage de l’ensemble du portefeuille, avec 2 décimales au plus. Rien n’est appliqué tant que vous n’avez pas choisi Appliquer, et aucune règle n’est créée, modifiée ni confirmée ici.",
+  "Positions": "Positions",
+  "No position: the whole portfolio is cash.": "Aucune position : tout le portefeuille est en liquidités.",
+  "Remove {id} from the portfolio": "Retirer {id} du portefeuille",
+  "Remove": "Retirer",
+  "Add an asset": "Ajouter un actif",
+  "A portfolio can hold at most {count} positions.": "Un portefeuille peut contenir au plus {count} positions.",
+  "A portfolio can hold at most 40 positions.": "Un portefeuille peut contenir au plus 40 positions.",
+  "Every supported asset is already in the portfolio.": "Tous les actifs pris en charge figurent déjà dans le portefeuille.",
+  "Only supported assets that are not already held are listed.": "Seuls les actifs pris en charge qui ne sont pas déjà détenus sont proposés.",
+  "Choose an asset": "Choisir un actif",
+  "Add this asset": "Ajouter cet actif",
+  "Uninvested. A purchase is funded from it.": "Non investies. Un achat est financé à partir de ces liquidités.",
+  "Total:": "Total :",
+  "not available until every weight is a valid number": "indisponible tant que chaque pondération n’est pas un nombre valide",
+  "The weights you entered total exactly 100%.": "Les pondérations saisies totalisent exactement 100 %.",
+  "Objective, in plain language": "Objectif, en langage courant",
+  "Kept word for word as context for the results. It is never scored, and it never creates or changes a rule. At most {count} characters.":
+    "Conservé mot pour mot comme contexte des résultats. Il n’est jamais noté, et il ne crée ni ne modifie jamais une règle. {count} caractères au plus.",
+  "This customization cannot be applied yet": "Cette personnalisation ne peut pas encore être appliquée",
+  "Apply": "Appliquer",
+  "Cancel": "Annuler",
+  "Reset to the original scenario": "Revenir au scénario d’origine",
+  "The service checks the portfolio again with every request and is the authority: it refuses a portfolio it cannot accept, and says why.":
+    "Le service vérifie à nouveau le portefeuille à chaque demande et fait autorité : il refuse un portefeuille qu’il ne peut pas accepter, et en indique la raison.",
+  "Customize this profile": "Personnaliser ce profil",
+  "Change the invented weights of {name}’s fictional portfolio and the wording of the objective, then test ideas against your version. It stays a fictional simulation.":
+    "Modifiez les pondérations inventées du portefeuille fictif de {name} et la formulation de l’objectif, puis testez des idées sur votre version. Cela reste une simulation fictive.",
+  "{label}: applied": "{label} : appliqué",
+  "Objective edited: the portfolio is the original one": "Objectif modifié : le portefeuille est celui d’origine",
+  "The portfolio above shows the weights you entered. Every check from now on is asked for exactly these weights.":
+    "Le portefeuille ci-dessus affiche les pondérations que vous avez saisies. Chaque vérification porte désormais exactement sur ces pondérations.",
+  "The objective carries your wording. Your limits are unchanged: no rule was created, changed or confirmed.":
+    "L’objectif reprend votre formulation. Vos limites sont inchangées : aucune règle n’a été créée, modifiée ni confirmée.",
+  "Confirmed limits and earlier reports are kept. Each report keeps the portfolio it was checked against.":
+    "Les limites confirmées et les rapports précédents sont conservés. Chaque rapport conserve le portefeuille sur lequel il a été vérifié.",
+  "Customization needs the live service: the test data only replays results recorded for the original portfolio.":
+    "La personnalisation nécessite le service en ligne : les données de test ne font que rejouer des résultats enregistrés pour le portefeuille d’origine.",
+  // Messages from lib/customize.ts, rendered by the customize panel
+  "Weights must total 100%. Leverage is not supported and weights are never rescaled.":
+    "Les pondérations doivent totaliser 100 %. L’effet de levier n’est pas pris en charge et les pondérations ne sont jamais ajustées automatiquement.",
+  "Enter a weight as a percentage, for example 12.5.": "Saisissez une pondération en pourcentage, par exemple 12.5.",
+  "Shorting is not supported: a weight cannot be negative.": "La vente à découvert n’est pas prise en charge : une pondération ne peut pas être négative.",
+  "Use at most 2 decimals, for example 12.25.": "Utilisez 2 décimales au plus, par exemple 12.25.",
+  "A position's weight must be above 0%. Remove the row to hold none of it.": "La pondération d’une position doit être supérieure à 0 %. Retirez la ligne pour ne pas la détenir.",
+  "A weight cannot be above 100%. Leverage is not supported.": "Une pondération ne peut pas dépasser 100 %. L’effet de levier n’est pas pris en charge.",
+  "An asset can be listed only once.": "Un actif ne peut figurer qu’une seule fois.",
+  "Write the objective in a sentence. It cannot be empty.": "Rédigez l’objectif en une phrase. Il ne peut pas être vide.",
+
+  // Evidence investigator (/evidence/)
+  "{title}: ETHOS (fictional simulation)": "{title} : ETHOS (simulation fictive)",
+  "Back to the purchase check": "Retour à la vérification de l’achat",
+  "Fictional investor": "Investisseur fictif",
+  "Understand missing portfolio data and its impact on your investment rules.": "Comprendre les données manquantes du portefeuille et leur incidence sur vos règles d’investissement.",
+  "A limited evidence tool, not a research agent: it reads the holdings files, instrument registry and source registry held by this service, and answers with calculated figures and fixed wording. It does not search the web or fetch new data.":
+    "Un outil de preuves limité, pas un agent de recherche : il lit les fichiers de positions, le registre des instruments et le registre des sources détenus par ce service, et répond avec des chiffres calculés et des formulations fixes. Il ne fait aucune recherche sur le Web et ne récupère aucune nouvelle donnée.",
+  "Limits mentioned here are this fictional scenario's suggested rules. They have not been confirmed by the investor and are not an active policy.":
+    "Les limites mentionnées ici sont les règles suggérées par ce scénario fictif. Elles n’ont pas été confirmées par l’investisseur et ne constituent pas une politique en vigueur.",
+  "Sufficient evidence": "Preuves suffisantes",
+  "Partial evidence": "Preuves partielles",
+  "Insufficient evidence": "Preuves insuffisantes",
+  "Verified holdings": "Positions vérifiées",
+  "Unresolved holdings": "Positions non résolues",
+  "Not measurable from the evidence held.": "Non mesurable à partir des preuves disponibles.",
+  "Hypothetical: not measured": "Hypothétique : non mesuré",
+  "Outside what this assistant does": "En dehors du champ de cet assistant",
+  "The question names {fund}, so this answer is about that fund.": "La question mentionne {fund} : cette réponse porte donc sur ce fonds.",
+  "The service sent an empty answer": "Le service a envoyé une réponse vide",
+  "Nothing is shown in its place. The structured evidence below is what was calculated.": "Rien n’est affiché à sa place. Les preuves structurées ci-dessous correspondent à ce qui a été calculé.",
+  "Explanation worded by the model from the evidence below": "Explication rédigée par le modèle à partir des preuves ci-dessous",
+  "The model explanation was not available, so this answer uses the service’s own wording. The figures are the same.":
+    "L’explication du modèle n’était pas disponible : cette réponse reprend donc la formulation du service. Les chiffres sont identiques.",
+  "1. What we know": "1. Ce que l’on sait",
+  "2. What is missing": "2. Ce qui manque",
+  "3. What could happen under an assumption": "3. Ce qui pourrait se produire selon une hypothèse",
+  "4. What needs to be verified next": "4. Ce qu’il faut vérifier ensuite",
+  "Nothing is verified for this question.": "Rien n’est vérifié pour cette question.",
+  "No gap was found for this question.": "Aucune lacune n’a été trouvée pour cette question.",
+  "No hypothetical scenario applies.": "Aucun scénario hypothétique ne s’applique.",
+  "Nothing further is needed for the checks made here.": "Rien de plus n’est nécessaire pour les vérifications effectuées ici.",
+  "Sources and calculation basis": "Sources et base de calcul",
+  "No source record was found.": "Aucune fiche de source n’a été trouvée.",
+  "Unregistered source": "Source non enregistrée",
+  "subject": "sujet",
+  "as of": "au",
+  "retrieved": "récupérée le",
+  "Verified source": "Source vérifiée",
+  "Provisional": "Provisoire",
+  "Calculation basis": "Base de calcul",
+  "Limitations": "Limites de l’analyse",
+  "Type a question, or pick one of the suggested questions.": "Saisissez une question ou choisissez l’une des questions suggérées.",
+  "Keep the question under {count} characters.": "La question doit compter moins de {count} caractères.",
+  "No fund is selected, so this answer covers the whole portfolio. Pick a fund above to ask about one ETF.":
+    "Aucun fonds n’est sélectionné : cette réponse couvre donc l’ensemble du portefeuille. Choisissez un fonds ci-dessus pour poser une question sur un ETF.",
+  "The evidence investigator is not available on this service yet. Nothing was calculated.": "L’analyse des preuves n’est pas encore disponible sur ce service. Rien n’a été calculé.",
+  "Read-only assistant": "Assistant en lecture seule",
+  "Suggested rules only: not confirmed": "Règles suggérées uniquement : non confirmées",
+  "Limits come from confirmed policy version": "Les limites proviennent de la version confirmée de la politique",
+  "What to investigate": "Élément à analyser",
+  "The whole portfolio, or one fund held in it.": "L’ensemble du portefeuille, ou un fonds qu’il contient.",
+  "Whole portfolio": "Ensemble du portefeuille",
+  "Only the whole portfolio can be selected.": "Seul l’ensemble du portefeuille peut être sélectionné.",
+  "No funds in this portfolio": "Aucun fonds dans ce portefeuille",
+  "There are no fund holdings to investigate; direct holdings need no look-through.": "Aucun fonds n’est à analyser ; les positions directes ne nécessitent pas de transparence.",
+  "Evidence summary": "Synthèse des preuves",
+  "The evidence summary could not be loaded": "La synthèse des preuves n’a pas pu être chargée",
+  "Loading the evidence summary…": "Chargement de la synthèse des preuves…",
+  "For": "Pour",
+  "Basis:": "Base :",
+  "Data quality status": "Qualité des données",
+  "Last verified holdings date": "Date des dernières positions vérifiées",
+  "Sources investigated": "Sources examinées",
+  "(data snapshot only; no external provider)": "(instantané des données uniquement ; aucun fournisseur externe)",
+  "The holdings file is not consistent": "Le fichier de positions n’est pas cohérent",
+  "No percentage is shown for this fund.": "Aucun pourcentage n’est affiché pour ce fonds.",
+  "Conversation": "Conversation",
+  "Messages": "Messages",
+  "Ask about missing holdings data, or start with a suggested question.": "Posez une question sur les données de positions manquantes, ou commencez par une question suggérée.",
+  "You asked:": "Votre question :",
+  "This question could not be answered": "Cette question n’a pas pu recevoir de réponse",
+  "Evidence Investigator answered:": "Réponse de l’analyse des preuves :",
+  "Investigating the evidence…": "Analyse des preuves en cours…",
+  "Suggested questions": "Questions suggérées",
+  "What data is missing from this ETF?": "Quelles données manquent pour cet ETF ?",
+  "How much of my portfolio is verified?": "Quelle part de mon portefeuille est vérifiée ?",
+  "Could missing holdings violate my technology limit?": "Des positions manquantes pourraient-elles enfreindre ma limite sur la technologie ?",
+  "Which sources were checked?": "Quelles sources ont été vérifiées ?",
+  "What evidence should I retrieve next?": "Quelles preuves faut-il récupérer ensuite ?",
+  "Your question": "Votre question",
+  "For example: which holdings have no sector?": "Par exemple : quelles positions n’ont pas de secteur ?",
+  "Investigating…": "Analyse en cours…",
+  "Ask": "Demander",
+  "This assistant explains evidence only. It cannot change your portfolio, your rules or a verdict.":
+    "Cet assistant explique uniquement les preuves. Il ne peut modifier ni votre portefeuille, ni vos règles, ni un résultat.",
+};

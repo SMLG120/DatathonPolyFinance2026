@@ -18,6 +18,7 @@ import {
   type CustomizeFormInput,
   type CustomizeRow,
 } from "@/lib/customize";
+import { t, tf } from "@/lib/i18n";
 import { assetClassLabel, instrumentName } from "@/lib/portfolio";
 import { useRuntime } from "@/state/runtime";
 import { useWorkflow } from "@/state/workflow";
@@ -45,11 +46,10 @@ export function ObjectivePendingNote({ policy, objective }: { policy: Policy | n
   const stored = policy.objectives.find((candidate) => candidate.objective_id === objective.objective_id);
   if (!stored || stored.original_words === objective.original_words) return null;
   return (
-    <Notice tone="info" title="This wording is not in your stored policy">
+    <Notice tone="info" title={t("This wording is not in your stored policy")}>
       <p data-testid="objective-pending-note">
-        Policy version <span className="tabular">{policy.version}</span> is stored exactly as it was confirmed and keeps the wording it had then, so reports
-        made under it show that earlier wording. The new wording is stored only if you confirm another rule, which creates a new policy version. Changing
-        the number of a rule from a result keeps the stored wording. No rule was created, changed or confirmed by editing the objective.
+        {t("Policy version")} <span className="tabular">{policy.version}</span>{" "}
+        {t("is stored exactly as it was confirmed and keeps the wording it had then, so reports made under it show that earlier wording. The new wording is stored only if you confirm another rule, which creates a new policy version. Changing the number of a rule from a result keeps the stored wording. No rule was created, changed or confirmed by editing the objective.")}
       </p>
     </Notice>
   );
@@ -118,11 +118,11 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
   const rowError = (row: CustomizeRow): string | null => (row.text.trim() === "" && !attempted ? null : (reading.rowErrors[row.instrumentId] ?? null));
   const cashError = cashText.trim() === "" && !attempted ? null : reading.cashError;
   const problems = [
-    ...rows.flatMap((row) => (reading.rowErrors[row.instrumentId] ? [`${row.instrumentId}: ${reading.rowErrors[row.instrumentId]}`] : [])),
-    ...(reading.cashError ? [`Cash: ${reading.cashError}`] : []),
-    ...(reading.listError ? [reading.listError] : []),
-    ...(reading.totalError ? [reading.totalError] : []),
-    ...(reading.objectiveError ? [`Objective: ${reading.objectiveError}`] : []),
+    ...rows.flatMap((row) => (reading.rowErrors[row.instrumentId] ? [`${row.instrumentId}: ${t(reading.rowErrors[row.instrumentId]!)}`] : [])),
+    ...(reading.cashError ? [tf("Cash: {error}", { error: t(reading.cashError) })] : []),
+    ...(reading.listError ? [t(reading.listError)] : []),
+    ...(reading.totalError ? [t(reading.totalError)] : []),
+    ...(reading.objectiveError ? [tf("Objective: {error}", { error: t(reading.objectiveError) })] : []),
   ];
 
   function add() {
@@ -155,17 +155,16 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
     <form noValidate onSubmit={submit} aria-labelledby={headingId} className="space-y-6 rounded-lg border border-dashed border-line-strong bg-canvas p-4 sm:p-5" data-testid="customize-editor">
       <div className="space-y-1">
         <h3 id={headingId} className="text-lg font-semibold text-ink">
-          Edit the fictional portfolio and the objective
+          {t("Edit the fictional portfolio and the objective")}
         </h3>
         <p className="text-sm text-ink-muted">
-          Enter each weight as a percentage of the whole portfolio, with at most 2 decimals. Nothing is applied until you choose Apply, and no rule is
-          created, changed or confirmed here.
+          {t("Enter each weight as a percentage of the whole portfolio, with at most 2 decimals. Nothing is applied until you choose Apply, and no rule is created, changed or confirmed here.")}
         </p>
       </div>
 
       <fieldset className="space-y-3">
-        <legend className="font-semibold text-ink">Positions</legend>
-        {rows.length === 0 ? <p className="text-sm text-ink-muted">No position: the whole portfolio is cash.</p> : null}
+        <legend className="font-semibold text-ink">{t("Positions")}</legend>
+        {rows.length === 0 ? <p className="text-sm text-ink-muted">{t("No position: the whole portfolio is cash.")}</p> : null}
         <ul className="space-y-3">
           {rows.map((row) => {
             const id = weightId(row.instrumentId);
@@ -193,12 +192,12 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
                     <span className="text-lg font-semibold text-ink" aria-hidden="true">
                       %
                     </span>
-                    <Button size="sm" variant="quiet" onClick={() => remove(row.instrumentId)} aria-label={`Remove ${row.instrumentId} from the portfolio`} data-testid={`customize-remove-${row.instrumentId}`}>
-                      Remove
+                    <Button size="sm" variant="quiet" onClick={() => remove(row.instrumentId)} aria-label={tf("Remove {id} from the portfolio", { id: row.instrumentId })} data-testid={`customize-remove-${row.instrumentId}`}>
+                      {t("Remove")}
                     </Button>
                   </div>
                 </div>
-                {error ? <FieldError id={errorId(id)}>{error}</FieldError> : null}
+                {error ? <FieldError id={errorId(id)}>{t(error)}</FieldError> : null}
               </li>
             );
           })}
@@ -207,18 +206,18 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
         <div className="flex flex-wrap items-end gap-3">
           <Field
             htmlFor={addId}
-            label="Add an asset"
+            label={t("Add an asset")}
             hint={
               full
-                ? `A portfolio can hold at most ${MAX_CUSTOM_POSITIONS} positions.`
+                ? tf("A portfolio can hold at most {count} positions.", { count: MAX_CUSTOM_POSITIONS })
                 : addable.length === 0
-                  ? "Every supported asset is already in the portfolio."
-                  : "Only supported assets that are not already held are listed."
+                  ? t("Every supported asset is already in the portfolio.")
+                  : t("Only supported assets that are not already held are listed.")
             }
             className="min-w-0 flex-1 basis-64"
           >
             <Select id={addId} value={toAdd} onChange={(event) => setToAdd(event.target.value)} aria-describedby={describedBy(addId, { hint: true })} data-testid="customize-add-select">
-              <option value="">Choose an asset</option>
+              <option value="">{t("Choose an asset")}</option>
               {full
                 ? null
                 : addable.map((id) => {
@@ -233,7 +232,7 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
             </Select>
           </Field>
           <Button softDisabled={toAdd === "" || full} onClick={add} data-testid="customize-add">
-            Add this asset
+            {t("Add this asset")}
           </Button>
         </div>
       </fieldset>
@@ -241,8 +240,8 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
           <label htmlFor={cashId} className="min-w-0 flex-1 basis-48">
-            <span className="block font-semibold text-ink">Cash ({baseCurrency})</span>
-            <span className="block text-sm text-ink-muted">Uninvested. A purchase is funded from it.</span>
+            <span className="block font-semibold text-ink">{t("Cash")} ({baseCurrency})</span>
+            <span className="block text-sm text-ink-muted">{t("Uninvested. A purchase is funded from it.")}</span>
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -262,7 +261,7 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
             </span>
           </div>
         </div>
-        {cashError ? <FieldError id={errorId(cashId)}>{cashError}</FieldError> : null}
+        {cashError ? <FieldError id={errorId(cashId)}>{t(cashError)}</FieldError> : null}
       </div>
 
       <p
@@ -274,19 +273,19 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
         data-total-valid={reading.totalHundredths !== null && !reading.totalError ? "true" : "false"}
       >
         <span className="font-semibold">
-          Total:{" "}
-          {reading.totalHundredths === null ? "not available until every weight is a valid number" : <span className="tabular">{hundredthsToText(reading.totalHundredths)}%</span>}
+          {t("Total:")}{" "}
+          {reading.totalHundredths === null ? t("not available until every weight is a valid number") : <span className="tabular">{hundredthsToText(reading.totalHundredths)}%</span>}
         </span>
-        {reading.totalError ? <span className="block text-sm font-semibold text-fail">{reading.totalError}</span> : null}
-        {reading.totalHundredths !== null && !reading.totalError ? <span className="block text-sm text-ink-muted">The weights you entered total exactly 100%.</span> : null}
+        {reading.totalError ? <span className="block text-sm font-semibold text-fail">{t(reading.totalError)}</span> : null}
+        {reading.totalHundredths !== null && !reading.totalError ? <span className="block text-sm text-ink-muted">{t("The weights you entered total exactly 100%.")}</span> : null}
       </p>
 
       {objectiveText !== null ? (
         <Field
           htmlFor={objectiveId}
-          label="Objective, in plain language"
-          hint={`Kept word for word as context for the results. It is never scored, and it never creates or changes a rule. At most ${MAX_OBJECTIVE_LENGTH} characters.`}
-          error={reading.objectiveError}
+          label={t("Objective, in plain language")}
+          hint={tf("Kept word for word as context for the results. It is never scored, and it never creates or changes a rule. At most {count} characters.", { count: MAX_OBJECTIVE_LENGTH })}
+          error={reading.objectiveError ? t(reading.objectiveError) : reading.objectiveError}
         >
           <TextArea
             id={objectiveId}
@@ -302,7 +301,7 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
 
       {problems.length > 0 ? (
         <div role={attempted ? "alert" : undefined} className="rounded-md border-l-4 border-fail bg-fail-soft px-4 py-3 text-ink" data-testid="customize-error">
-          <p className="font-semibold">This customization cannot be applied yet</p>
+          <p className="font-semibold">{t("This customization cannot be applied yet")}</p>
           <ul className="mt-1 list-disc space-y-1 pl-5 text-[0.9375rem]">
             {problems.map((problem) => (
               <li key={problem}>{problem}</li>
@@ -313,17 +312,17 @@ function CustomizeEditor({ data, baseCurrency, draft, onDraft, customized, onApp
 
       <div className="flex flex-wrap items-center gap-3">
         <Button type="submit" variant="primary" softDisabled={!reading.valid} data-testid="customize-apply">
-          Apply
+          {t("Apply")}
         </Button>
         <Button onClick={onCancel} data-testid="customize-cancel">
-          Cancel
+          {t("Cancel")}
         </Button>
         <Button variant="quiet" softDisabled={!customized} onClick={() => (customized ? onReset() : undefined)} data-testid="customize-reset">
-          Reset to the original scenario
+          {t("Reset to the original scenario")}
         </Button>
       </div>
       <p className="text-sm text-ink-muted">
-        The service checks the portfolio again with every request and is the authority: it refuses a portfolio it cannot accept, and says why.
+        {t("The service checks the portfolio again with every request and is the authority: it refuses a portfolio it cannot accept, and says why.")}
       </p>
     </form>
   );
@@ -366,17 +365,17 @@ export function CustomizePanel() {
 
   return (
     <Panel
-      title="Customize this profile"
-      eyebrow="Optional"
-      description={`Change the invented weights of ${data.scenario.persona.display_name}’s fictional portfolio and the wording of the objective, then test ideas against your version. It stays a fictional simulation.`}
+      title={t("Customize this profile")}
+      eyebrow={t("Optional")}
+      description={tf("Change the invented weights of {name}’s fictional portfolio and the wording of the objective, then test ideas against your version. It stays a fictional simulation.", { name: data.scenario.persona.display_name })}
     >
       <div className="space-y-4">
         {customized ? (
-          <Notice tone="info" role="status" title={derived.customPortfolio ? `${CUSTOMIZED_LABEL}: applied` : "Objective edited: the portfolio is the original one"}>
+          <Notice tone="info" role="status" title={derived.customPortfolio ? tf("{label}: applied", { label: t(CUSTOMIZED_LABEL) }) : t("Objective edited: the portfolio is the original one")}>
             <ul className="list-disc space-y-1 pl-5" data-testid="customize-summary">
-              {derived.customPortfolio ? <li>The portfolio above shows the weights you entered. Every check from now on is asked for exactly these weights.</li> : null}
-              {state.objectiveEdited ? <li data-testid="objective-edited-summary">The objective carries your wording. Your limits are unchanged: no rule was created, changed or confirmed.</li> : null}
-              {hasWork ? <li>Confirmed limits and earlier reports are kept. Each report keeps the portfolio it was checked against.</li> : null}
+              {derived.customPortfolio ? <li>{t("The portfolio above shows the weights you entered. Every check from now on is asked for exactly these weights.")}</li> : null}
+              {state.objectiveEdited ? <li data-testid="objective-edited-summary">{t("The objective carries your wording. Your limits are unchanged: no rule was created, changed or confirmed.")}</li> : null}
+              {hasWork ? <li>{t("Confirmed limits and earlier reports are kept. Each report keeps the portfolio it was checked against.")}</li> : null}
             </ul>
           </Notice>
         ) : null}
@@ -410,17 +409,17 @@ export function CustomizePanel() {
                 onClick={() => (unavailable ? undefined : actions.setCustomizeDraft(openingDraft(starting, objective)))}
                 data-testid="customize-open"
               >
-                Customize this profile
+                {t("Customize this profile")}
               </Button>
               {customized ? (
                 <Button variant="quiet" onClick={actions.resetCustomization} data-testid="customize-reset">
-                  Reset to the original scenario
+                  {t("Reset to the original scenario")}
                 </Button>
               ) : null}
             </div>
             {unavailable ? (
               <p id={hintId} className="text-sm text-ink-muted" data-testid="customize-unavailable">
-                Customization needs the live service: the test data only replays results recorded for the original portfolio.
+                {t("Customization needs the live service: the test data only replays results recorded for the original portfolio.")}
               </p>
             ) : null}
           </div>

@@ -1,6 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { FR as FR_GOALS_RULES } from "@/lib/i18n-fr/goals-rules";
+import { FR as FR_PURCHASE_EXPLORER } from "@/lib/i18n-fr/purchase-explorer";
+import { FR as FR_SHELL_PERSONA } from "@/lib/i18n-fr/shell-persona";
+import { FR as FR_VERDICT_REPORT } from "@/lib/i18n-fr/verdict-report";
 
 export type Locale = "en" | "fr";
 
@@ -639,7 +643,7 @@ const translations: Record<string, string> = Object.assign({
   "to": "à",
   "Before any purchase:": "Avant tout achat :",
   "confirmed": "confirmées",
-  "already not respected.": "déjà non respectée(s).",
+  "already not respected.": "déjà non respectées.",
   "listed apart from the effect of the purchase, below.": "présentée(s) ci-dessous séparément de l’effet de l’achat.",
   "not evaluated;": "non évaluée(s) ;",
   "listed with the confirmed rules.": "présentée(s) avec les règles confirmées.",
@@ -927,7 +931,7 @@ const translations: Record<string, string> = Object.assign({
   "This instrument is not supported.": "Cet instrument n’est pas pris en charge.",
   "Enter the final direct weight as a percentage, for example 25.": "Saisissez la pondération directe finale en pourcentage, par exemple 25.",
   "The final weight must be between 0% and 100% of the portfolio. Shorting and leverage are not supported.": "La pondération finale doit être comprise entre 0 % et 100 % du portefeuille. La vente à découvert et l’effet de levier ne sont pas pris en charge.",
-  "Enter a number such as 25 or 12.5.": "Saisissez un nombre, par exemple 25 ou 12,5.",
+  "Enter a number such as 25 or 12.5.": "Saisissez un nombre, par exemple 25 ou 12.5 (avec un point).",
   "requested by the model": "demandée par le modèle",
   "run by the server": "exécutée par le serveur",
   "finished": "terminée",
@@ -952,7 +956,7 @@ const translations: Record<string, string> = Object.assign({
   "Not in this version": "Absente de cette version",
   "Earlier report": "Rapport précédent",
   "New report": "Nouveau rapport",
-});
+}, FR_SHELL_PERSONA, FR_GOALS_RULES, FR_PURCHASE_EXPLORER, FR_VERDICT_REPORT);
 
 const listeners = new Set<() => void>();
 let locale: Locale = "en";
@@ -1017,6 +1021,15 @@ export function t(message: string): string {
     .replace(/&nbsp;/g, " ");
   if (locale === "en") return decoded;
   return translations[message] ?? translations[decoded] ?? decoded;
+}
+
+/**
+ * Translate a catalog template that holds named values, e.g. tf("Evidence for {rule}", { rule }). The whole template
+ * is looked up (so a translation can reorder the words around the values), then each {name} is replaced. Values are
+ * inserted as given: numbers and names coming from the API or the user are never translated.
+ */
+export function tf(template: string, values: Record<string, string | number>): string {
+  return t(template).replace(/\{(\w+)\}/g, (whole, name: string) => (name in values ? String(values[name]) : whole));
 }
 
 export function getLocale(): Locale {

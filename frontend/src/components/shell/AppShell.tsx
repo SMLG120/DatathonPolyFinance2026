@@ -84,7 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             {t("Valuation date:")} <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
           </p>
           {config.mode === "fixtures" ? (
-            <p data-testid="fixtures-label" title={config.fixturesReason ? FIXTURES_REASONS[config.fixturesReason] : undefined}>
+            <p data-testid="fixtures-label" title={config.fixturesReason ? t(FIXTURES_REASONS[config.fixturesReason]) : undefined}>
               <Badge tone="unknown" dashed className="py-0 leading-5">
                 {t(FIXTURES_LABEL)}
               </Badge>
@@ -97,9 +97,23 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">E</span><span className="tracking-[0.14em]">ETHOS</span></p>
-            <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
+            <p className="hidden text-sm text-ink-muted sm:block">{t("Checks a proposed purchase against the rules you confirmed.")}</p>
             {/* A separate page (/evidence/). Shown at every width; it wraps under the name on a narrow screen. */}
-            <nav aria-label="Tools" className="ml-auto">
+            <nav aria-label={t("Tools")} className="ml-auto flex flex-wrap items-center gap-3">
+              {/* The language choice is kept in localStorage (lib/i18n.ts); evidence, user words and API text stay as written. */}
+              <label className="flex items-center gap-2 text-sm font-medium text-ink">
+                <span>{t("Language")}</span>
+                <select
+                  aria-label={t("Language")}
+                  data-testid="language-select"
+                  className="min-h-10 rounded-md border border-line-strong bg-surface px-2 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                  value={locale}
+                  onChange={(event) => setLocale(event.currentTarget.value as "en" | "fr")}
+                >
+                  <option value="en" lang="en">English</option>
+                  <option value="fr" lang="fr">Français</option>
+                </select>
+              </label>
               <LinkButton
                 href={`/evidence/${config.mode === "fixtures" && config.fixturesReason === "requested" ? "?fixtures=1" : ""}`}
                 target="_blank"
@@ -108,8 +122,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                 size="sm"
                 data-testid="evidence-investigator-link"
               >
-                Evidence Investigator{" "}
-                <span className="sr-only">(opens in a new tab; your progress on this page is kept)</span>
+                {t("Evidence Investigator")}{" "}
+                <span className="sr-only">{t("(opens in a new tab; your progress on this page is kept)")}</span>
               </LinkButton>
             </nav>
           </div>
@@ -123,10 +137,9 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <footer className="border-t border-line bg-[linear-gradient(90deg,rgba(239,246,255,0.96)_0%,rgba(255,255,255,0.99)_44%,rgba(243,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
-          <p className="font-semibold text-ink" data-testid="brand-tagline">{BRAND_TAGLINE}</p>
-          <details><summary className="cursor-pointer font-medium">About this simulation and its data</summary><p className="mt-3">
-            A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no
-            trades. Fees and taxes are excluded from every calculation.
+          <p className="font-semibold text-ink" data-testid="brand-tagline">{t(BRAND_TAGLINE)}</p>
+          <details><summary className="cursor-pointer font-medium">{t("About this simulation and its data")}</summary><p className="mt-3">
+            {t("A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no trades. Fees and taxes are excluded from every calculation.")}
           </p>
           {config.mode === "fixtures" && config.fixturesReason ? (
             <p>

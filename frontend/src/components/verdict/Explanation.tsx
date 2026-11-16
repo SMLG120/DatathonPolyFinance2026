@@ -46,12 +46,12 @@ export function ExplanationList({ result, statements }: { result: CheckResult; s
             data-testid="explanation-statement"
             data-rendered-by={statement.rendered_by}
           >
-            <p className="whitespace-pre-line text-ink" data-testid="explanation-text">
+            <p className="whitespace-pre-line text-ink" data-testid="explanation-text" lang="en">
               {statement.text}
             </p>
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              <Badge tone="neutral">{origin.label}</Badge>
-              <span className="text-sm text-ink-muted">{origin.meaning}</span>
+              <Badge tone="neutral">{t(origin.label)}</Badge>
+              <span className="text-sm text-ink-muted">{t(origin.meaning)}</span>
             </div>
             {statement.evidence_ids.length > 0 ? <EvidenceButton label={t("this sentence")} result={result} evidenceIds={statement.evidence_ids} /> : null}
           </li>

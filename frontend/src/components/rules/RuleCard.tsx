@@ -33,15 +33,15 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
   return (
     <details className="space-y-4"><summary className="cursor-pointer text-sm font-medium text-ink-muted">{t("Source and definition")}</summary>
       <figure>
-        <figcaption className="text-sm font-semibold text-ink-muted">{WORDS_LABEL[rule.origin]}</figcaption>
-        <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink" data-testid="rule-original-words">
-          {t("&ldquo;")}{rule.original_words}{t("&rdquo;")}</blockquote>
+        <figcaption className="text-sm font-semibold text-ink-muted">{t(WORDS_LABEL[rule.origin])}</figcaption>
+        <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink" data-testid="rule-original-words" lang={rule.origin === "FICTIONAL_SCENARIO" ? "en" : undefined}>
+          &ldquo;{rule.original_words}&rdquo;</blockquote>
       </figure>
       {/* Each group is a direct child of the list: a <dl> may hold <div> groups, but not groups nested in a layout wrapper. */}
       <dl className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <dt className="text-sm font-semibold text-ink-muted">{t("Exactly what is checked")}</dt>
-          <dd className="text-ink" data-testid="rule-scope">
+          <dd className="text-ink" data-testid="rule-scope" lang="en">
             {rule.scope_description}
           </dd>
         </div>
@@ -70,9 +70,9 @@ function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | u
         </div>
         {objective ? (
           <div className="sm:col-span-2">
-            <dt className="text-sm font-semibold text-ink-muted">Related objective: context only</dt>
+            <dt className="text-sm font-semibold text-ink-muted">{t("Related objective: context only")}</dt>
             <dd className="text-ink">
-              {t("&ldquo;")}{objective.original_words}{t("&rdquo;")}<span className="mt-0.5 block text-sm text-ink-muted">
+              <span lang={objective.source === "FICTIONAL_SCENARIO" ? "en" : undefined}>&ldquo;{objective.original_words}&rdquo;</span><span className="mt-0.5 block text-sm text-ink-muted">
                 {t("The link is context for reading results. The objective does not set this threshold and is never marked pass or fail.")}</span>
             </dd>
           </div>
@@ -122,7 +122,7 @@ export interface ProposedRuleCardProps {
 /** Why the text of a threshold field cannot be confirmed yet, or null when it can. */
 export function thresholdProblem(text: string): string | null {
   const threshold = percentInputToFraction(text);
-  return text.trim() !== "" && threshold === null ? "Enter a number such as 10 or 12.5." : validateThreshold(threshold);
+  return text.trim() !== "" && threshold === null ? t("Enter a number such as 10 or 12.5.") : validateThreshold(threshold);
 }
 
 /**
@@ -157,8 +157,8 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
           <p className="rounded-md bg-unknown-soft px-3 py-2 text-ink" data-testid="threshold-empty-note">
             <span className="font-semibold">{t("No threshold has been set.")}</span>{" "}
             {rule.origin === "SYSTEM_PROPOSED"
-              ? "The system proposes the kind of rule, never the number. Enter the value you want before confirming."
-              : "A rule with an empty number is left out of the confirmation and stays proposed."}
+              ? t("The system proposes the kind of rule, never the number. Enter the value you want before confirming.")
+              : t("A rule with an empty number is left out of the confirmation and stays proposed.")}
           </p>
         ) : null}
 

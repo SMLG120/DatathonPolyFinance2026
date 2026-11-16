@@ -1,8 +1,15 @@
 import { Badge } from "@/components/ui/Badge";
 import type { Portfolio } from "@/lib/contracts";
-import { isCustomizedPortfolio, portfolioCheckedLabel } from "@/lib/customize";
+import { CUSTOMIZED_LABEL, isCustomizedPortfolio } from "@/lib/customize";
+import { t, tf } from "@/lib/i18n";
 import type { InstrumentRegistry } from "@/lib/portfolio";
 import { PortfolioTable } from "./PortfolioTable";
+
+/** The same wording as `portfolioCheckedLabel` (lib/customize), in the reader's language. */
+function checkedLabel(portfolio: Portfolio, scenario: Portfolio | null, personaName: string): string {
+  if (scenario === null) return t("Fictional portfolio stored with this report");
+  return isCustomizedPortfolio(portfolio, scenario) ? t(CUSTOMIZED_LABEL) : tf("{name}’s original fictional portfolio", { name: personaName });
+}
 
 export interface PortfolioCheckedProps {
   /** The portfolio stored with the job: the exact one it was checked against. */
@@ -24,7 +31,7 @@ export function PortfolioUsedLabel({ portfolio, scenarioPortfolio, personaName, 
   return (
     <span data-testid={testId} data-portfolio-id={portfolio.portfolio_id} data-customized={customized ? "true" : "false"}>
       <Badge tone={customized ? "accent" : "neutral"} dashed>
-        {portfolioCheckedLabel(portfolio, scenarioPortfolio, personaName)}
+        {checkedLabel(portfolio, scenarioPortfolio, personaName)}
       </Badge>
     </span>
   );
@@ -46,17 +53,16 @@ export function PortfolioChecked({ portfolio, scenarioPortfolio, instruments, pe
       data-figures="true"
     >
       <summary className="flex min-h-6 cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 text-ink">
-        <span className="font-semibold">Portfolio checked</span>
+        <span className="font-semibold">{t("Portfolio checked")}</span>
         <span data-testid="report-portfolio-label">
           <Badge tone={customized ? "accent" : "neutral"} dashed>
-            {portfolioCheckedLabel(portfolio, scenarioPortfolio, personaName)}
+            {checkedLabel(portfolio, scenarioPortfolio, personaName)}
           </Badge>
         </span>
       </summary>
       <div className="mt-3 space-y-2">
         <p className="text-sm text-ink-muted">
-          The weights this report was checked against, as the service stored them with the investigation. They do not change when the portfolio is
-          customized or reset afterwards.
+          {t("The weights this report was checked against, as the service stored them with the investigation. They do not change when the portfolio is customized or reset afterwards.")}
         </p>
         <PortfolioTable portfolio={portfolio} instruments={instruments} personaName={personaName} customized={customized} />
       </div>
