@@ -2,7 +2,7 @@
 
 import { useMemo, type ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { formatDate } from "@/lib/format";
 import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
@@ -95,6 +95,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
             <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">B</span>Before You Buy</p>
             <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
+            {/* A separate page (/evidence/). Shown at every width; it wraps under the name on a narrow screen. */}
+            <nav aria-label="Tools" className="ml-auto">
+              <LinkButton href="/evidence/" size="sm" data-testid="evidence-investigator-link">
+                Evidence Investigator
+              </LinkButton>
+            </nav>
           </div>
           <div className="mt-4">{needsAccessCode ? <div className="pb-4" /> : <Stepper current={stage} completed={completed} />}</div>
         </div>
