@@ -1,0 +1,70 @@
+Integration patch for the Missing Holdings Evidence Investigator (branch agent/missing-holdings-evidence).
+
+The feature commit touches no shared file. This patch is the whole wiring, for the lead to apply:
+
+    git apply backend/api/holdings_evidence/integration.patch
+
+  backend/api/handler.py                          registers POST /evidence/investigate (4 lines)
+  infra/template.yaml                             adds the HttpApi event for the route (same authorizer, CORS, throttle as /rules/interpret)
+  backend/tests/service/test_service_template.py  the pinned route set: 7 -> 8 routes
+
+No new IAM permission, environment variable or dependency: the route reads the snapshot and policies the API function
+already reads, and its optional model wording uses the Bedrock permission and switch the interpreter already has.
+Verified with this patch applied: backend/tests + contracts/python/tests all pass.
+
+diff --git a/backend/api/handler.py b/backend/api/handler.py
+index ac0650e..57dc3e9 100644
+--- a/backend/api/handler.py
++++ b/backend/api/handler.py
+@@ -196,6 +196,10 @@ class Api:
+             "GET /investigations/{id}": self._get,
+             "POST /investigations/{id}/challenge": self._challenge,
+         }
++        # Additive, read-only: the Missing Holdings Evidence Investigator (backend/api/holdings_evidence).
++        from backend.api.holdings_evidence.route import ROUTE_KEY as EVIDENCE_ROUTE_KEY, evidence_route
++
++        self._routes[EVIDENCE_ROUTE_KEY] = evidence_route(self)
+ 
+     def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
+         request_id = (event.get("requestContext") or {}).get("requestId") or getattr(context, "aws_request_id", None)
+diff --git a/backend/tests/service/test_service_template.py b/backend/tests/service/test_service_template.py
+index 2ea2827..f49a73b 100644
+--- a/backend/tests/service/test_service_template.py
++++ b/backend/tests/service/test_service_template.py
+@@ -31,10 +31,11 @@ def test_tp01_every_contract_route_has_an_event_and_a_handler():
+     events = set(zip(re.findall(r"^ {12}Method: (\w+)$", TEMPLATE, re.M), re.findall(r"^ {12}Path: (\S+)$", TEMPLATE, re.M)))
+     routes = {f"{method} {path}" for method, path in events}
+     assert routes == {"GET /portfolios/{persona_id}", "POST /rules/interpret", "POST /rules/confirm", "POST /check",
+-                      "POST /investigations", "GET /investigations/{id}", "POST /investigations/{id}/challenge"}
++                      "POST /investigations", "GET /investigations/{id}", "POST /investigations/{id}/challenge",
++                      "POST /evidence/investigate"}
+     api = Api(store=None, policies=None, snapshots=None, lambda_client=None, config=None, clock=None)
+     assert set(api._routes) == routes
+-    assert "$default" not in block("ApiFunction") and len(re.findall(r"^ {12}PayloadFormatVersion: \"2\.0\"$", TEMPLATE, re.M)) == 7
++    assert "$default" not in block("ApiFunction") and len(re.findall(r"^ {12}PayloadFormatVersion: \"2\.0\"$", TEMPLATE, re.M)) == 8
+     assert "DefaultAuthorizer: AccessCodeAuthorizer" in block("HttpApi")
+ 
+ 
+diff --git a/infra/template.yaml b/infra/template.yaml
+index f3086fa..5182456 100644
+--- a/infra/template.yaml
++++ b/infra/template.yaml
+@@ -534,6 +534,18 @@ Resources:
+             Path: /check
+             PayloadFormatVersion: "2.0"
+             TimeoutInMillis: 20000
++        InvestigateEvidence:
++          Type: HttpApi
++          Properties:
++            ApiId: !Ref HttpApi
++            Method: POST
++            Path: /evidence/investigate
++            PayloadFormatVersion: "2.0"
++            TimeoutInMillis: 20000
++            RouteSettings:
++              # Read-only; may make one Bedrock call for the wording, so it is throttled like the interpreter route.
++              ThrottlingBurstLimit: 5
++              ThrottlingRateLimit: 2
+       Tags:
+         project: before-you-buy
+ 
