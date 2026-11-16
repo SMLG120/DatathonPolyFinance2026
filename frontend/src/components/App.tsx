@@ -134,7 +134,7 @@ export function App() {
     // The prerendered HTML: the notice is already there before any script runs.
     return (
       <div className="flex min-h-screen flex-col">
-        <PageTitle>{`${t("Before You Buy")} — ${t("fictional simulation")}`}</PageTitle>
+        <PageTitle>{APP_NAME}</PageTitle>
         <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{t(SIMULATION_LABEL)}</div>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
           <h1 className="text-3xl font-bold tracking-tight text-ink">ETHOS</h1>

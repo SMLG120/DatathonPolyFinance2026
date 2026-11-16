@@ -286,7 +286,7 @@ describe("useReportPrint", () => {
 
   it("has the print document ready before the browser prints, names the PDF, and puts everything back afterwards", () => {
     const title = printDocumentTitle({ id: "inv-1", persona_id: "robert" });
-    document.title = "Before You Buy";
+    document.title = "ETHOS";
     let titleAtPrint = "";
     let printingAtPrint = "";
     const printSpy = vi.fn(() => {
@@ -307,7 +307,7 @@ describe("useReportPrint", () => {
       window.dispatchEvent(new Event("afterprint"));
     });
     expect(screen.getByTestId("printing")).toHaveTextContent("no");
-    expect(document.title).toBe("Before You Buy");
+    expect(document.title).toBe("ETHOS");
     vi.unstubAllGlobals();
   });
 
