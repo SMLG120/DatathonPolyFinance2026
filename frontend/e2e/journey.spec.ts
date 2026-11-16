@@ -17,7 +17,7 @@ import {
 } from "./helpers";
 
 const ROBERT_HEADLINE = "2 of 2 confirmed rules are not respected";
-const APP_NAME = "Before You Buy: fictional simulation";
+const APP_NAME = "ETHOS: fictional simulation";
 
 /**
  * The whole simulation, driven with the keyboard only (Tab, Shift+Tab, Enter,
