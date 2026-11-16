@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 import { Button } from "./Button";
 import { ClockIcon } from "./icons";
 import { Notice } from "./Notice";
@@ -59,7 +60,7 @@ export function ErrorBlock({
       action={
         onRetry ? (
           <Button size="sm" onClick={onRetry}>
-            {retryLabel}
+            {t(retryLabel)}
           </Button>
         ) : undefined
       }

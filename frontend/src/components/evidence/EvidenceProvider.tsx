@@ -6,6 +6,7 @@ import { EvidenceIcon } from "@/components/ui/icons";
 import type { CheckResult } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { EvidenceContent } from "./EvidenceContent";
+import { t } from "@/lib/i18n";
 
 export interface EvidenceRequest {
   /** What the figure is, in words: "NVDA exposure after the purchase". */
@@ -55,7 +56,7 @@ export function EvidenceProvider({ children }: { children: ReactNode }) {
         open={isOpen}
         onOpenChange={setIsOpen}
         title={request ? `Evidence: ${request.title}` : "Evidence"}
-        description="Where this figure comes from: dates, sources, coverage, assumptions and how it was calculated."
+        description={t("Where this figure comes from: dates, sources, coverage, assumptions and how it was calculated.")}
         closeLabel="Close evidence"
         returnFocusTo={() => opener.current}
       >
@@ -97,7 +98,7 @@ export interface EvidenceButtonProps {
 export function EvidenceButton({ label, result, evidenceIds, className }: EvidenceButtonProps) {
   const { open } = useEvidence();
   if (evidenceIds.length === 0) {
-    return <span className={cn("text-sm text-ink-muted", className)}>No evidence record</span>;
+    return <span className={cn("text-sm text-ink-muted", className)}>{t("No evidence record")}</span>;
   }
   return (
     <button
@@ -110,7 +111,7 @@ export function EvidenceButton({ label, result, evidenceIds, className }: Eviden
       )}
     >
       <EvidenceIcon size={16} />
-      <span>Evidence</span>
+      <span>{t("Evidence")}</span>
     </button>
   );
 }

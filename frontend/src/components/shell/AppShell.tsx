@@ -2,16 +2,18 @@
 
 import { useMemo, type ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { formatDate } from "@/lib/format";
+import { t, useLocale } from "@/lib/i18n";
 import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
 import { type StageId, useStage } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { BRAND_TAGLINE } from "./BrandHero";
 import { Stepper } from "./Stepper";
 
-export const SIMULATION_LABEL = "Simulation — fictional portfolio, not advice";
-export const FIXTURES_LABEL = "Test data — fixtures";
+export const SIMULATION_LABEL = "Simulation: fictional portfolio, not advice";
+export const FIXTURES_LABEL = "Test data: fixtures";
 
 const FIXTURES_REASONS = {
   "no-base-url": "This build has no service address, so every figure comes from recorded test data.",
@@ -25,11 +27,11 @@ function useValuationDateText(): string {
     case "ready":
       return formatDate(state.portfolio.data?.scenario.portfolio.valuation_date);
     case "loading":
-      return "loading…";
+      return t("loading…");
     case "error":
-      return "unavailable";
+      return t("unavailable");
     case "idle":
-      return "shown once a portfolio is loaded";
+      return t("shown once a portfolio is loaded");
   }
 }
 
@@ -52,13 +54,14 @@ function useCompletedStages(): ReadonlySet<StageId> {
  * the header with the stepper, the main region and the footer.
  */
 export function AppShell({ children }: { children: ReactNode }) {
+  const [locale, setLocale] = useLocale();
   const { config, needsAccessCode, forgetAccessCode } = useRuntime();
   const stage = useStage();
   const valuationDate = useValuationDateText();
   const completed = useCompletedStages();
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(88,119,255,0.18),_transparent_25%),linear-gradient(180deg,rgba(238,244,255,0.9)_0%,rgba(255,255,255,0.75)_18%,transparent_100%)]">
       <a
         href="#main-content"
         onClick={(event) => {
@@ -68,33 +71,47 @@ export function AppShell({ children }: { children: ReactNode }) {
         }}
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-surface focus:px-4 focus:py-3 focus:font-semibold focus:text-accent focus:shadow-lg"
       >
-        Skip to main content
+        {t("Skip to main content")}
       </a>
 
       {/* Always on screen, on every stage and at every scroll position. */}
-      <section aria-label="Simulation notice" className="on-dark sticky top-0 z-30 bg-banner text-on-banner">
+      <section aria-label={t("Simulation notice")} className="on-dark sticky top-0 z-30 bg-[linear-gradient(90deg,#1d4ed8_0%,#2f5bdb_28%,#4f46e5_62%,#7c3aed_100%)] text-on-banner">
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center gap-x-5 gap-y-1 px-4 py-2 text-sm sm:px-6">
           <p className="font-semibold" data-testid="simulation-label">
-            {SIMULATION_LABEL}
+            {t(SIMULATION_LABEL)}
           </p>
           <p className="sr-only" data-testid="valuation-date">
-            Valuation date: <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
+            {t("Valuation date:")} <span className="tabular font-semibold text-on-banner">{valuationDate}</span>
           </p>
           {config.mode === "fixtures" ? (
             <p data-testid="fixtures-label" title={config.fixturesReason ? FIXTURES_REASONS[config.fixturesReason] : undefined}>
               <Badge tone="unknown" dashed className="py-0 leading-5">
-                {FIXTURES_LABEL}
+                {t(FIXTURES_LABEL)}
               </Badge>
             </p>
           ) : null}
         </div>
       </section>
 
-      <header className="border-b border-line bg-surface">
+      <header className="border-b border-line bg-[linear-gradient(90deg,rgba(232,240,255,0.98)_0%,rgba(255,255,255,0.99)_38%,rgba(238,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-ink text-sm font-bold text-surface">B</span>Before You Buy</p>
+            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">E</span><span className="tracking-[0.14em]">ETHOS</span></p>
             <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
+            {/* A separate page (/evidence/). Shown at every width; it wraps under the name on a narrow screen. */}
+            <nav aria-label="Tools" className="ml-auto">
+              <LinkButton
+                href={`/evidence/${config.mode === "fixtures" && config.fixturesReason === "requested" ? "?fixtures=1" : ""}`}
+                target="_blank"
+                // Same-origin page: "opener" keeps the tab's sessionStorage copy (the access code) in the new tab.
+                rel="opener"
+                size="sm"
+                data-testid="evidence-investigator-link"
+              >
+                Evidence Investigator{" "}
+                <span className="sr-only">(opens in a new tab; your progress on this page is kept)</span>
+              </LinkButton>
+            </nav>
           </div>
           <div className="mt-4">{needsAccessCode ? <div className="pb-4" /> : <Stepper current={stage} completed={completed} />}</div>
         </div>
@@ -104,24 +121,24 @@ export function AppShell({ children }: { children: ReactNode }) {
         {children}
       </main>
 
-      <footer className="border-t border-line bg-surface">
+      <footer className="border-t border-line bg-[linear-gradient(90deg,rgba(239,246,255,0.96)_0%,rgba(255,255,255,0.99)_44%,rgba(243,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
+          <p className="font-semibold text-ink" data-testid="brand-tagline">{BRAND_TAGLINE}</p>
           <details><summary className="cursor-pointer font-medium">About this simulation and its data</summary><p className="mt-3">
             A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no
             trades. Fees and taxes are excluded from every calculation.
           </p>
           {config.mode === "fixtures" && config.fixturesReason ? (
             <p>
-              <span className="font-semibold text-ink">{FIXTURES_LABEL}.</span> {FIXTURES_REASONS[config.fixturesReason]} Every figure shown is a
-              recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked &ldquo;Test data&rdquo;.
+              <span className="font-semibold text-ink">{t(FIXTURES_LABEL)}.</span> {t(FIXTURES_REASONS[config.fixturesReason])} {t("Every figure shown is a recorded example answer built on synthetic inputs, not sourced market data. Each block of figures is marked “Test data”.")}
             </p>
           ) : null}
           </details>
           {config.mode === "live" && !needsAccessCode ? (
             <p>
-              The access code is kept for this browser tab only.{" "}
+              {t("The access code is kept for this browser tab only.")}{" "}
               <Button variant="quiet" size="sm" onClick={forgetAccessCode} className="min-h-6 py-0">
-                Forget the access code
+                {t("Forget the access code")}
               </Button>
             </p>
           ) : null}

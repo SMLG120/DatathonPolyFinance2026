@@ -10,10 +10,11 @@ Ported from the phase 1 worker tests (same numbering). What changed, and why:
 * documents are the contract's shapes (``failure {code, message, retryable}``, steps with ``initiated_by``).
 """
 
+import hashlib
 import json
 
 import pytest
-from byb_contracts import investigation_job_errors
+from byb_contracts import canonical_json, investigation_job_errors
 
 from backend.agents import explain
 from backend.agents.tools import TOOL_NAMES
@@ -31,6 +32,7 @@ from service_fakes import (
     final_response,
     highlights,
     model_answer,
+    scenario,
     tool_use_response,
 )
 
@@ -110,7 +112,10 @@ def test_wk01_happy_path_runs_engine_writes_result_and_trace_then_succeeds(env):
         "data_snapshot_id": env.svc.snapshot_id, "calculation_version": env.expected["calculation_version"], "persona_id": "robert",
         "policy_id": env.policy["policy_id"], "policy_version": 1, "policy_content_hash": env.policy["content_hash"],
         "prompt_version": outcome["inputs"]["prompt_version"],
+        # The portfolio that was checked: here the scenario's, stored with the job at creation.
+        "portfolio_id": "pf-robert-fictional-1", "portfolio_content_sha256": hashlib.sha256(canonical_json(job["portfolio"])).hexdigest(), "portfolio": job["portfolio"],
     }
+    assert job["portfolio"] == scenario("robert")["portfolio"] and env.s3.json(TRACE_KEY)["portfolio_id"] == "pf-robert-fictional-1"
     trace = env.s3.json(TRACE_KEY)
     assert trace["outcome"] == "SUCCEEDED" and trace["data_snapshot_id"] == env.svc.snapshot_id
     assert [call["stop_reason"] for call in trace["model_calls"]] == ["tool_use", "end_turn"]

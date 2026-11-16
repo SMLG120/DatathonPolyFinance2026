@@ -13,18 +13,18 @@
   --color-*: initial;
 
   /* Neutrals */
-  --color-canvas: #fafafa; /* page background */
+  --color-canvas: #f4f7ff; /* page background */
   --color-surface: #ffffff; /* cards, drawer, inputs */
-  --color-sunken: #f4f4f5; /* inset panels, table headers */
-  --color-line: #e4e4e7; /* decorative hairlines only */
-  --color-line-strong: #71717a; /* control boundaries (>= 3:1) */
-  --color-ink: #18181b; /* primary text */
-  --color-ink-muted: #52525b; /* secondary text */
+  --color-sunken: #edf3ff; /* inset panels, table headers */
+  --color-line: #dfe8ff; /* decorative hairlines only */
+  --color-line-strong: #5b6ea8; /* control boundaries (>= 3:1) */
+  --color-ink: #1d2940; /* primary text */
+  --color-ink-muted: #4f5f7d; /* secondary text */
 
-  /* shadcn zinc neutrals for controls; Tremor blue for data. */
-  --color-accent: #18181b;
-  --color-accent-strong: #09090b; /* hover / pressed */
-  --color-accent-soft: #f4f4f5; /* tint behind accent text; chart track */
+  /* Brand accents with a stronger blue-violet identity. */
+  --color-accent: #2f5bdb;
+  --color-accent-strong: #2247bd; /* hover / pressed */
+  --color-accent-soft: #edf3ff; /* tint behind accent text; chart track */
   --color-on-accent: #ffffff;
 
   /* Status. Always paired with an icon shape and a word, never colour alone. */
@@ -36,14 +36,14 @@
   --color-unknown-soft: #fffbeb;
 
   /* Persistent simulation banner */
-  --color-banner: #18181b;
-  --color-on-banner: #ffffff;
-  --color-on-banner-muted: #d4d4d8;
+  --color-banner: #2448c6;
+  --color-on-banner: #f8fbff;
+  --color-on-banner-muted: #dfeaff;
 
   /* Exposure chart: one hue, darker = held more directly (validated as an ordinal ramp). */
-  --color-chart-direct: #1d4ed8;
-  --color-chart-indirect: #4f7ecb;
-  --color-chart-track: #eff6ff;
+  --color-chart-direct: #2247bd; /* 7.8:1 on the card */
+  --color-chart-indirect: #5b82e6; /* 2.1:1 lighter than direct; still 3.3:1 on the track */
+  --color-chart-track: #edf3ff;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
@@ -59,7 +59,10 @@
   }
 
   body {
-    background-color: var(--color-canvas);
+    background:
+      radial-gradient(circle at top, rgba(86, 125, 255, 0.2), transparent 30%),
+      radial-gradient(circle at right top, rgba(167, 139, 250, 0.18), transparent 28%),
+      linear-gradient(180deg, #edf4ff 0%, var(--color-canvas) 24%, #f8faff 100%);
     color: var(--color-ink);
     font-family: var(--font-sans);
     line-height: 1.6;
@@ -382,5 +385,309 @@ details[open] > .byb-summary .byb-chevron {
     background: Highlight;
     box-shadow: 0 0 0 2px Canvas;
     forced-color-adjust: none;
+  }
+}
+
+/*
+ * Print / Save as PDF of an investigation report (components/verdict/PrintReport.tsx).
+ *
+ * The print document is a child of <body>, rendered only while the browser prints. On screen it is
+ * never shown. In print, when it is there, it is the only thing printed: the banner, the header, the
+ * stepper, the interactive report and every control are left out. A page printed while no report is
+ * open is not affected by these rules.
+ */
+@media screen {
+  .print-report {
+    display: none;
+  }
+}
+
+@media print {
+  @page {
+    margin: 12mm 13mm 13mm;
+  }
+
+  body:has(> .print-report) {
+    background: #fff;
+  }
+
+  body:has(> .print-report) > :not(.print-report) {
+    display: none !important;
+  }
+
+  .print-report {
+    color: #000;
+    background: #fff;
+    font-family: var(--font-sans);
+    font-size: 9pt;
+    line-height: 1.32;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+
+  .print-report h1 {
+    font-size: 15pt;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 2pt 0 4pt;
+  }
+
+  .print-report h2 {
+    font-size: 11pt;
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0 0 3pt;
+    break-after: avoid;
+  }
+
+  .print-report h3 {
+    font-size: 9pt;
+    font-weight: 700;
+    margin: 0;
+    break-after: avoid;
+  }
+
+  .print-report p {
+    margin: 0 0 3pt;
+    orphans: 2;
+    widows: 2;
+  }
+
+  .print-report ul {
+    list-style: disc;
+    margin: 0 0 3pt;
+    padding-left: 13pt;
+  }
+
+  .print-report li {
+    margin: 0 0 1.5pt;
+    break-inside: avoid;
+  }
+
+  .print-report strong {
+    font-weight: 700;
+  }
+
+  .pr-banner {
+    border: 1.5pt solid #000;
+    display: inline-block;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    padding: 1.5pt 6pt;
+    text-transform: uppercase;
+    font-size: 8.5pt;
+  }
+
+  .pr-header {
+    border-bottom: 1pt solid #000;
+    margin-bottom: 6pt;
+    padding-bottom: 3pt;
+  }
+
+  .pr-note {
+    color: #333;
+    font-size: 8pt;
+  }
+
+  /* A heading and the line under it stay with what they introduce. */
+  .pr-section > h2 + .pr-note,
+  .pr-section > h2 + p {
+    break-before: avoid;
+    break-after: avoid;
+  }
+
+  .print-report table {
+    break-before: avoid;
+  }
+
+  /* A short section is never split from its heading or across two pages. */
+  .pr-keep {
+    break-inside: avoid;
+  }
+
+  .pr-nowrap {
+    white-space: nowrap;
+  }
+
+  /* Two short tables side by side. */
+  .pr-pair {
+    display: grid;
+    grid-template-columns: 1.25fr 1fr;
+    gap: 0 18pt;
+    align-items: start;
+    break-inside: avoid;
+  }
+
+  .pr-columns {
+    columns: 2;
+    column-gap: 18pt;
+  }
+
+  .pr-id {
+    font-family: var(--font-mono);
+    font-size: 8pt;
+    overflow-wrap: anywhere;
+  }
+
+  .pr-facts {
+    display: grid;
+    grid-template-columns: 0.8fr 1.5fr 0.9fr 1.3fr;
+    gap: 3pt 12pt;
+    margin: 0 0 4pt;
+  }
+
+  .pr-facts .pr-wide {
+    grid-column: span 2;
+  }
+
+  .pr-columns > li {
+    break-inside: avoid;
+  }
+
+  .pr-facts dt,
+  .pr-figures dt {
+    color: #333;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .pr-facts dd,
+  .pr-figures dd {
+    margin: 0;
+  }
+
+  .pr-verdict,
+  .pr-limits {
+    border: 1.5pt solid #000;
+    margin: 6pt 0;
+    padding: 5pt 7pt 3pt;
+    break-inside: avoid;
+  }
+
+  .pr-verdict-unknown,
+  .pr-limits {
+    border-style: dashed;
+  }
+
+  .pr-verdict-fail {
+    border-width: 2.5pt;
+  }
+
+  .pr-headline {
+    font-size: 12.5pt;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  .pr-section {
+    margin: 7pt 0 0;
+  }
+
+  .pr-rule {
+    border: 0.75pt solid #000;
+    margin: 0 0 5pt;
+    padding: 4pt 6pt 2pt;
+    break-inside: avoid;
+  }
+
+  .pr-rule.pr-status-fail {
+    border-left-width: 4pt;
+  }
+
+  .pr-rule.pr-status-unknown {
+    border-style: dashed;
+    border-width: 1.25pt;
+  }
+
+  .pr-rule > header {
+    align-items: baseline;
+    display: flex;
+    gap: 8pt;
+    justify-content: space-between;
+    margin-bottom: 2pt;
+  }
+
+  .pr-figures {
+    display: grid;
+    grid-template-columns: 1.3fr 0.7fr 1.2fr 1.4fr;
+    gap: 2pt 10pt;
+    margin: 2pt 0 3pt;
+  }
+
+  .pr-figures dd {
+    font-weight: 700;
+  }
+
+  .pr-status {
+    border: 1pt solid #000;
+    display: inline-block;
+    font-size: 8.5pt;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 0 4pt;
+    white-space: nowrap;
+  }
+
+  .pr-status.pr-status-fail {
+    background: #000;
+    color: #fff;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .pr-status.pr-status-unknown {
+    border-style: dashed;
+    border-width: 1.5pt;
+  }
+
+  .pr-unknown-note {
+    border-left: 3pt double #000;
+    padding-left: 5pt;
+  }
+
+  .print-report table {
+    border-collapse: collapse;
+    margin: 2pt 0 4pt;
+    width: 100%;
+  }
+
+  .print-report thead {
+    display: table-header-group;
+  }
+
+  .print-report tr {
+    break-inside: avoid;
+  }
+
+  .print-report th,
+  .print-report td {
+    border-bottom: 0.5pt solid #777;
+    padding: 1.5pt 6pt 1.5pt 0;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .print-report th {
+    border-bottom: 1pt solid #000;
+    font-size: 8pt;
+    font-weight: 700;
+  }
+
+  .print-report .pr-num {
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .pr-objective {
+    break-inside: avoid;
+  }
+
+  .pr-footer {
+    border-top: 0.75pt solid #000;
+    color: #333;
+    font-size: 7.5pt;
+    margin-top: 6pt;
+    padding-top: 3pt;
+    break-before: avoid;
   }
 }

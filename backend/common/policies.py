@@ -62,9 +62,17 @@ class PolicyStore:
             while self.get(policy_id, version + 1) is not None:
                 version += 1
             return version or None
-        listing = self._s3.list_objects_v2(Bucket=self._bucket, Prefix=f"policies/{policy_id}/v", MaxKeys=1000)
-        versions = [int(match.group(1)) for item in listing.get("Contents", []) if (match := _VERSION_KEY_RE.fullmatch(item.get("Key", "")))]
-        return max(versions) if versions else None
+        latest = None
+        arguments = {"Bucket": self._bucket, "Prefix": f"policies/{policy_id}/v", "MaxKeys": 1000}
+        while True:
+            listing = self._s3.list_objects_v2(**arguments)
+            for item in listing.get("Contents", []):
+                match = _VERSION_KEY_RE.fullmatch(item.get("Key", ""))
+                if match:
+                    latest = max(latest or 0, int(match.group(1)))
+            if not listing.get("IsTruncated"):
+                return latest
+            arguments["ContinuationToken"] = listing["NextContinuationToken"]
 
     def create(self, policy: dict) -> None:
         """Write-once. Raises PolicyVersionExists when the version is already stored."""

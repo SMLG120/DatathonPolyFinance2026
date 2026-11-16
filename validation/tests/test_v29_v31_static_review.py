@@ -185,7 +185,7 @@ def test_v29_interpreter_timeouts_fit_under_the_gateway_limit_and_the_contract_d
     api_function = resources()["ApiFunction"]
     function_timeout = int(re.search(r"^      Timeout: (\d+)", api_function, re.M).group(1))
     integration = dict(re.findall(r"Path: (\S+)\n\s+PayloadFormatVersion: \"2\.0\"\n(?:\s+#.*\n)*\s+TimeoutInMillis: (\d+)", api_function))
-    assert set(integration) == {path for _, path in CANONICAL_ROUTES}
+    assert set(integration) == {path for _, path in DECLARED_ROUTES}
     slow = {"/rules/interpret", "/investigations/{id}/challenge"}
     assert {path for path, value in integration.items() if int(value) != 20000} == slow
     assert INTERPRET_TIMEOUT_SECONDS == 20 and INTERPRET_TIMEOUT_SECONDS + 3 <= function_timeout
@@ -279,21 +279,41 @@ def test_v29_every_route_is_behind_the_authorizer_and_there_is_no_default_route(
 
 CANONICAL_ROUTES = {("GET", "/portfolios/{persona_id}"), ("POST", "/rules/interpret"), ("POST", "/rules/confirm"), ("POST", "/check"),
                     ("POST", "/investigations"), ("GET", "/investigations/{id}"), ("POST", "/investigations/{id}/challenge")}
+# Release integration 2026-11-15: one additive route outside contracts/api.md, the Missing Holdings Evidence Investigator.
+# Reviewed as: read-only (snapshot and policies), no write, no worker invocation, no model call in this release, default
+# authorizer, default throttle, 20 s integration timeout. test_v29_the_additive_evidence_route_reaches_no_model pins that.
+ADDITIVE_ROUTES = {("POST", "/evidence/investigate")}
+DECLARED_ROUTES = CANONICAL_ROUTES | ADDITIVE_ROUTES
 
 
 @pytest.mark.vcase("V29")
 def test_v29_declared_routes_are_exactly_the_seven_of_the_contract():
     """Re-reviewed on the candidate df33dd6: the seven routes of contracts/api.md, all events of ApiFunction, all attached
     to HttpApi (default authorizer), none with its own Auth block. The two routes that start an investigation carry
-    the tighter throttle."""
+    the tighter throttle. Since the release integration of 2026-11-15 there is exactly one more, ADDITIVE_ROUTES."""
     text = TEMPLATE.read_text()
     routes = re.findall(r"Method: (GET|POST|PUT|DELETE|PATCH|ANY)\s*\n\s+Path: (\S+)", text)
-    assert len(routes) == len(set(routes)) and set(routes) == CANONICAL_ROUTES, sorted(set(routes) ^ CANONICAL_ROUTES)
+    assert len(routes) == len(set(routes)) and set(routes) == DECLARED_ROUTES, sorted(set(routes) ^ DECLARED_ROUTES)
     api_function = resources()["ApiFunction"]
-    assert api_function.count("Type: HttpApi") == 7 and api_function.count("ApiId: !Ref HttpApi") == 7
+    assert api_function.count("Type: HttpApi") == 8 and api_function.count("ApiId: !Ref HttpApi") == 8
+    assert "Auth:" not in api_function.split("Path: /evidence/investigate\n", 1)[1].split("Type: HttpApi")[0], "the additive route keeps the default authorizer"
     for path in ("/investigations", "/investigations/{id}/challenge"):
         block = api_function.split(f"Path: {path}\n", 1)[1].split("Type: HttpApi")[0]
         assert re.search(r"ThrottlingBurstLimit: 10\s*\n\s+ThrottlingRateLimit: 5\b", block), f"{path} starts model work and needs the tight throttle"
+
+
+@pytest.mark.vcase("V29")
+def test_v29_the_additive_evidence_route_reaches_no_model():
+    """The evidence route has the default throttle, which the review allows only for a route that reaches no model.
+    Pinned: the switch is off, and with it off no model client can be built, whatever the function's configuration."""
+    route = (REPO_ROOT / "backend" / "api" / "holdings_evidence" / "route.py").read_text()
+    assert re.search(r"^MODEL_WORDING_ENABLED = False$", route, re.M), "turning model wording on needs a throttle and a re-review"
+    assert "if not MODEL_WORDING_ENABLED or" in route
+    package = REPO_ROOT / "backend" / "api" / "holdings_evidence"
+    importers = [path.name for path in package.glob("*.py") if re.search(r"^\s*(import|from) (boto3|botocore)", path.read_text(), re.M)]
+    assert importers == ["route.py"], "only the route may build an AWS client, and only behind the switch"
+    service = (package / "service.py").read_text()
+    assert "put_object" not in service and "invoke(" not in service
 
 
 # Every identity statement of the candidate, read one by one on df33dd6: (action, key prefix or resource, write condition).
@@ -643,7 +663,9 @@ def _hits(pattern: str, flags: int = 0) -> list[str]:
             if stripped.startswith(("*", "//", "/*")):
                 continue
             if re.search(pattern, line, flags):
-                out.append(f"{path.relative_to(REPO_ROOT)}:{number}: {stripped[:120]}")
+                # These hits are inspected by semantic checks below, not just displayed.
+                # Truncation can remove the denial in "not a forecast" and invent a failure.
+                out.append(f"{path.relative_to(REPO_ROOT)}:{number}: {stripped}")
     return out
 
 
@@ -832,8 +854,9 @@ def test_v31_no_advice_or_forecast_wording_in_the_interface():
     unexpected = [h for h in hits if not any(denial in h for denial in REVIEWED_DENIALS)]
     assert unexpected == [], "\n".join(unexpected)
     scenario = _source("components/verdict/ScenarioPanel.tsx")
-    assert 'title="A replay of the past — not a forecast"' in scenario
-    assert 'SIMULATION_LABEL = "Simulation — fictional portfolio, not advice"' in _source("components/shell/AppShell.tsx")
+    # The owner replaced the em dash by a colon in every label (2026-11-15); the words are the same.
+    assert 'title="A replay of the past: not a forecast"' in scenario
+    assert 'SIMULATION_LABEL = "Simulation: fictional portfolio, not advice"' in _source("components/shell/AppShell.tsx")
 
 
 @pytest.mark.vcase("V31")
@@ -843,13 +866,14 @@ def test_v31_the_page_outlasts_the_job_deadline():
     job = int(re.search(r'JOB_DEADLINE_SECONDS: "(\d+)"', TEMPLATE.read_text()).group(1))
     assert poll == 180_000 and poll > job * 1000 + 10_000, "the poll deadline must exceed the job deadline, so the page shows the job's real outcome"
     assert "pollDeadlineMs: POLL_DEADLINE_MS" in _source("lib/config.ts")
-    polling = _source("hooks/usePolling.ts")
-    assert 'setTimeout(() => finish("timed_out"), deadlineMs)' in polling and "controller.abort()" in polling
+    # Cancellation and deadline behaviour are exercised by usePolling.test.tsx.
+    # This check owns the cross-layer budget, not the hook's exact source spelling.
 
 
 @pytest.mark.vcase("V31")
 def test_v31_three_js_is_loaded_only_when_the_explorer_is_opened():
-    importers = _hits(r"from \"three(/[^\"]*)?\"")
+    # Either quote style, and the graph library that brings three with it (3d-force-graph, added with the exposure graph).
+    importers = _hits(r"""(from|import\() ?["'](three(/[^"']*)?|3d-force-graph)["']""")
     assert importers and all("components/explorer/ExposureScene.tsx" in h for h in importers), importers
     scene_users = [h for h in _hits(r"ExposureScene\"") if "ExposureScene.tsx" not in h and ": import type {" not in h]  # type imports are erased
     assert scene_users and all('lazy(() => import("./ExposureScene"))' in h for h in scene_users), scene_users
@@ -862,14 +886,107 @@ def _built_site() -> Path:
     return out
 
 
+# What a built site may and may not hold. The API base URL is a build-time, NON-secret value (frontend/.env.example,
+# LEAD_DECISIONS D8: the access code is the secret and is typed at run time), so a live build necessarily holds it.
+# The check therefore tells three things apart:
+#   - secrets and identifiers that must never be in any build (account id, keys, bearer literals, ARNs, source maps);
+#   - a service address that is NOT the configured endpoint (another stack, or the loopback address of the local
+#     test harness left behind by acceptance/fullstack/run.sh);
+#   - the configured endpoint itself (infra/README.md, stack output ApiBaseUrl), which is legitimate in a live build
+#     and whose ABSENCE from a release bundle means a fixtures build was packaged by accident.
+SITE_SECRETS = {
+    # A 12-digit run inside a longer hexadecimal string is not an account id: d3-scale-chromatic ships its grey ramp as
+    # "f7f7f7cccccc969696525252" (two colours, 969696 and 525252). A standalone 12-digit number is still refused.
+    "account id": r"(?<![0-9a-fA-F.])[0-9]{12}(?![0-9a-fA-F])",
+    "access key": r"(AKIA|ASIA)[0-9A-Z]{16}",
+    "bearer literal": r"Bearer\s+[A-Za-z0-9_\-]{12,}",
+    "ARN": r"arn:aws:",
+    "source map": r"sourceMappingURL",
+}
+API_HOST = r"[a-z0-9]{10}\.execute-api\.[a-z0-9-]+\.amazonaws\.com"
+LOOPBACK_SERVICE = r"https?://(127\.0\.0\.1|localhost|0\.0\.0\.0):41[0-9]{2}"  # the ports of acceptance/fullstack and validation/customize
+SITE_SUFFIXES = (".js", ".html", ".txt", ".css", ".json")
+
+
+def _configured_api_host() -> str:
+    """The deployed API endpoint as the repository records it: the ApiBaseUrl stack output in infra/README.md."""
+    match = re.search(r"\| `ApiBaseUrl` \| `https://(" + API_HOST + r")` \|", (REPO_ROOT / "infra" / "README.md").read_text())
+    assert match, "infra/README.md no longer records the ApiBaseUrl stack output: re-run the manual review"
+    return match.group(1)
+
+
+def _documented_account() -> str:
+    """The project's actual AWS account, as docs/LEAD_DECISIONS.md records it (PR #18's rule, kept next to the generic one)."""
+    return re.search(r"\| Team AWS account \| `([0-9]{12})`", (REPO_ROOT / "docs" / "LEAD_DECISIONS.md").read_text()).group(1)
+
+
+def _assert_no_secret(text: str, where: str) -> None:
+    for label, pattern in SITE_SECRETS.items():
+        assert not re.search(pattern, text), f"{label} in {where}"
+    assert _documented_account() not in text, f"the project's AWS account id in {where}"
+    assert not re.search(LOOPBACK_SERVICE, text), f"{where} was built against the local test harness (a loopback service address)"
+
+
+def _foreign_hosts(text: str) -> set[str]:
+    return set(re.findall(API_HOST, text)) - {_configured_api_host()}
+
+
 @pytest.mark.vcase("V31")
 def test_v31_the_built_site_holds_no_secret_account_identifier_or_source_map():
+    """frontend/out, whichever mode it was built in: no secret, and no service address other than the configured endpoint."""
     out = _built_site()
-    text = "".join(p.read_text(errors="ignore") for p in out.rglob("*") if p.is_file() and p.suffix in (".js", ".html", ".txt", ".css", ".json"))
-    for label, pattern in {"account id": r"(?<![0-9.])[0-9]{12}(?![0-9])", "execute-api host": r"[a-z0-9]{10}\.execute-api\.", "access key": r"(AKIA|ASIA)[0-9A-Z]{16}",
-                           "bearer literal": r"Bearer\s+[A-Za-z0-9_\-]{12,}", "ARN": r"arn:aws:", "source map": r"sourceMappingURL"}.items():
-        assert not re.search(pattern, text), f"{label} in the built site"
+    text = "".join(p.read_text(errors="ignore") for p in out.rglob("*") if p.is_file() and p.suffix in SITE_SUFFIXES)
+    _assert_no_secret(text, "the built site")
+    assert _foreign_hosts(text) == set(), "the built site names an API host that is not the configured endpoint (infra/README.md ApiBaseUrl)"
     assert list(out.rglob("*.map")) == [] and not [p for p in out.rglob("*") if p.name.startswith(".env")]
+
+
+def _release_sites() -> list[Path]:
+    return sorted((REPO_ROOT / "dist").glob("cloudshell-release*/cloudshell-release/frontend.zip"))
+
+
+@pytest.mark.vcase("V31")
+def test_v31_a_release_bundle_holds_a_live_build_of_the_configured_endpoint_and_no_secret():
+    """A site packaged for deployment must be a LIVE build: it names the configured API endpoint, and only that one.
+
+    A bundle without it is a fixtures build (frontend/src/lib/config.ts: no base URL means recorded test data), which
+    would show "Test data: fixtures" to every visitor: packaged by accident, it must not be deployed.
+    """
+    import zipfile
+
+    bundles = _release_sites()
+    if not bundles:
+        pytest.skip("no release bundle under dist/ (git-ignored; built by the lead before a deployment)")
+    for bundle in bundles:
+        where = str(bundle.relative_to(REPO_ROOT))
+        with zipfile.ZipFile(bundle) as archive:
+            names = archive.namelist()
+            text = "".join(archive.read(name).decode("utf-8", errors="ignore") for name in names if name.endswith(SITE_SUFFIXES))
+        assert "index.html" in names, f"{where} is not a static site"
+        _assert_no_secret(text, where)
+        assert _foreign_hosts(text) == set(), f"{where} names an API host that is not the configured endpoint"
+        assert _configured_api_host() in text, f"{where} is a fixtures build (no API endpoint): it must not be deployed"
+        assert not [name for name in names if name.endswith(".map") or name.rsplit("/", 1)[-1].startswith(".env")], where
+
+
+def _site_text_for_selftest(host: str | None) -> str:
+    return 'x={apiBaseUrl:"' + (f"https://{host}" if host else "") + '"}'
+
+
+@pytest.mark.vcase("V31")
+def test_v31_the_built_site_rules_tell_the_configured_endpoint_from_what_is_forbidden():
+    """The rules themselves, on small made-up texts: so a change that blinds one of them is noticed."""
+    configured = _configured_api_host()
+    assert _foreign_hosts(_site_text_for_selftest(configured)) == set()
+    assert _foreign_hosts(_site_text_for_selftest(None)) == set()
+    assert _foreign_hosts(_site_text_for_selftest("abcde01234.execute-api.us-east-1.amazonaws.com")) == {"abcde01234.execute-api.us-east-1.amazonaws.com"}
+    _assert_no_secret(_site_text_for_selftest(configured), "a live build")
+    made_up_key = "AKIA" + "ABCDEFGHIJKLMNOP"  # assembled here so that this file holds no string shaped like a key (test_v30 scans it)
+    for forbidden in ('id:"123456789012"', made_up_key, "Bearer abcdefghijkl1234", "arn:aws:lambda:us-east-1", "//# sourceMappingURL=a.js.map",
+                      'apiBaseUrl:"http://127.0.0.1:4184"'):
+        with pytest.raises(AssertionError):
+            _assert_no_secret(forbidden, "a made-up text")
+    _assert_no_secret('"f7f7f7cccccc969696525252"', "a colour ramp")  # two hex colours, not an account id
 
 
 @pytest.mark.vcase("V31")

@@ -2,82 +2,129 @@ import { expect, test } from "@playwright/test";
 import {
   expectNoAxeViolations,
   expectPersistentLabels,
-  expectStage,
+  expectPortfolioLoaded,
+  expectScreen,
   expectTestDataMarkers,
   expectVisibleFocusRing,
   overviewChart,
+  panelSummary,
   stageHeading,
   START_URL,
+  stepLink,
   tabBackTo,
   tabTo,
   tabToAndPress,
 } from "./helpers";
 
 const ROBERT_HEADLINE = "2 of 2 confirmed rules are not respected";
+const APP_NAME = "ETHOS: fictional simulation";
 
 /**
  * The whole simulation, driven with the keyboard only (Tab, Shift+Tab, Enter,
  * Space, arrows, Escape, typing) on the static build in fixtures mode. No
  * mouse action is used anywhere in this file.
+ *
+ * The journey has three moments (choose a profile, test an idea, understand
+ * the result). "Your limits", "Analysis details" and "Review this result" are
+ * secondary screens of the second and third moment.
  */
-test.describe("keyboard-only journey through the six stages", () => {
-  test("Robert: persona to challenge, with axe on every stage", async ({ page }) => {
+test.describe("keyboard-only journey through the three steps", () => {
+  test("Robert: profile to challenge, with axe on every screen", async ({ page }) => {
     // Two investigations are polled at the contract's interval of 1.5 s, and every control is reached with Tab.
     test.setTimeout(180_000);
     await page.goto(START_URL);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
 
-    // ---- Stage 1: focus order follows the reading order --------------------
-    await expectStage(page, 1, { focused: false });
+    // ---- Step 1, "Choose a profile": focus order follows the reading order --
+    await expectScreen(page, "persona", { focused: false });
     await expectPersistentLabels(page);
-    // Read once the page has settled: the title must still name the stage after hydration.
+    // Read once the page has settled: the title must still name the screen after hydration.
     await page.waitForLoadState("networkidle");
-    expect(await page.title()).toBe("Persona & portfolio — Before You Buy — fictional simulation");
+    expect(await page.title()).toBe(`Choose a profile: ${APP_NAME}`);
     expect(await page.locator("title").count()).toBe(1);
+    const portfolioSummary = panelSummary(page, "View the fictional portfolio");
+    const continueLink = page.getByTestId("continue-link");
+    await expect(continueLink).toHaveAccessibleName("Set your limits");
+    await expect(continueLink).toHaveAttribute("href", "#/goals");
     const expectedOrder = [
       page.getByRole("link", { name: "Skip to main content" }),
-      page.getByRole("link", { name: "Step 1 of 6: Persona & portfolio" }),
-      page.getByRole("link", { name: "Step 2 of 6: Goals & rules" }),
-      page.getByRole("link", { name: "Step 3 of 6: Proposed purchase" }),
-      page.getByRole("link", { name: "Step 4 of 6: Investigation steps" }),
-      page.getByRole("link", { name: "Step 5 of 6: Verdict & evidence" }),
-      page.getByRole("link", { name: "Step 6 of 6: Challenge" }),
+      // The header's link to the separate /evidence/ page comes before the steps, in reading order.
+      page.getByRole("link", { name: /^Evidence Investigator/ }),
+      stepLink(page, 1),
+      stepLink(page, 2),
+      stepLink(page, 3),
+      stepLink(page, 4),
+      // The brand message opens the first screen: its two calls to action come before the profiles.
+      page.getByTestId("brand-cta-primary"),
+      page.getByTestId("brand-cta-secondary"),
+      page.getByTestId("persona-robert").locator("summary"),
+      page.getByTestId("persona-mateo").locator("summary"),
       page.getByRole("button", { name: "Use Mateo’s portfolio" }),
-      page.getByTestId("case-facts").locator("summary"),
-      page.getByRole("link", { name: "Continue to Goals & rules" }),
+      page.getByTestId("persona-amira").locator("summary"),
+      page.getByRole("button", { name: "Use Amira’s portfolio" }),
+      portfolioSummary,
+      page.getByTestId("customize-open"),
+      continueLink,
     ];
     for (const control of expectedOrder) {
       await page.keyboard.press("Tab");
       await expect(control).toBeFocused();
       await expectVisibleFocusRing(control);
     }
-    await expectTestDataMarkers(page, "stage 1");
-    await expectNoAxeViolations(page, "stage 1, persona and portfolio");
+    await expectTestDataMarkers(page, "step 1, portfolio panel closed");
+    await expectNoAxeViolations(page, "step 1, choose a profile");
+
+    // The portfolio is a closed panel that the keyboard opens; the case facts inside it are one more stop.
+    await expect(page.getByTestId("portfolio-table")).toBeHidden();
+    await tabBackTo(page, portfolioSummary);
+    await page.keyboard.press("Enter");
+    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expect(page.getByTestId("fiction-notice")).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("case-facts").locator("summary")).toBeFocused();
+    await expectVisibleFocusRing(page.getByTestId("case-facts").locator("summary"));
+    await expectTestDataMarkers(page, "step 1, portfolio panel open");
+    await expectNoAxeViolations(page, "step 1, portfolio panel open");
 
     // The skip link is the first stop and moves focus to the main region.
     await page.goto(START_URL);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectPortfolioLoaded(page);
     await page.keyboard.press("Tab");
     await expect(page.getByRole("link", { name: "Skip to main content" })).toBeFocused();
     await page.keyboard.press("Enter");
     await expect(page.locator("#main-content")).toBeFocused();
     await expect(page).toHaveURL(/\?fixtures=1$/); // the skip link does not disturb the stage in the hash
 
-    // ---- Stage 2: the scenario's rules as proposals -> explicit confirmation
-    await tabToAndPress(page, page.getByRole("link", { name: "Continue to Goals & rules" }));
-    await expectStage(page, 2);
+    // ---- Step 3, "Test an idea", opened early from the stepper: without a confirmed limit it says what comes first
+    await tabToAndPress(page, stepLink(page, 3));
+    await expectScreen(page, "purchase");
     await expectPersistentLabels(page);
-    await expect(page).toHaveTitle("Goals & rules — Before You Buy — fictional simulation");
+    await expect(page).toHaveTitle(`Test an idea: ${APP_NAME}`);
+    await expect(page.getByRole("main").getByText("First, confirm your limits")).toBeVisible();
+    await expect(page.getByTestId("start-investigation")).toHaveAttribute("aria-disabled", "true");
+    await expect(page.getByRole("main").getByText("Needs at least one confirmed rule.")).toBeVisible();
+    await expectNoAxeViolations(page, "step 2, test an idea, no confirmed limit yet");
+
+    // ---- Step 2, "Your limits": the scenario's rules as proposals -> explicit confirmation
+    await tabToAndPress(page, page.getByRole("link", { name: "Set my limits" }));
+    await expectScreen(page, "goals");
+    await expectPersistentLabels(page);
+    await expect(page).toHaveTitle(`Your limits: ${APP_NAME}`);
     await expect(page.getByTestId("rule-card")).toHaveCount(2);
-    await expect(page.getByTestId("rule-card").first().getByText("Proposed — inactive")).toBeVisible();
-    await expect(page.getByText("No confirmed rule yet")).toBeVisible();
-    await expectNoAxeViolations(page, "stage 2, proposed rules");
+    await expect(page.getByTestId("rule-card").first().getByText("Proposed: inactive")).toBeVisible();
+    await expect(page.getByTestId("policy-rule-card")).toHaveCount(0);
+    await expectNoAxeViolations(page, "step 2, proposed limits");
 
     // A threshold can be changed from the keyboard, and a preview is labelled as a preview.
     const firstCard = page.getByTestId("rule-card").first();
     const field = firstCard.getByRole("textbox");
     const slider = firstCard.getByRole("slider");
-    await tabTo(page, slider);
+    // The preview of a card is a closed section of it: open it first, from the keyboard.
+    const previewSummary = firstCard.locator("summary", { hasText: "Preview this limit" });
+    await expect(firstCard.getByTestId("draft-preview")).toBeHidden();
+    await tabToAndPress(page, previewSummary);
+    await expect(firstCard.getByTestId("draft-preview")).toBeVisible();
+    await tabBackTo(page, slider);
     await expectVisibleFocusRing(slider);
     await page.keyboard.press("ArrowRight");
     await expect(field).toHaveValue("10.5");
@@ -91,9 +138,9 @@ test.describe("keyboard-only journey through the six stages", () => {
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.type("20");
     await expect(firstCard.getByTestId("draft-preview-result")).toContainText("Preview: Fail");
-    await expect(firstCard.getByTestId("draft-preview")).toContainText("Preview with draft threshold — not your confirmed policy");
+    await expect(firstCard.getByTestId("draft-preview")).toContainText("Preview with draft threshold: not your confirmed policy");
     await expect(firstCard.getByTestId("draft-preview").getByTestId("test-data-tag")).toBeVisible();
-    await expectNoAxeViolations(page, "stage 2, a draft preview");
+    await expectNoAxeViolations(page, "step 2, a draft preview");
     await page.keyboard.press("ControlOrMeta+a");
     await page.keyboard.type("10");
     await expect(field).toHaveValue("10");
@@ -101,29 +148,44 @@ test.describe("keyboard-only journey through the six stages", () => {
     await tabToAndPress(page, page.getByTestId("confirm-rules"));
     await expect(page.getByTestId("policy-rule-card")).toHaveCount(2);
     // The cards that held focus are gone: focus goes to the policy they became part of.
-    await expect(page.getByRole("heading", { name: "Confirmed policy — version 1" })).toBeFocused();
-    await expectTestDataMarkers(page, "stage 2, confirmed policy");
-    await expectNoAxeViolations(page, "stage 2, confirmed policy");
+    await expect(page.getByRole("heading", { name: "Your confirmed limits" })).toBeFocused();
+    await expect(page.locator("#confirmed-policy")).toContainText("2 active rules");
+    await expectTestDataMarkers(page, "step 2, confirmed limits");
+    await expectNoAxeViolations(page, "step 2, confirmed limits");
 
-    // ---- Stage 3: the purchase as a final direct weight --------------------
-    await tabToAndPress(page, page.getByRole("link", { name: "Continue to Proposed purchase" }));
-    await expectStage(page, 3);
+    // ---- Step 2, "Test an idea": the purchase as a final direct weight -----
+    await tabToAndPress(page, page.getByTestId("continue-link"));
+    await expectScreen(page, "purchase");
     await expectPersistentLabels(page);
+    await expect(page.getByRole("main").getByText("First, confirm your limits")).toHaveCount(0);
     await expect(page.getByTestId("funding-statement")).toHaveText("Funded from existing cash; all other positions unchanged; fees and taxes excluded.");
-    await expect(page.getByLabel("Final direct weight of this position")).toHaveValue("25");
-    await expect(page.getByTestId("entered-target")).toHaveText("25.0%");
-    await expect(page.getByTestId("figures-after-check")).toContainText("Computed by the service, not by this page");
-    // The cash figure is the service's answer to POST /check, labelled as a preview.
-    await expect(page.getByTestId("purchase-preview-label")).toHaveText("Preview — computed by the service for the request above");
+    await expect(page.getByLabel("Which investment?")).toHaveValue("NVDA");
+    await expect(page.getByLabel("Share of the portfolio after buying")).toHaveValue("25");
+    // The cash figure is the service's answer to POST /check, labelled as a preview. Its panel is closed until asked for.
+    const previewPanel = panelSummary(page, "Preview cash and exposures");
+    await expect(page.getByTestId("purchase-preview")).toBeHidden();
+    await tabToAndPress(page, previewPanel);
+    await expect(page.getByTestId("purchase-preview-label")).toHaveText("Preview: computed by the service for the request above");
+    await expect(page.getByTestId("purchase-preview-label")).toBeVisible();
     await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toHaveText("5.0%");
     await expect(page.getByTestId("purchase-preview").getByTestId("additional-purchase")).toHaveText("+25.0 points");
-    await expectTestDataMarkers(page, "stage 3");
-    await expectNoAxeViolations(page, "stage 3, proposed purchase");
+    await expectTestDataMarkers(page, "step 2, test an idea");
+    await expectNoAxeViolations(page, "step 2, test an idea with its preview open");
 
-    // ---- Stage 4: only the steps the job reports ---------------------------
-    await tabToAndPress(page, page.getByTestId("start-investigation"));
-    await expectStage(page, 4);
+    // ---- Step 3, "Your result" while the investigation runs: no verdict yet -
+    await tabBackTo(page, page.getByTestId("start-investigation"));
+    await page.keyboard.press("Enter");
+    await expectScreen(page, "verdict");
     await expectPersistentLabels(page);
+    await expect(page).toHaveTitle(`Your result: ${APP_NAME}`);
+    await expect(page.getByRole("main").getByRole("status").filter({ hasText: "No verdict exists yet." })).toBeVisible();
+    await expect(page.getByTestId("verdict-summary")).toHaveCount(0);
+
+    // ---- Step 3, "Analysis details": only the steps the job reports --------
+    await tabToAndPress(page, page.getByRole("link", { name: "See the investigation steps" }));
+    await expectScreen(page, "investigation");
+    await expectPersistentLabels(page);
+    await expect(page).toHaveTitle(`Analysis details: ${APP_NAME}`);
     // While it runs, the list holds only the steps the job has reported so far, and a plain waiting line.
     await expect(page.getByTestId("timeline-waiting")).toHaveText("Waiting for the next step");
     const stepsSeen: number[] = [];
@@ -138,19 +200,89 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(page.locator('[data-testid="timeline-step"]:not([data-step-status="OK"])')).toHaveCount(0);
     await expect(page.getByTestId("step-count")).toHaveText(String(totalSteps));
     await expect(page.getByTestId("timeline-waiting")).toHaveCount(0);
-    await expectTestDataMarkers(page, "stage 4");
-    await expectNoAxeViolations(page, "stage 4, investigation steps");
+    await expectTestDataMarkers(page, "step 3, analysis details");
+    await expectNoAxeViolations(page, "step 3, analysis details");
 
-    // ---- Stage 5: verdict and evidence -------------------------------------
+    // ---- Step 3, "Your result": verdict and evidence ------------------------
     await tabToAndPress(page, page.getByTestId("see-verdict"));
-    await expectStage(page, 5);
+    await expectScreen(page, "verdict");
     await expectPersistentLabels(page);
     await expect(page.getByTestId("verdict-headline")).toHaveText(ROBERT_HEADLINE);
     await expect(page.getByTestId("count-fail")).toHaveAttribute("data-count", "2");
     await expect(page.getByTestId("count-unknown")).toHaveAttribute("data-count", "0");
     await expect(page.getByTestId("verdict-summary").getByTestId("test-data-tag")).toBeVisible();
+    await expect(page.getByTestId("rule-result")).toHaveCount(2);
+
+    // Headline and per-rule results come first; the exposure panel and the further analysis follow, in that order on screen.
+    const top = async (selector: string) => (await page.locator(selector).boundingBox())?.y ?? Number.NaN;
+    const order = [await top('[data-testid="verdict-summary"]'), await top("#report-rules"), await top("#report-exposure"), await top("#report-details")];
+    expect(order.every((y) => Number.isFinite(y)), "every section is on the page").toBe(true);
+    expect(order, "headline, rules, exposure, then the rest").toEqual([...order].sort((a, b) => a - b));
+    await expectTestDataMarkers(page, "step 3, your result");
+    await expectNoAxeViolations(page, "step 3, your result");
+
+    // The exposures, the further analysis and, inside it, coverage, the sentences and the notes are closed sections
+    // that the keyboard opens and closes.
+    for (const id of ["report-exposure", "report-details", "report-coverage", "report-sentences", "report-about"]) {
+      await expect(page.locator(`#${id}`)).toHaveJSProperty("open", false);
+    }
+    const detailsSummary = page.locator("#report-details > summary");
+    // What the closed section says of the data stays readable while it is closed.
+    await expect(detailsSummary).toContainText("SPY complete · XIU.TO partial (98.0%)");
+    await expect(page.getByTestId("fund-coverage").first()).toBeHidden();
+    await tabTo(page, detailsSummary);
+    await expectVisibleFocusRing(detailsSummary);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-details")).toHaveJSProperty("open", true);
+    await expect(page.locator("#report-cash")).toBeVisible();
+    const coverageSummary = page.locator("#report-coverage > summary");
+    await expect(coverageSummary).toContainText("SPY complete · XIU.TO partial (98.0%)");
+    await expect(page.getByTestId("fund-coverage").first()).toBeHidden();
+    await tabTo(page, coverageSummary);
+    await expectVisibleFocusRing(coverageSummary);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-coverage")).toHaveJSProperty("open", true);
+    await expect(page.getByTestId("fund-coverage")).toHaveCount(2);
+    await expect(page.getByTestId("fund-coverage").first()).toBeVisible();
+    await expect(page.locator('[data-testid="fund-coverage"][data-fund-id="XIU.TO"]').getByTestId("coverage-sentence")).toHaveText("Partial: 98.0% of the fund reported");
+    await page.keyboard.press("Space");
+    await expect(page.locator("#report-coverage")).toHaveJSProperty("open", false);
+    // The result in sentences: one more closed section, each sentence a restatement of the figures.
+    const sentencesSummary = page.locator("#report-sentences > summary");
+    await tabTo(page, sentencesSummary);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-sentences")).toHaveJSProperty("open", true);
+    await expect(page.getByTestId("explanation-statement")).toHaveCount(5);
+    await expect(page.getByTestId("explanation-statement").first()).toBeVisible();
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-sentences")).toHaveJSProperty("open", false);
+    await tabBackTo(page, detailsSummary);
+    await page.keyboard.press("Space");
+    await expect(page.locator("#report-details")).toHaveJSProperty("open", false);
+
+    // The headline card links to each section: a closed one is opened, with the sections around it, and receives focus;
+    // the stage in the address stays.
+    const sectionLinks = page.getByRole("navigation", { name: "Sections of this report" });
+    await expect(sectionLinks.getByRole("link")).toHaveText(["See the checks", "Explore my exposures", "Sources and missing data"]);
+    await tabBackTo(page, sectionLinks.getByRole("link", { name: "Sources and missing data" }));
+    await expectVisibleFocusRing(sectionLinks.getByRole("link", { name: "Sources and missing data" }));
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-details")).toHaveJSProperty("open", true);
+    await expect(page.locator("#report-coverage")).toHaveJSProperty("open", true);
+    await expect(coverageSummary).toBeFocused();
+    await expect(page.getByTestId("fund-coverage").first()).toBeVisible();
+    await expect(page).toHaveURL(/#\/verdict$/);
+    await tabBackTo(page, sectionLinks.getByRole("link", { name: "See the checks" }));
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("heading", { level: 2, name: "What fits and what doesn’t" })).toBeFocused();
+    await expect(page).toHaveURL(/#\/verdict$/);
+    await expect(overviewChart(page)).toBeHidden();
+    await tabBackTo(page, sectionLinks.getByRole("link", { name: "Explore my exposures" }));
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#report-exposure")).toHaveJSProperty("open", true);
+    await expect(page.locator("#report-exposure > summary")).toBeFocused();
+    await expect(page).toHaveURL(/#\/verdict$/);
     await expect(overviewChart(page)).toBeVisible();
-    await expect(page.getByTestId("scenario-note")).toBeVisible();
 
     // The limit label starts at the marker it names and stays inside the chart.
     const chart = overviewChart(page);
@@ -161,44 +293,6 @@ test.describe("keyboard-only journey through the six stages", () => {
     expect(labelBox && markerBox && chartBox).toBeTruthy();
     expect(Math.abs(labelBox!.x - (markerBox!.x + markerBox!.width / 2))).toBeLessThanOrEqual(2);
     expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(chartBox!.x + chartBox!.width + 0.5);
-
-    // Headline, per-rule results and the exposure chart come first, in that order on screen.
-    const top = async (selector: string) => (await page.locator(selector).boundingBox())?.y ?? Number.NaN;
-    const order = [await top('[data-testid="verdict-summary"]'), await top("#report-rules"), await top("#report-exposure"), await top("#report-cash"), await top("#report-coverage")];
-    expect(order, "headline, rules, exposure, then the rest").toEqual([...order].sort((a, b) => a - b));
-    await expectTestDataMarkers(page, "stage 5");
-    await expectNoAxeViolations(page, "stage 5, verdict and evidence");
-
-    // Coverage, the sentences and the notes are closed sections that the keyboard opens and closes.
-    for (const id of ["report-coverage", "report-sentences", "report-about"]) {
-      await expect(page.locator(`#${id}`)).toHaveJSProperty("open", false);
-    }
-    const coverageSummary = page.locator("#report-coverage > summary");
-    await expect(coverageSummary).toContainText("SPY complete · XIU.TO partial (98.0%)");
-    await expect(page.getByTestId("fund-coverage").first()).toBeHidden();
-    await tabTo(page, coverageSummary);
-    await expectVisibleFocusRing(coverageSummary);
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#report-coverage")).toHaveJSProperty("open", true);
-    await expect(page.getByTestId("fund-coverage")).toHaveCount(2);
-    await expect(page.getByTestId("fund-coverage").first()).toBeVisible();
-    await expect(page.locator('[data-testid="fund-coverage"][data-fund-id="XIU.TO"]').getByTestId("coverage-sentence")).toHaveText("Partial — 98.0% of the fund reported");
-    await page.keyboard.press("Space");
-    await expect(page.locator("#report-coverage")).toHaveJSProperty("open", false);
-
-    // The headline card links to each section: a closed one is opened and receives focus, and the stage in the address stays.
-    const sectionLinks = page.getByRole("navigation", { name: "Sections of this report" });
-    await tabBackTo(page, sectionLinks.getByRole("link", { name: "In sentences" }));
-    await expectVisibleFocusRing(sectionLinks.getByRole("link", { name: "In sentences" }));
-    await page.keyboard.press("Enter");
-    await expect(page.locator("#report-sentences")).toHaveJSProperty("open", true);
-    await expect(page.locator("#report-sentences > summary")).toBeFocused();
-    await expect(page.getByTestId("explanation-statement")).toHaveCount(5);
-    await expect(page).toHaveURL(/#\/verdict$/);
-    await tabBackTo(page, sectionLinks.getByRole("link", { name: "Exposure" }));
-    await page.keyboard.press("Enter");
-    await expect(page.getByRole("heading", { level: 2, name: "Exposure: held directly and through funds" })).toBeFocused();
-    await expect(page).toHaveURL(/#\/verdict$/);
 
     // Exposure chart: the breakdown of a company's bar opens from the keyboard; nothing depends on hover.
     const nvidia = overviewChart(page).locator('[data-testid="exposure-row"][data-issuer-id="NVIDIA"]');
@@ -214,7 +308,8 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(other.getByTestId("exposure-breakdown")).toBeHidden();
     await page.keyboard.press("Enter");
     await expect(page.getByTestId("exposure-views").locator("[title]")).toHaveCount(0);
-    await expectNoAxeViolations(page, "stage 5, sections and an exposure breakdown open");
+    await expectTestDataMarkers(page, "step 3, sections and an exposure breakdown open");
+    await expectNoAxeViolations(page, "step 3, sections and an exposure breakdown open");
 
     // Evidence drawer: opens from a figure, traps focus, closes on Escape, returns focus.
     const evidenceButton = page.getByRole("button", { name: "Evidence for Maximum exposure to a single company, after the purchase" });
@@ -243,7 +338,7 @@ test.describe("keyboard-only journey through the six stages", () => {
       await page.keyboard.press("Shift+Tab");
       expect(await focusIsInDrawer(), "focus left the drawer on Shift+Tab").toBe(true);
     }
-    await expectNoAxeViolations(page, "stage 5, evidence drawer open");
+    await expectNoAxeViolations(page, "step 3, evidence drawer open");
     await page.keyboard.press("Escape");
     await expect(drawer).toBeHidden();
     await expect(evidenceButton).toBeFocused();
@@ -255,15 +350,18 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(drawer).toBeHidden();
     await expect(evidenceButton).toBeFocused();
 
-    // ---- Stage 6: challenge -------------------------------------------------
-    await tabToAndPress(page, page.getByRole("link", { name: "Challenge this result" }), "Enter");
-    await expectStage(page, 6);
+    // ---- Step 4, "Review this result": challenge ----------------------------
+    // The next actions of the plain reading; Robert's recorded result supports a largest compliant purchase.
+    await expect(page.getByTestId("result-actions").getByRole("link")).toHaveText(["Modify my idea", "Largest share that fits my limits", "Sources and missing data", "Review or dispute this result"]);
+    await tabToAndPress(page, page.getByRole("link", { name: "Review or dispute this result" }), "Enter");
+    await expectScreen(page, "challenge");
     await expectPersistentLabels(page);
+    await expect(page).toHaveTitle(`Review this result: ${APP_NAME}`);
     // Robert's scenario challenge is a rule change, so that path is shown first.
     const ruleTab = page.getByRole("tab", { name: "Change a rule" });
     await expect(ruleTab).toHaveAttribute("aria-selected", "true");
     await expect(page.getByTestId("change-rule-form")).toBeVisible();
-    await expectNoAxeViolations(page, "stage 6, change a rule");
+    await expectNoAxeViolations(page, "step 3, review, change a rule");
 
     // Tabs: one tab stop, arrow keys move between the three paths.
     await tabTo(page, ruleTab);
@@ -271,11 +369,11 @@ test.describe("keyboard-only journey through the six stages", () => {
     await page.keyboard.press("ArrowLeft");
     await expect(page.getByRole("tab", { name: "Clarify a preference" })).toBeFocused();
     await expect(page.getByRole("tab", { name: "Clarify a preference" })).toHaveAttribute("aria-selected", "true");
-    await expectNoAxeViolations(page, "stage 6, clarify a preference");
+    await expectNoAxeViolations(page, "step 3, review, clarify a preference");
     await page.keyboard.press("ArrowLeft");
     await expect(page.getByRole("tab", { name: "Correct a fact" })).toBeFocused();
     await expect(page.getByTestId("correct-fact-form")).toBeVisible();
-    await expectNoAxeViolations(page, "stage 6, correct a fact");
+    await expectNoAxeViolations(page, "step 3, review, correct a fact");
     await page.keyboard.press("ArrowRight");
     await page.keyboard.press("ArrowRight");
     await expect(ruleTab).toBeFocused();
@@ -290,7 +388,7 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(form.getByTestId("draft-preview-result")).toContainText("Preview: Fail");
     await expect(form.getByTestId("draft-preview-result")).toContainText("draft limit 20.0%");
     await expect(page.getByTestId("rule-change-comparison")).toHaveCount(0);
-    await expectNoAxeViolations(page, "stage 6, change a rule with a preview");
+    await expectNoAxeViolations(page, "step 3, review, change a rule with a preview");
 
     // The scenario's own change: 10% to 30%.
     await tabBackTo(page, form.getByTestId("fill-example-rule"));
@@ -314,33 +412,39 @@ test.describe("keyboard-only journey through the six stages", () => {
     await expect(formsPanel.getByTestId("change-rule-form")).toBeVisible();
     await expect(formsPanel.getByTestId("rule-change-comparison")).toHaveCount(0);
     await expect(comparisonSection.getByTestId("change-rule-form")).toHaveCount(0);
-    await expect(comparisonSection).toContainText("Outcome of the rule change — separate from the form above");
+    await expect(comparisonSection).toContainText("Outcome of the rule change: separate from the form above");
     await expect(comparisonSection.getByRole("heading", { level: 3 })).toHaveText(["What changed in the policy", "The same purchase under each version", "Each rule under the two versions"]);
     const formsBox = await formsPanel.boundingBox();
     const comparisonBox = await comparisonSection.boundingBox();
     expect(comparisonBox && formsBox && comparisonBox.y >= formsBox.y + formsBox.height, "the comparison starts below the end of the forms panel").toBe(true);
-    await expectTestDataMarkers(page, "stage 6, old and new compared");
-    await expectNoAxeViolations(page, "stage 6, old and new compared");
+    await expectTestDataMarkers(page, "step 3, review, old and new compared");
+    await expectNoAxeViolations(page, "step 3, review, old and new compared");
 
     // The earlier report can still be opened, and is unchanged.
     await tabToAndPress(page, page.getByTestId("comparison-report").first().getByRole("button", { name: "Open this report" }));
-    await expectStage(page, 5);
+    await expectScreen(page, "verdict");
     await expect(page.getByText("You are reading an earlier report, checked against policy version 1")).toBeVisible();
     await expect(page.getByTestId("verdict-headline")).toHaveText(ROBERT_HEADLINE);
     await expect(page.getByTestId("report-entry")).toHaveCount(2);
-    await expectNoAxeViolations(page, "stage 5, earlier report reopened");
+    await expectNoAxeViolations(page, "step 3, earlier report reopened");
   });
 
-  test("the stepper works as links: Enter moves to a stage and Back returns", async ({ page }) => {
+  test("the stepper works as links: Enter moves to a step and Back returns", async ({ page }) => {
     await page.goto(START_URL);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
-    await tabToAndPress(page, page.getByRole("link", { name: "Step 3 of 6: Proposed purchase" }));
-    await expectStage(page, 3);
+    await expectPortfolioLoaded(page);
+    await tabToAndPress(page, stepLink(page, 3));
+    await expectScreen(page, "purchase");
     await expect(page).toHaveURL(/#\/purchase$/);
     await page.goBack();
-    await expectStage(page, 1);
+    await expectScreen(page, "persona");
     await page.goForward();
-    await expectStage(page, 3);
+    await expectScreen(page, "purchase");
     await expect(stageHeading(page)).toBeVisible();
+    // No step is locked: the last one says what it needs instead of showing a verdict.
+    await tabToAndPress(page, stepLink(page, 4));
+    await expectScreen(page, "verdict");
+    await expect(page).toHaveURL(/#\/verdict$/);
+    await expect(page.getByRole("main").getByText("There is no result to show yet")).toBeVisible();
+    await expect(page.getByTestId("verdict-summary")).toHaveCount(0);
   });
 });

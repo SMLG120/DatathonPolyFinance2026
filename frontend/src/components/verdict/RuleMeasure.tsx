@@ -2,6 +2,7 @@ import type { RuleType, UnknownCause, VerdictStatus } from "@/lib/contracts";
 import { formatFraction, formatFractionRange, formatGap, isRange } from "@/lib/format";
 import { limitNoun, ruleDirection } from "@/lib/rules";
 import { measuredNoun, unknownCauseText } from "@/lib/verdict";
+import { t } from "@/lib/i18n";
 
 export interface RuleMeasureProps {
   ruleType: RuleType;
@@ -44,7 +45,7 @@ export function RuleMeasure({ ruleType, status, measured, limit, gap, unknownCau
         <dd className="tabular text-lg font-semibold text-ink" data-testid="rule-measured">
           {measuredText(ruleType, measured)}
         </dd>
-        {ranged ? <dd className="text-sm text-ink-muted">Proven at least the first figure; possibly as much as the second.</dd> : null}
+        {ranged ? <dd className="text-sm text-ink-muted">{t("Proven at least the first figure; possibly as much as the second.")}</dd> : null}
       </div>
       <div>
         <dt className="text-sm font-semibold text-ink-muted">{noun}</dt>
@@ -53,7 +54,7 @@ export function RuleMeasure({ ruleType, status, measured, limit, gap, unknownCau
         </dd>
       </div>
       <div>
-        <dt className="text-sm font-semibold text-ink-muted">Gap</dt>
+        <dt className="text-sm font-semibold text-ink-muted">{t("Gap")}</dt>
         <dd className="tabular text-lg font-semibold text-ink" data-testid="rule-gap">
           {formatGap(gap, ruleDirection(ruleType), noun.toLowerCase(), measureDecimals(ruleType))}
         </dd>
@@ -63,8 +64,7 @@ export function RuleMeasure({ ruleType, status, measured, limit, gap, unknownCau
           <dt className="text-sm font-semibold text-ink-muted">{status === "UNKNOWN" ? "Why this is unknown" : "What is still unknown"}</dt>
           <dd className="text-ink">
             {status === "UNKNOWN" ? "The limit lies inside the possible range, because " : "Part of the range is unproven, because "}
-            {unknownCausesText(unknownCauses)}. Missing data is never counted as zero.
-          </dd>
+            {unknownCausesText(unknownCauses)}{t(". Missing data is never counted as zero.")}</dd>
         </div>
       ) : null}
     </dl>

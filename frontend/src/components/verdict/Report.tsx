@@ -1,14 +1,14 @@
 "use client";
 
 import { FeasibilityTable } from "@/components/portfolio/FeasibilityTable";
-import { LinkButton } from "@/components/ui/Button";
-import { stageHref } from "@/state/stage";
 import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
-import type { CheckResult, InvestigationJob, Objective, Policy } from "@/lib/contracts";
+import { PortfolioChecked } from "@/components/portfolio/PortfolioChecked";
+import type { CheckResult, InvestigationJob, Objective, Policy, Portfolio } from "@/lib/contracts";
 import { formatCoverage, formatDate, formatDateTime, formatFraction } from "@/lib/format";
+import { t } from "@/lib/i18n";
 import { describePurchase, FUNDING_STATEMENT, instrumentName, type InstrumentRegistry } from "@/lib/portfolio";
 import { coverageText } from "@/lib/verdict";
 import { CoverageBlock, GoalContextList, MaxCompliantBlock } from "./ContextPanels";
@@ -17,6 +17,7 @@ import { ExposurePanel } from "./ExposurePanel";
 import { ruleLookup, RuleResultsList, StartingFindingsList } from "./RuleResults";
 import { ScenarioPanel } from "./ScenarioPanel";
 import { VerdictSummary, type SummaryLink } from "./VerdictSummary";
+import { WhatNext } from "./WhatNext";
 
 export interface ReportProps {
   /** The finished job the report belongs to: its explanation sentences and how it was run. */
@@ -28,6 +29,12 @@ export interface ReportProps {
   /** Objectives to quote when the policy version is not held. */
   objectives: Objective[];
   instruments: InstrumentRegistry;
+  /** The persona's scenario portfolio, to name the portfolio stored with the job as the original or a customized one. */
+  scenarioPortfolio?: Portfolio | null;
+  /** Whose fictional portfolio this is, for the caption of the "Portfolio checked" table. */
+  personaName?: string;
+  /** Prints this report, or saves it as PDF, through the browser. The export button is shown only when this is given. */
+  onPrint?: () => void;
 }
 
 /** "SPY complete · XIU.TO partial (98.0%)": what stays visible while the coverage section is closed. */
@@ -55,7 +62,7 @@ function coverageHint(result: CheckResult): string {
  * Every figure is a field of the engine's result. Nothing is added, subtracted
  * or counted here.
  */
-export function Report({ job, result, policy, objectives, instruments }: ReportProps) {
+export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona", onPrint }: ReportProps) {
   const lookup = ruleLookup(policy);
   const purchase = result.purchase_request;
   const feasibility = result.feasibility;
@@ -76,42 +83,41 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         links={links}
         scope={
           <>
-            After the purchase of <span className="tabular">{describePurchase(purchase)}</span>
+            {t("After the purchase of")} <span className="tabular">{describePurchase(purchase)}</span>
           </>
         }
       >
 
         {feasibility ? (
           <p className="text-ink" data-testid="feasibility" data-feasibility={feasibility.status}>
-            <span className="font-semibold">Feasibility, reported separately from the rules:</span>{" "}
+            <span className="font-semibold">{t("Feasibility, reported separately from the rules:")}</span>{" "}
             {feasibility.status === "FEASIBLE" ? "the purchase can be funded from cash. Cash goes from " : "not feasible with cash alone. Cash would go from "}
-            <span className="tabular">{formatFraction(feasibility.cash_before)}</span> to{" "}
-            <span className="tabular font-semibold">{formatFraction(feasibility.cash_after)}</span> of the portfolio.
-          </p>
+            <span className="tabular">{formatFraction(feasibility.cash_before)}</span> {t("to")}{" "}
+            <span className="tabular font-semibold">{formatFraction(feasibility.cash_after)}</span> {t("of the portfolio.")}</p>
         ) : null}
         <p className="text-ink" data-testid="starting-breaches" data-count={startingBreaches}>
-          <span className="font-semibold">Before any purchase:</span>{" "}
+          <span className="font-semibold">{t("Before any purchase:")}</span>{" "}
           {startingBreaches === 0 ? (
             "no confirmed rule was already failing."
           ) : (
             <>
-              <span className="tabular">{startingBreaches}</span> confirmed {startingBreaches === 1 ? "rule was" : "rules were"} already not respected.{" "}
-              {startingBreaches === 1 ? "It is" : "They are"} listed apart from the effect of the purchase, below.
-            </>
+              <span className="tabular">{startingBreaches}</span> {t("confirmed")} {startingBreaches === 1 ? "rule was" : "rules were"} {t("already not respected.")}{" "}
+              {startingBreaches === 1 ? "It is" : "They are"} {t("listed apart from the effect of the purchase, below.")}</>
           )}
         </p>
         {summary.rules_not_evaluated > 0 ? (
           <p className="text-ink" data-testid="not-evaluated-count">
-            <span className="tabular">{summary.rules_not_evaluated}</span> {summary.rules_not_evaluated === 1 ? "rule" : "rules"} of this policy version{" "}
-            {summary.rules_not_evaluated === 1 ? "was" : "were"} not evaluated; {summary.rules_not_evaluated === 1 ? "it is" : "they are"} listed with
-            the confirmed rules.
-          </p>
+            <span className="tabular">{summary.rules_not_evaluated}</span> {summary.rules_not_evaluated === 1 ? "rule" : "rules"} {t("of this policy version")}{" "}
+            {summary.rules_not_evaluated === 1 ? "was" : "were"} {t("not evaluated;")} {summary.rules_not_evaluated === 1 ? "it is" : "they are"} {t("listed with the confirmed rules.")}</p>
         ) : null}
       </VerdictSummary>
-      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton></div>
+      <WhatNext result={result} onPrint={onPrint} />
+
+      {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
+      {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}
 
       {result.policy_consistency.status === "PROVEN_CONFLICT" ? (
-        <Notice tone="error" title="Two confirmed rules cannot both be respected" role="alert">
+        <Notice tone="error" title={t("Two confirmed rules cannot both be respected")} role="alert">
           <ul className="list-disc space-y-1 pl-5" data-testid="policy-conflicts">
             {result.policy_consistency.conflicts.map((conflict) => (
               <li key={conflict.rule_ids.join("|")}>{conflict.calculation}</li>
@@ -124,14 +130,14 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         id="report-rules"
         focusableHeading
         figures
-        title="What fits and what doesn’t"
-        description="Your confirmed limit compared with this simulated purchase."
+        title={t("What fits and what doesn’t")}
+        description={t("Your confirmed limit compared with this simulated purchase.")}
       >
         {result.rule_results.length > 0 || result.rules_not_evaluated.length > 0 ? (
           <RuleResultsList result={result} lookup={lookup} />
         ) : (
-          <EmptyBlock title="No confirmed rule was checked">
-            <p>This report contains no rule result, so it says nothing about whether the purchase fits the rules.</p>
+          <EmptyBlock title={t("No confirmed rule was checked")}>
+            <p>{t("This report contains no rule result, so it says nothing about whether the purchase fits the rules.")}</p>
           </EmptyBlock>
         )}
       </Panel>
@@ -140,8 +146,8 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         id="report-exposure"
         focusableHeading
         figures
-        title="Explore my exposures"
-        description="The same company can be held directly and inside a fund. Each part is shown, and the part that cannot be measured is drawn as a range."
+        title={t("Explore my exposures")}
+        description={t("The same company can be held directly and inside a fund. Each part is shown, and the part that cannot be measured is drawn as a range.")}
       >
         <ExposurePanel result={result} lookup={lookup} openIssuerId={targetIssuerId} />
       </Panel>
@@ -151,29 +157,29 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
           id="report-starting"
           focusableHeading
           figures
-          title="Already not respected before the purchase"
+          title={t("Already not respected before the purchase")}
           eyebrow="Separate from the effect of the purchase"
-          description="These describe the portfolio as it is today. They would be there whether or not anything is bought. What the purchase adds to each is shown as its own line."
+          description={t("These describe the portfolio as it is today. They would be there whether or not anything is bought. What the purchase adds to each is shown as its own line.")}
         >
           <StartingFindingsList result={result} lookup={lookup} />
         </Panel>
       ) : null}
 
-      <Disclosure id="report-details" title="More analysis and sources" hint={coverageHint(result)} figures>
+      <Disclosure id="report-details" title={t("More analysis and sources")} hint={coverageHint(result)} figures>
       <div className="space-y-4">
       {feasibility ? (
-        <Panel collapsible id="report-cash" focusableHeading figures title="The purchase and the cash that funds it" description={FUNDING_STATEMENT}>
+        <Panel collapsible id="report-cash" focusableHeading figures title={t("The purchase and the cash that funds it")} description={t(FUNDING_STATEMENT)}>
           <FeasibilityTable feasibility={feasibility} purchase={purchase} instrumentName={instrumentName(instruments, purchase.instrument_id)} />
         </Panel>
       ) : null}
 
       {result.scenario ? (
-        <Panel collapsible id="report-replay" focusableHeading figures title="Historical replay" eyebrow="A separate test, not a forecast">
+        <Panel collapsible id="report-replay" focusableHeading figures title={t("Historical replay")} eyebrow="A separate test, not a forecast">
           <ScenarioPanel result={result} scenario={result.scenario} />
         </Panel>
       ) : null}
 
-      <Panel collapsible id="report-max" focusableHeading figures title="Largest purchase that respects every confirmed rule" eyebrow="Shown only when it can be supported">
+      <Panel collapsible id="report-max" focusableHeading figures title={t("Largest purchase that respects every confirmed rule")} eyebrow="Shown only when it can be supported">
         <MaxCompliantBlock result={result} lookup={lookup} maxCompliant={result.max_compliant} />
       </Panel>
 
@@ -182,14 +188,14 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         focusableHeading
         figures
         title="Context for the objectives"
-        eyebrow="Qualitative — not scored"
+        eyebrow="Qualitative: not scored"
         description="Objectives are not rules. What follows relates measured values to the words of each objective, without a pass or a fail."
       >
         <GoalContextList result={result} objectives={policy?.objectives ?? objectives} />
       </Panel>
 
-      <Disclosure id="report-coverage" figures title="Data coverage" hint={coverageHint(result)}>
-        <p className="mb-4 max-w-prose text-ink-muted">How much of each fund&apos;s holdings behind these numbers was actually reported.</p>
+      <Disclosure id="report-coverage" figures title={t("Data coverage")} hint={coverageHint(result)}>
+        <p className="mb-4 max-w-prose text-ink-muted">{t("How much of each fund&apos;s holdings behind these numbers was actually reported.")}</p>
         <CoverageBlock funds={result.data_coverage} instrumentName={(fundId) => instrumentName(instruments, fundId)} />
       </Disclosure>
 
@@ -197,36 +203,35 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         <Disclosure
           id="report-sentences"
           figures
-          title="The result in sentences"
+          title={t("The result in sentences")}
           hint={`${job.explanation.length} ${job.explanation.length === 1 ? "sentence" : "sentences"}, each linked to its evidence`}
         >
           <p className="mb-4 max-w-prose text-ink-muted">
-            The sentences restate the figures above. The verdict is the list of confirmed rules, decided by the calculation, never by these words.
-          </p>
+            {t("The sentences restate the figures above. The verdict is the list of confirmed rules, decided by the calculation, never by these words.")}</p>
           <ExplanationList result={result} statements={job.explanation} />
         </Disclosure>
       ) : null}
 
-      <Disclosure id="report-about" title="About this report" hint="Versions, dates and what this simulation leaves out">
+      <Disclosure id="report-about" title={t("About this report")} hint={t("Versions, dates and what this simulation leaves out")}>
         <Facts className="sm:grid-cols-3">
-          <Fact label="Confirmed policy">
+          <Fact label={t("Confirmed policy")}>
             {result.policy_version === null ? "None" : `Version ${result.policy_version}`}
             {result.policy_id ? <span className="block break-all font-mono text-sm text-ink-muted">{result.policy_id}</span> : null}
           </Fact>
-          <Fact label="Valuation date">
+          <Fact label={t("Valuation date")}>
             <span className="tabular">{formatDate(result.valuation_date)}</span>
           </Fact>
-          <Fact label="Calculation version">
+          <Fact label={t("Calculation version")}>
             <span className="break-all font-mono text-sm">{result.calculation_version}</span>
           </Fact>
-          <Fact label="Investigation">
+          <Fact label={t("Investigation")}>
             <span className="break-all font-mono text-sm">{job.id}</span>
           </Fact>
-          <Fact label="Finished">
+          <Fact label={t("Finished")}>
             <span className="tabular">{formatDateTime(job.updated_at)}</span>
           </Fact>
-          <Fact label="How it was run">{job.agent.mode === "MODEL" ? `A model chose the tool calls (${job.agent.model_id ?? "model not reported"})` : "Fixed sequence of tools, no model"}</Fact>
-          <Fact label="Consistency of the confirmed rules" wide>
+          <Fact label={t("How it was run")}>{job.agent.mode === "MODEL" ? `A model chose the tool calls (${job.agent.model_id ?? "model not reported"})` : "Fixed sequence of tools, no model"}</Fact>
+          <Fact label={t("Consistency of the confirmed rules")} wide>
             <span data-testid="policy-consistency" data-consistency={result.policy_consistency.status}>
               {result.policy_consistency.status === "PROVEN_CONFLICT"
                 ? "A contradiction between confirmed rules was proven (see the notice at the top of the report)."
@@ -238,7 +243,7 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         </Facts>
         {result.disclosures.length > 0 ? (
           <div className="mt-4">
-            <h3 className="font-semibold text-ink">What this simulation is and is not</h3>
+            <h3 className="font-semibold text-ink">{t("What this simulation is and is not")}</h3>
             <ul className="mt-1 list-disc space-y-1 pl-5 text-ink" data-testid="disclosures">
               {result.disclosures.map((disclosure) => (
                 <li key={disclosure}>{disclosure}</li>

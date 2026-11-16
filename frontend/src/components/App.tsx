@@ -12,11 +12,12 @@ import { PurchaseStage } from "@/components/stages/PurchaseStage";
 import { VerdictStage } from "@/components/stages/VerdictStage";
 import { AnnouncerProvider } from "@/components/ui/Announcer";
 import { DEFAULT_PERSONA } from "@/content/personas";
+import { t, useLocale } from "@/lib/i18n";
 import { RuntimeProvider, useRuntime } from "@/state/runtime";
 import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
 
-const APP_NAME = "Before You Buy — fictional simulation";
+const APP_NAME = "ETHOS: fictional simulation";
 
 const subscribeToNothing = () => () => {};
 
@@ -58,6 +59,8 @@ function PageTitle({ children }: { children: string }) {
 
 /** Shows the current stage with its page title; on a stage change moves focus to the new heading. */
 function StageRouter() {
+  const [locale] = useLocale();
+  void locale;
   const stage = useStage();
   const { state, actions } = useWorkflow();
   const shownStage = useRef(stage);
@@ -80,7 +83,7 @@ function StageRouter() {
 
   return (
     <>
-      <PageTitle>{`${SCREEN_TITLES[stage]} — ${APP_NAME}`}</PageTitle>
+      <PageTitle>{`${SCREEN_TITLES[stage]}: ${APP_NAME}`}</PageTitle>
       <StageView stage={stage} />
     </>
   );
@@ -92,7 +95,7 @@ function Gate() {
     <AppShell>
       {needsAccessCode ? (
         <>
-          <PageTitle>{`Access code — ${APP_NAME}`}</PageTitle>
+          <PageTitle>{`Access code: ${APP_NAME}`}</PageTitle>
           <AccessCodeForm />
         </>
       ) : (
@@ -104,6 +107,10 @@ function Gate() {
 
 /** Everything below the runtime: announcer, workflow state, evidence drawer and the shell. Tests render this with an injected runtime. */
 export function AppContent() {
+  // Subscribe here so locale changes refresh every stage without resetting the
+  // in-memory workflow or its form state.
+  const [locale] = useLocale();
+  void locale;
   return (
     <AnnouncerProvider>
       <WorkflowProvider>
@@ -128,11 +135,11 @@ export function App() {
     return (
       <div className="flex min-h-screen flex-col">
         <PageTitle>{APP_NAME}</PageTitle>
-        <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{SIMULATION_LABEL}</div>
+        <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{t(SIMULATION_LABEL)}</div>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">Before You Buy</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">ETHOS</h1>
           <p className="mt-2 text-lg text-ink-muted" role="status">
-            Loading the simulation…
+            {t("Loading the simulation…")}
           </p>
         </main>
       </div>

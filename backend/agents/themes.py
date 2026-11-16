@@ -151,18 +151,21 @@ DIRECTION_VETO: dict[str, re.Pattern[str]] = {
     "AT_MOST": re.compile(r"\b(?:at\s+least|no\s+less\s+than|not\s+less\s+than|no\s+fewer\s+than|minimum|min|floor|"
                           r"or\s+(?:more|higher|above|greater)|and\s+(?:more|above|up|higher)|ou\s+plus|o\s+m[aá]s|oder\s+mehr|"
                           r"au\s+moins|pas\s+moins\s+de|minimale?|al\s+menos|no\s+menos\s+de|como\s+m[ií]nimo|m[ií]nimo|"
-                          r"mindestens|wenigstens)\b", re.IGNORECASE),
+                          r"mindestens|wenigstens|atleast|at\s+lest|minimun)\b", re.IGNORECASE),
     "AT_LEAST": re.compile(r"\b(?:at\s+most|no\s+more\s+than|not\s+more\s+than|maximum|max|cap(?:ped)?|ceiling|up\s+to|"
                            r"or\s+(?:less|lower|below|under|fewer)|and\s+(?:less|below|under|lower)|ou\s+moins|o\s+menos|oder\s+weniger|"
                            r"au\s+plus|pas\s+plus\s+de|maximale?|jusqu['’]\s*[àa]|como\s+m[aá]ximo|m[aá]ximo|no\s+m[aá]s\s+de|"
-                           r"h[öo]chstens|maximal)\b", re.IGNORECASE),
+                           r"h[öo]chstens|maximal|atmost|maximun)\b", re.IGNORECASE),
 }
 
 # "more than 10%" read as a cap, "less than 10%" read as a minimum: the opposite direction unless a negation comes
 # before it in the sentence ("never put more than", "no company ever makes up more than", "pas moins de").
 COMPARATIVE_VETO: dict[str, re.Pattern[str]] = {
-    "AT_MOST": re.compile(r"\b(?:more|greater|higher|bigger|larger)\s+than\b|\bplus\s+(?:de|que)\b|\bm[aá]s\s+(?:de|que)\b|\bmehr\s+als\b", re.IGNORECASE),
-    "AT_LEAST": re.compile(r"\b(?:less|fewer|lower|smaller)\s+than\b|\bmoins\s+(?:de|que)\b|\bmenos\s+(?:de|que)\b|\bweniger\s+als\b", re.IGNORECASE),
+    # One-word comparatives ("above 10%", "under 10%") count only right before a number: "over the next 5 years" is not one.
+    "AT_MOST": re.compile(r"\b(?:more|greater|higher|bigger|larger)\s+than\b|\bplus\s+(?:de|que)\b|\bm[aá]s\s+(?:de|que)\b|\bmehr\s+als\b|"
+                          r"\b(?:above|over|beyond|exceeding|au-dessus\s+de|por\s+encima\s+de|[üu]ber)\s*\d", re.IGNORECASE),
+    "AT_LEAST": re.compile(r"\b(?:less|fewer|lower|smaller)\s+than\b|\bmoins\s+(?:de|que)\b|\bmenos\s+(?:de|que)\b|\bweniger\s+als\b|"
+                           r"\b(?:below|under|beneath|en\s+dessous\s+de|sous|por\s+debajo\s+de|unter)\s*\d", re.IGNORECASE),
 }
 COMPARATIVE_NEGATION_RE = re.compile(r"\b(?:no|not|never|nothing|without|none|nobody|neither|nor|cannot|refuse\w*|avoid\w*|"
                                      r"ne|pas|jamais|sans|nunca|ni|kein\w*|nicht|nie)\b|n['’]t\b",

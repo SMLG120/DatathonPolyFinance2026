@@ -469,7 +469,7 @@ def build_investigation_registry(context: InvestigationContext) -> ToolRegistry:
         "additionalProperties": False,
     }
     specs = [
-        ToolSpec("get_portfolio", "Returns the fictional portfolio of the persona: cash and position weights as portfolio fractions.",
+        ToolSpec("get_portfolio", "Returns the fictional portfolio being checked (the persona's, or the one the user customized): cash and position weights as portfolio fractions.",
                  _NO_ARGUMENTS, get_portfolio, lambda _a: f"Persona {context.portfolio['persona_id']}.", portfolio_summary,
                  lambda _o: context.evidence("cash_weight", "position_weight", state="STARTING")),
         ToolSpec("get_policy", "Returns the stored policy version being checked: objectives and rules with their status and confirmed numbers.",

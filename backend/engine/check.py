@@ -156,6 +156,9 @@ def analyse(
 
 # --------------------------------------------------------------------------- evidence
 
+CUSTOMIZED_WEIGHT_ASSUMPTION = "Weight entered by the user in a customized fictional portfolio; it is not the persona scenario's weight."
+
+
 class Evidence:
     """Collects evidence records with deterministic ids; a repeated id returns the first record."""
 
@@ -205,8 +208,12 @@ class Evidence:
 class _Document:
     """Builds the check_result sections from an analysis."""
 
-    def __init__(self, analysis: dict, portfolio: dict, policy: Optional[dict], request: dict, data_sources: Optional[dict]):
+    def __init__(self, analysis: dict, portfolio: dict, policy: Optional[dict], request: dict, data_sources: Optional[dict],
+                 portfolio_customized: bool = False):
         self.a = analysis
+        # Starting weights of a portfolio the user edited are still fictional, but they are the user's numbers, not the
+        # persona scenario's: each such record says so (the same way the hypothetical purchase says who asked for it).
+        self.weight_assumptions = [CUSTOMIZED_WEIGHT_ASSUMPTION] if portfolio_customized else []
         self.portfolio = portfolio
         self.request = request
         self.requested = request["instrument_id"]
@@ -241,10 +248,13 @@ class _Document:
 
     def _weights(self) -> None:
         feasibility = self.sim["feasibility"]
-        self.ev.add("ev-cash-start", "FICTIONAL_SCENARIO", "cash_weight", feasibility["cash_before"], "PORTFOLIO", self.portfolio_id, state="STARTING")
+        self.ev.add("ev-cash-start", "FICTIONAL_SCENARIO", "cash_weight", feasibility["cash_before"], "PORTFOLIO", self.portfolio_id, state="STARTING",
+                    assumptions=self.weight_assumptions)
         for instrument_id, weight in held_positions(self.sim["starting_portfolio"]):
-            self.ev.add(f"ev-w-{instrument_id}-start", "FICTIONAL_SCENARIO", "position_weight", weight, "INSTRUMENT", instrument_id, state="STARTING")
-        start = self.ev.add(f"ev-w-{self.requested}-start", "FICTIONAL_SCENARIO", "position_weight", feasibility["starting_direct_weight"], "INSTRUMENT", self.requested, state="STARTING")
+            self.ev.add(f"ev-w-{instrument_id}-start", "FICTIONAL_SCENARIO", "position_weight", weight, "INSTRUMENT", instrument_id, state="STARTING",
+                        assumptions=self.weight_assumptions)
+        start = self.ev.add(f"ev-w-{self.requested}-start", "FICTIONAL_SCENARIO", "position_weight", feasibility["starting_direct_weight"], "INSTRUMENT", self.requested, state="STARTING",
+                            assumptions=self.weight_assumptions)
         target = self.ev.add(
             f"ev-w-{self.requested}-target", "FICTIONAL_SCENARIO", "position_weight", feasibility["target_direct_weight"], "INSTRUMENT", self.requested,
             state="PROPOSED", assumptions=["Hypothetical purchase requested by the user; not executed."],
@@ -737,6 +747,7 @@ def check_rules(
     draft_rules: Optional[list] = None,
     data_sources: Optional[dict] = None,
     include_max_compliant: bool = True,
+    portfolio_customized: bool = False,
 ) -> dict:
     """Evaluate one purchase request and return a full ``check_result`` document.
 
@@ -749,6 +760,9 @@ def check_rules(
     (``{"prices": ..., "fx_usdcad": ...}``) so price and FX evidence can be
     labelled FACT. ``include_max_compliant=False`` is used by the boundary
     re-run: the section is then WITHHELD with a reason saying so.
+    ``portfolio_customized=True`` says the portfolio's weights were entered by the user (contracts/api.md
+    section 2a) and not taken from the persona scenario: the evidence records of the starting cash and
+    position weights then carry that as an assumption. No figure, status or formula depends on it.
     """
     refuse_unusable_request(purchase_request)
     validate_purchase_request(purchase_request)
@@ -766,7 +780,7 @@ def check_rules(
         if not analysis["ok"]:
             return _invalid_result(analysis, portfolio, policy, purchase_request, analysis["sim"]["execution"])
         result = _build(analysis, portfolio, policy, purchase_request, instruments, holdings, market_data, controversies,
-                        draft_rules, data_sources, include_max_compliant)
+                        draft_rules, data_sources, include_max_compliant, portfolio_customized)
         if non_finite_paths(result, "result", 1):  # last line of defence: no NaN or infinity ever leaves the engine
             raise ArithmeticError("a computed value is not finite")
         return result
@@ -779,8 +793,9 @@ def check_rules(
         return _invalid_result({"preview": draft_rules is not None}, portfolio, policy, purchase_request, execution)
 
 
-def _build(analysis, portfolio, policy, request, instruments, holdings, market_data, controversies, draft_rules, data_sources, include_max) -> dict:
-    doc = _Document(analysis, portfolio, policy, request, data_sources)
+def _build(analysis, portfolio, policy, request, instruments, holdings, market_data, controversies, draft_rules, data_sources, include_max,
+           portfolio_customized=False) -> dict:
+    doc = _Document(analysis, portfolio, policy, request, data_sources, portfolio_customized)
     ev, sim, exposure = doc.ev, analysis["sim"], analysis["exposure"]
     preview, evaluated, results = analysis["preview"], analysis["evaluated"], analysis["results"]
     evaluated_ids = {rule["rule_id"] for rule in evaluated}

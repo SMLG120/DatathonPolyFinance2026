@@ -49,8 +49,8 @@ describe("other status badges", () => {
         <RuleStatusBadge status="SUPERSEDED" />
       </>,
     );
-    expect(screen.getByText("Proposed — inactive")).toBeInTheDocument();
-    expect(screen.getByText("Confirmed — active")).toBeInTheDocument();
+    expect(screen.getByText("Proposed: inactive")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed: active")).toBeInTheDocument();
     expect(screen.getByText("Superseded")).toBeInTheDocument();
   });
 

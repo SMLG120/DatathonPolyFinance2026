@@ -3,6 +3,7 @@
 import { EvidenceButton } from "@/components/evidence/EvidenceProvider";
 import { Badge } from "@/components/ui/Badge";
 import type { CheckResult, ExplanationStatement } from "@/lib/contracts";
+import { t } from "@/lib/i18n";
 
 interface Origin {
   label: string;
@@ -52,7 +53,7 @@ export function ExplanationList({ result, statements }: { result: CheckResult; s
               <Badge tone="neutral">{origin.label}</Badge>
               <span className="text-sm text-ink-muted">{origin.meaning}</span>
             </div>
-            {statement.evidence_ids.length > 0 ? <EvidenceButton label="this sentence" result={result} evidenceIds={statement.evidence_ids} /> : null}
+            {statement.evidence_ids.length > 0 ? <EvidenceButton label={t("this sentence")} result={result} evidenceIds={statement.evidence_ids} /> : null}
           </li>
         );
       })}

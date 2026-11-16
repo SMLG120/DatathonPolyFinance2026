@@ -51,6 +51,7 @@ function Harness({ rule, others = [], personaId, purchase = null, attempted = fa
         personaId={personaId}
         policy={null}
         purchase={purchase}
+        customPortfolio={null}
         thresholdText={text}
         onThresholdChange={setText}
         buildPreviewRules={(threshold) => previewRuleSet([], [draftRule(rule, threshold), ...others.flatMap((other) => (other.threshold === null ? [] : [draftRule(other, other.threshold)]))])}
@@ -88,7 +89,7 @@ describe("ProposedRuleCard — a rule proposed by the system (the recorded inter
     expect(within(card).getByTestId("rule-original-words")).toHaveTextContent(rule.original_words);
     expect(within(card).getByTestId("rule-scope")).toHaveTextContent(rule.scope_description);
     expect(within(card).getAllByText("Proposed by the system").length).toBeGreaterThan(0);
-    expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
     expect(card).toHaveAttribute("data-rule-origin", "SYSTEM_PROPOSED");
   });
 
@@ -139,7 +140,7 @@ describe("ProposedRuleCard — a rule from the fictional scenario", () => {
     const { card, field } = setup({ rule: scenarioRule("max_issuer_exposure"), personaId: "robert" });
     expect(field).toHaveValue("10");
     expect(within(card).getAllByText("From the fictional scenario").length).toBeGreaterThan(0);
-    expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
     expect(within(card).queryByTestId("threshold-empty-note")).toBeNull();
     expect(card).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
   });
@@ -153,7 +154,7 @@ describe("ProposedRuleCard — draft preview", () => {
   it("is labelled as a preview of a draft, never as the confirmed policy", () => {
     const { card } = setup(withPurchase());
     expect(within(card).getByTestId("draft-preview")).toHaveTextContent(PREVIEW_LABEL);
-    expect(PREVIEW_LABEL).toBe("Preview with draft threshold — not your confirmed policy");
+    expect(PREVIEW_LABEL).toBe("Preview with draft threshold: not your confirmed policy");
   });
 
   it("previews nothing without a purchase to try the number on, and says so", () => {
@@ -229,7 +230,7 @@ describe("ProposedRuleCard — draft preview", () => {
     const { card, field } = setup(withPurchase());
     fireEvent.change(field, { target: { value: "20" } });
     await within(card).findByTestId("draft-preview-result");
-    expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
     expect(screen.queryByTestId("policy-rule-card")).toBeNull();
   });
 });
@@ -245,7 +246,7 @@ describe("PolicyRuleCard, on the recorded policies", () => {
     );
     const card = screen.getByTestId("policy-rule-card");
     expect(rule.status).toBe("CONFIRMED");
-    expect(within(card).getByText("Confirmed — active")).toBeInTheDocument();
+    expect(within(card).getByText("Confirmed: active")).toBeInTheDocument();
     expect(within(card).getByTestId("policy-rule-threshold")).toHaveTextContent("10.0%");
     expect(within(card).queryByRole("textbox")).toBeNull();
     expect(within(card).queryByRole("slider")).toBeNull();

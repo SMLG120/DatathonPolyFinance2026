@@ -31,10 +31,11 @@ def test_tp01_every_contract_route_has_an_event_and_a_handler():
     events = set(zip(re.findall(r"^ {12}Method: (\w+)$", TEMPLATE, re.M), re.findall(r"^ {12}Path: (\S+)$", TEMPLATE, re.M)))
     routes = {f"{method} {path}" for method, path in events}
     assert routes == {"GET /portfolios/{persona_id}", "POST /rules/interpret", "POST /rules/confirm", "POST /check",
-                      "POST /investigations", "GET /investigations/{id}", "POST /investigations/{id}/challenge"}
+                      "POST /investigations", "GET /investigations/{id}", "POST /investigations/{id}/challenge",
+                      "POST /evidence/investigate"}
     api = Api(store=None, policies=None, snapshots=None, lambda_client=None, config=None, clock=None)
     assert set(api._routes) == routes
-    assert "$default" not in block("ApiFunction") and len(re.findall(r"^ {12}PayloadFormatVersion: \"2\.0\"$", TEMPLATE, re.M)) == 7
+    assert "$default" not in block("ApiFunction") and len(re.findall(r"^ {12}PayloadFormatVersion: \"2\.0\"$", TEMPLATE, re.M)) == 8
     assert "DefaultAuthorizer: AccessCodeAuthorizer" in block("HttpApi")
 
 

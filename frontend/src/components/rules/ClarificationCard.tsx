@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CheckIcon, ErrorIcon, InfoIcon } from "@/components/ui/icons";
 import type { Clarification } from "@/lib/contracts";
+import { t } from "@/lib/i18n";
 
 export interface ClarificationCardProps {
   clarification: Clarification;
@@ -42,22 +43,20 @@ export function ClarificationCard({ clarification, chosenOptionId, onChoose, out
           </h3>
           {chosenOptionId ? (
             <Badge tone="accent" icon={<CheckIcon size={16} />}>
-              Definition chosen
-            </Badge>
+              {t("Definition chosen")}</Badge>
           ) : (
             <Badge tone="unknown" dashed icon={<InfoIcon size={16} />}>
-              No rule written yet
-            </Badge>
+              {t("No rule written yet")}</Badge>
           )}
         </div>
         <figure>
-          <figcaption className="text-sm font-semibold text-ink-muted">The words in question</figcaption>
-          <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">&ldquo;{clarification.about_words}&rdquo;</blockquote>
+          <figcaption className="text-sm font-semibold text-ink-muted">{t("The words in question")}</figcaption>
+          <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">{t("&ldquo;")}{clarification.about_words}{t("&rdquo;")}</blockquote>
         </figure>
 
         {supported.length > 0 ? (
           <fieldset aria-describedby={showError ? errorId : undefined}>
-            <legend className="font-semibold text-ink">Which definition do you mean?</legend>
+            <legend className="font-semibold text-ink">{t("Which definition do you mean?")}</legend>
             <div className="mt-2 space-y-2">
               {supported.map((option) => {
                 const optionId = `${groupName}-${option.option_id}`;
@@ -87,7 +86,7 @@ export function ClarificationCard({ clarification, chosenOptionId, onChoose, out
             {showError ? (
               <p id={errorId} className="mt-2 flex items-start gap-1.5 text-sm font-semibold text-fail">
                 <ErrorIcon size={16} className="mt-0.5 flex-none" />
-                <span>Choose one of the definitions above first.</span>
+                <span>{t("Choose one of the definitions above first.")}</span>
               </p>
             ) : null}
           </fieldset>
@@ -95,7 +94,7 @@ export function ClarificationCard({ clarification, chosenOptionId, onChoose, out
 
         {unsupported.length > 0 ? (
           <div>
-            <p className="font-semibold text-ink">Readings that cannot be checked here</p>
+            <p className="font-semibold text-ink">{t("Readings that cannot be checked here")}</p>
             <ul className="mt-1 space-y-2">
               {unsupported.map((option) => (
                 <li key={option.option_id} className="rounded-md border border-dashed border-line-strong bg-canvas p-3" data-testid="unsupported-option">

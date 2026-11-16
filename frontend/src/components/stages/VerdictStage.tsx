@@ -1,5 +1,7 @@
 "use client";
 
+import { createPortal } from "react-dom";
+import { PortfolioUsedLabel } from "@/components/portfolio/PortfolioChecked";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { EmptyBlock, ErrorBlock, LoadingBlock, UnknownBlock } from "@/components/ui/AsyncStates";
 import { Badge } from "@/components/ui/Badge";
@@ -7,13 +9,16 @@ import { Button, LinkButton } from "@/components/ui/Button";
 import { Notice } from "@/components/ui/Notice";
 import { Panel } from "@/components/ui/Panel";
 import { ExecutionState } from "@/components/verdict/ExecutionState";
+import { PrintReport, printDocumentTitle, useReportPrint } from "@/components/verdict/PrintReport";
 import { Report } from "@/components/verdict/Report";
-import type { InvestigationJob } from "@/lib/contracts";
+import type { InvestigationJob, Portfolio } from "@/lib/contracts";
 import { formatTime } from "@/lib/format";
 import { assessResult } from "@/lib/result";
 import { isTerminalJobStatus, verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
+import { useRuntime } from "@/state/runtime";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 const LEAD = "See whether your idea fits your limits. Open any figure to see its evidence.";
 
@@ -25,9 +30,18 @@ function reportLine(job: InvestigationJob): string {
   return "No readable result";
 }
 
-function ReportList({ reports, viewedId, onOpen }: { reports: InvestigationJob[]; viewedId: string | null; onOpen: (id: string) => void }) {
+interface ReportListProps {
+  reports: InvestigationJob[];
+  viewedId: string | null;
+  onOpen: (id: string) => void;
+  /** The persona's scenario portfolio and name, to say which portfolio each report was checked against. */
+  scenarioPortfolio: Portfolio | null;
+  personaName: string;
+}
+
+function ReportList({ reports, viewedId, onOpen, scenarioPortfolio, personaName }: ReportListProps) {
   return (
-    <Panel title="Reports of this session" tone="sunken" figures description="A report never changes after it is produced. Earlier ones stay available.">
+    <Panel title={t("Reports of this session")} tone="sunken" figures description={t("A report never changes after it is produced. Earlier ones stay available.")}>
       <ol className="space-y-2" data-testid="report-list">
         {reports.map((report, index) => {
           const viewing = report.id === viewedId;
@@ -40,17 +54,23 @@ function ReportList({ reports, viewedId, onOpen }: { reports: InvestigationJob[]
             >
               <p className="min-w-0 text-ink">
                 <span className="font-semibold">
-                  Report <span className="tabular">{index + 1}</span> · policy version <span className="tabular">{report.policy_version}</span>
+                  {t("Report")} <span className="tabular">{index + 1}</span> {t("· policy version")} <span className="tabular">{report.policy_version}</span>
                 </span>
                 <span className="block text-sm text-ink-muted">
-                  Started <span className="tabular">{formatTime(report.created_at)}</span> · {reportLine(report)}
+                  {t("Started")} <span className="tabular">{formatTime(report.created_at)}</span> · {reportLine(report)}
                 </span>
+                {/* Two reports under one policy version can differ by portfolio alone: each entry names its job's own. */}
+                {report.portfolio ? (
+                  <span className="mt-1 block">
+                    <PortfolioUsedLabel portfolio={report.portfolio} scenarioPortfolio={scenarioPortfolio} personaName={personaName} testId="report-entry-portfolio" />
+                  </span>
+                ) : null}
               </p>
               {viewing ? (
-                <Badge tone="accent">Shown above</Badge>
+                <Badge tone="accent">{t("Shown above")}</Badge>
               ) : (
                 <Button size="sm" onClick={() => onOpen(report.id)}>
-                  Open report {index + 1}
+                  {t("Open report")} {index + 1}
                 </Button>
               )}
             </li>
@@ -68,19 +88,26 @@ export function VerdictStage() {
   const job = derived.viewedInvestigation;
   const reports = state.investigationIds.map((reportId) => state.investigations[reportId]).filter((candidate): candidate is InvestigationJob => Boolean(candidate?.result));
   const isLatest = id === derived.latestInvestigationId;
+  const { config } = useRuntime();
+  // The print document exists only while the browser prints, and only for a report that can be read.
+  const { printing, print } = useReportPrint(job ? printDocumentTitle(job) : null);
 
   if (!id) {
     return (
       <StageFrame stage="verdict" lead={LEAD}>
         <EmptyBlock
-          title="There is no result yet"
+          title="There is no result to show yet"
           action={
-            <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Proposed purchase
+            <LinkButton href={stageHref("purchase")} size="sm" data-testid="empty-result-action">
+              Go to Test an idea
             </LinkButton>
           }
         >
-          <p>A verdict exists only after an investigation has run. Nothing is shown in its place.</p>
+          <p>A result exists only after you check an idea. Nothing is shown in its place.</p>
+          <p data-testid="empty-result-reload-note">
+            Results are kept only while this tab stays open: reloading the page or opening it from a saved link starts a new session.
+            Choose a profile, confirm your limits, then check your idea again.
+          </p>
         </EmptyBlock>
       </StageFrame>
     );
@@ -99,11 +126,10 @@ export function VerdictStage() {
           title={`You are reading an earlier report, checked against policy version ${job?.policy_version}`}
           action={
             <Button size="sm" onClick={() => actions.viewReport(null)}>
-              Back to the latest
-            </Button>
+              {t("Back to the latest")}</Button>
           }
         >
-          <p>It is shown exactly as it was produced. Later rule changes do not alter it.</p>
+          <p>{t("It is shown exactly as it was produced. Later rule changes do not alter it.")}</p>
         </Notice>
       ) : null}
 
@@ -119,8 +145,7 @@ export function VerdictStage() {
       {running ? (
         <p>
           <LinkButton href={stageHref("investigation")} size="sm">
-            See the investigation steps
-          </LinkButton>
+            {t("See the investigation steps")}</LinkButton>
         </p>
       ) : null}
       {pollProblem ? (
@@ -128,56 +153,55 @@ export function VerdictStage() {
           title={derived.polling.phase === "timed_out" ? "No final answer within the time limit" : "The status of the investigation could not be fetched"}
           message={derived.polling.error ?? "The investigation did not report a final status. It may still be running."}
           onRetry={actions.retryPolling}
-          retryLabel="Check again"
+          retryLabel={t("Check again")}
         >
-          <p>No verdict is shown, because none was received.</p>
+          <p>{t("No verdict is shown, because none was received.")}</p>
         </ErrorBlock>
       ) : null}
 
       {job?.status === "FAILED" ? (
-        <ErrorBlock title="This investigation failed, so there is no verdict" message={job.failure?.message ?? "The job ended without a result and gave no reason."}>
+        <ErrorBlock title={t("This investigation failed, so there is no verdict")} message={job.failure?.message ?? "The job ended without a result and gave no reason."}>
           <p data-testid="failure-code">
             {job.failure ? (
               <>
-                Reported by the service as <span className="font-mono text-[0.8125rem]">{job.failure.code}</span>.{" "}
+                {t("Reported by the service as")} <span className="font-mono text-[0.8125rem]">{job.failure.code}</span>.{" "}
               </>
             ) : null}
-            A failed run is not a pass and not a fail.{" "}
+            {t("A failed run is not a pass and not a fail.")}{" "}
             {job.failure?.retryable === false ? "Starting it again is not expected to help." : "You can start the investigation again from Proposed purchase."}
           </p>
         </ErrorBlock>
       ) : null}
 
       {job?.status === "SUCCEEDED" && job.result === null && job.clarification ? (
-        <UnknownBlock title="The investigation stopped to ask a question">
+        <UnknownBlock title={t("The investigation stopped to ask a question")}>
           <div className="space-y-2" data-testid="job-clarification">
             <p>
-              About &ldquo;{job.clarification.about_words}&rdquo;: {job.clarification.question}
+              {t("About &ldquo;")}{job.clarification.about_words}{t("&rdquo;:")} {job.clarification.question}
             </p>
             <ul className="list-disc space-y-1 pl-5">
               {job.clarification.options.map((option) => (
                 <li key={option.option_id}>
                   <span className="font-semibold">{option.label}</span>
-                  {option.supported ? "" : " (not supported)"} — {option.description}
+                  {option.supported ? "" : " (not supported)"}: {option.description}
                 </li>
               ))}
             </ul>
-            <p>Nothing was checked, so there is no verdict. State the request as an instrument and a final weight in Proposed purchase.</p>
+            <p>{t("Nothing was checked, so there is no verdict. State the request as an instrument and a final weight in Proposed purchase.")}</p>
           </div>
         </UnknownBlock>
       ) : null}
 
       {job?.status === "SUCCEEDED" && job.result === null && !job.clarification ? (
-        <UnknownBlock title="The investigation finished without a result">
-          <p>The job reported success but returned no report. Nothing can be concluded from it.</p>
+        <UnknownBlock title={t("The investigation finished without a result")}>
+          <p>{t("The job reported success but returned no report. Nothing can be concluded from it.")}</p>
         </UnknownBlock>
       ) : null}
 
       {job && assessment?.kind === "unreadable" ? (
-        <UnknownBlock title="The result could not be read">
+        <UnknownBlock title={t("The result could not be read")}>
           <p data-testid="result-unreadable">
-            The service answered, but not in the agreed format. No part of it is shown, because a partly read result could be mistaken for a verdict.
-          </p>
+            {t("The service answered, but not in the agreed format. No part of it is shown, because a partly read result could be mistaken for a verdict.")}</p>
         </UnknownBlock>
       ) : null}
 
@@ -195,12 +219,39 @@ export function VerdictStage() {
             policy={derived.policyFor(assessment.result)}
             objectives={state.objectives}
             instruments={state.portfolio.data?.instruments ?? {}}
+            scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+            personaName={state.portfolio.data?.scenario.persona.display_name}
+            onPrint={print}
           />
+          {/* A child of <body>, so the print style sheet can hide the whole application around it. */}
+          {printing
+            ? createPortal(
+                <PrintReport
+                  job={job}
+                  result={assessment.result}
+                  policy={derived.policyFor(assessment.result)}
+                  objectives={state.objectives}
+                  instruments={state.portfolio.data?.instruments ?? {}}
+                  scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+                  personaName={state.portfolio.data?.scenario.persona.display_name ?? null}
+                  testData={config.mode === "fixtures"}
+                />,
+                document.body,
+              )
+            : null}
 
         </>
       ) : null}
 
-      {reports.length > 1 ? <ReportList reports={reports} viewedId={id} onOpen={actions.viewReport} /> : null}
+      {reports.length > 1 ? (
+        <ReportList
+          reports={reports}
+          viewedId={id}
+          onOpen={actions.viewReport}
+          scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+          personaName={state.portfolio.data?.scenario.persona.display_name ?? "This persona"}
+        />
+      ) : null}
     </StageFrame>
   );
 }

@@ -8,6 +8,7 @@ import { EPS, formatFraction, formatFractionRange } from "@/lib/format";
 import { ruleParametersText, ruleStatusLabel, ruleTypeLabel } from "@/lib/rules";
 import { findRule, issuerName } from "@/lib/verdict";
 import { measuredText, RuleMeasure } from "./RuleMeasure";
+import { t } from "@/lib/i18n";
 
 const ROW_BORDER = {
   PASS: "border-line",
@@ -31,7 +32,7 @@ function BreachingSubjects({ result, subjects }: { result: CheckResult; subjects
   if (subjects.length === 0) return null;
   return (
     <div data-testid="breaching-subjects">
-      <p className="text-sm font-semibold text-ink-muted">Companies whose proven exposure causes the breach</p>
+      <p className="text-sm font-semibold text-ink-muted">{t("Companies whose proven exposure causes the breach")}</p>
       <ul className="mt-1 flex flex-wrap gap-x-5 gap-y-1 text-ink">
         {subjects.map((subject) => (
           <li key={subject.subject_id} className="tabular">
@@ -77,13 +78,11 @@ function RuleResultRow({ result, lookup, ruleResult }: { result: CheckResult; lo
         </p>
         {ruleResult.status === "UNKNOWN" ? (
           <p className="rounded-md bg-unknown-soft px-3 py-2 text-ink" data-testid="unknown-note">
-            <span className="font-semibold">Unknown is not a pass.</span> The data needed to decide is missing or partial, so this rule is reported as
-            not determined rather than assumed to be respected.
-          </p>
+            <span className="font-semibold">{t("Unknown is not a pass.")}</span> {t("The data needed to decide is missing or partial, so this rule is reported as not determined rather than assumed to be respected.")}</p>
         ) : null}
         <BreachingSubjects result={result} subjects={ruleResult.breaching_subjects} />
         <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink" data-testid="rule-starting" data-starting-status={ruleResult.starting.status}>
-          <span className="font-semibold text-ink-muted">Before the purchase:</span>
+          <span className="font-semibold text-ink-muted">{t("Before the purchase:")}</span>
           <StatusBadge status={ruleResult.starting.status} />
           <span className="tabular">
             {measuredText(ruleResult.rule_type, ruleResult.starting.measured).toLowerCase()}
@@ -91,14 +90,14 @@ function RuleResultRow({ result, lookup, ruleResult }: { result: CheckResult; lo
         </p>
         {ruleResult.out_of_scope.length > 0 ? (
           <details className="text-sm">
-            <summary className="min-h-6 cursor-pointer font-semibold text-ink-muted">Positions outside the scope of this rule ({ruleResult.out_of_scope.length})</summary>
+            <summary className="min-h-6 cursor-pointer font-semibold text-ink-muted">{t("Positions outside the scope of this rule (")}{ruleResult.out_of_scope.length})</summary>
             <ul className="mt-1 space-y-1 text-ink" data-testid="out-of-scope">
               {ruleResult.out_of_scope.map((position) => (
                 <li key={position.instrument_id}>
                   <span className="tabular font-semibold">
                     {position.instrument_id} {formatFraction(position.weight)}
                   </span>{" "}
-                  — {position.reason}
+                 : {position.reason}
                 </li>
               ))}
             </ul>
@@ -121,7 +120,7 @@ export function RuleResultsList({ result, lookup }: { result: CheckResult; looku
       </ul>
       {result.rules_not_evaluated.length > 0 ? (
         <div data-testid="rules-not-evaluated">
-          <p className="text-sm font-semibold text-ink-muted">Rules in this policy version that were not evaluated</p>
+          <p className="text-sm font-semibold text-ink-muted">{t("Rules in this policy version that were not evaluated")}</p>
           <ul className="mt-1 space-y-1 text-ink">
             {result.rules_not_evaluated.map((item) => {
               const rule = lookup(item.rule_id);
@@ -148,23 +147,20 @@ function PurchaseEffectLine({ finding }: { finding: StartingFinding }) {
   const resolved = Math.abs(upper - lower) <= EPS;
   return (
     <div data-testid="purchase-effect" data-resolved={resolved ? "true" : "false"}>
-      <p className="text-sm font-semibold text-ink-muted">What the purchase adds to this measure</p>
+      <p className="text-sm font-semibold text-ink-muted">{t("What the purchase adds to this measure")}</p>
       <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-ink">
         {/* The spaces keep the words apart for a screen reader; in the flex row they take no room. */}
         {resolved ? null : (
           <>
             <Badge tone="unknown" dashed>
-              Unresolved
-            </Badge>{" "}
+              {t("Unresolved")}</Badge>{" "}
           </>
         )}
-        <span className="tabular text-lg font-semibold">{formatFractionRange(lower, upper, { signed: true })}</span> <span>of the portfolio</span>
+        <span className="tabular text-lg font-semibold">{formatFractionRange(lower, upper, { signed: true })}</span> <span>{t("of the portfolio")}</span>
       </p>
       {resolved ? null : (
         <p className="text-sm text-ink-muted">
-          The first figure is proven; the second is the most it could be. The data needed to say more is missing, so it is not narrowed to one
-          number.
-        </p>
+          {t("The first figure is proven; the second is the most it could be. The data needed to say more is missing, so it is not narrowed to one number.")}</p>
       )}
     </div>
   );

@@ -3,7 +3,7 @@
 import { useId, type ReactNode, type Ref } from "react";
 import { Badge, RuleStatusBadge } from "@/components/ui/Badge";
 import { TestDataTag } from "@/components/ui/TestDataTag";
-import type { Objective, PersonaId, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
+import type { CustomPortfolio, Objective, PersonaId, Policy, PurchaseRequest, Rule } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { formatDateTime, percentInputToFraction } from "@/lib/format";
 import {
@@ -20,6 +20,7 @@ import {
 } from "@/lib/rules";
 import { DraftPreviewPanel, useDraftPreview } from "./DraftPreview";
 import { ThresholdInput } from "./ThresholdInput";
+import { t } from "@/lib/i18n";
 
 const WORDS_LABEL: Record<Rule["origin"], string> = {
   USER_STATED: "Your words",
@@ -30,52 +31,49 @@ const WORDS_LABEL: Record<Rule["origin"], string> = {
 /** The parts every rule card shows, whatever its status: words, scope, origin, status and the linked objective. */
 function RuleDetails({ rule, objective }: { rule: Rule; objective: Objective | undefined }) {
   return (
-    <details className="space-y-4"><summary className="cursor-pointer text-sm font-medium text-ink-muted">Source and definition</summary>
+    <details className="space-y-4"><summary className="cursor-pointer text-sm font-medium text-ink-muted">{t("Source and definition")}</summary>
       <figure>
         <figcaption className="text-sm font-semibold text-ink-muted">{WORDS_LABEL[rule.origin]}</figcaption>
         <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink" data-testid="rule-original-words">
-          &ldquo;{rule.original_words}&rdquo;
-        </blockquote>
+          {t("&ldquo;")}{rule.original_words}{t("&rdquo;")}</blockquote>
       </figure>
       {/* Each group is a direct child of the list: a <dl> may hold <div> groups, but not groups nested in a layout wrapper. */}
       <dl className="grid gap-3 sm:grid-cols-2">
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">Exactly what is checked</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Exactly what is checked")}</dt>
           <dd className="text-ink" data-testid="rule-scope">
             {rule.scope_description}
           </dd>
         </div>
         <div className="sm:col-span-2">
-          <dt className="text-sm font-semibold text-ink-muted">Set to</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Set to")}</dt>
           <dd className="text-ink" data-testid="rule-parameters">
             {ruleParametersText(rule)}
           </dd>
         </div>
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Origin</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Origin")}</dt>
           <dd className="text-ink">
             <span className="font-semibold">{originLabel(rule.origin)}.</span> {originDescription(rule.origin)}
           </dd>
         </div>
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Status</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Status")}</dt>
           <dd className="text-ink">
             {ruleStatusDescription(rule.status)}
             {rule.confirmed_at ? (
               <span className="mt-0.5 block text-sm text-ink-muted">
-                Confirmed <span className="tabular">{formatDateTime(rule.confirmed_at)}</span>. {thresholdSourceText(rule)}.
+                {t("Confirmed")} <span className="tabular">{formatDateTime(rule.confirmed_at)}</span>. {thresholdSourceText(rule)}.
               </span>
             ) : null}
           </dd>
         </div>
         {objective ? (
           <div className="sm:col-span-2">
-            <dt className="text-sm font-semibold text-ink-muted">Related objective — context only</dt>
+            <dt className="text-sm font-semibold text-ink-muted">Related objective: context only</dt>
             <dd className="text-ink">
-              &ldquo;{objective.original_words}&rdquo;
-              <span className="mt-0.5 block text-sm text-ink-muted">
-                The link is context for reading results. The objective does not set this threshold and is never marked pass or fail.
-              </span>
+              {t("&ldquo;")}{objective.original_words}{t("&rdquo;")}<span className="mt-0.5 block text-sm text-ink-muted">
+                {t("The link is context for reading results. The objective does not set this threshold and is never marked pass or fail.")}</span>
             </dd>
           </div>
         ) : null}
@@ -109,6 +107,8 @@ export interface ProposedRuleCardProps {
   policy: Policy | null;
   /** The purchase a preview is tried on (the one entered in stage 3), or null. */
   purchase: PurchaseRequest | null;
+  /** The applied customization of the fictional portfolio a preview is tried on, or null for the scenario portfolio. */
+  customPortfolio: CustomPortfolio | null;
   /** The threshold field's text, as a percentage. "" = not set. */
   thresholdText: string;
   onThresholdChange: (text: string) => void;
@@ -130,7 +130,7 @@ export function thresholdProblem(text: string): string | null {
  * it, and it can only be confirmed with a threshold the user can see in the
  * field. A system-proposed rule arrives with an empty field.
  */
-export function ProposedRuleCard({ rule, objective, personaId, policy, purchase, thresholdText: text, onThresholdChange, buildPreviewRules, attempted, inputRef }: ProposedRuleCardProps) {
+export function ProposedRuleCard({ rule, objective, personaId, policy, purchase, customPortfolio, thresholdText: text, onThresholdChange, buildPreviewRules, attempted, inputRef }: ProposedRuleCardProps) {
   const headingId = useId();
   const fieldId = useId();
 
@@ -138,7 +138,7 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
   // An empty field is not an error until the user tries to confirm it.
   const shownError = problem !== null && (attempted || text.trim() !== "") ? problem : null;
 
-  const { preview, onDraftChange } = useDraftPreview({ personaId, policy, purchase, buildRules: buildPreviewRules });
+  const { preview, onDraftChange } = useDraftPreview({ personaId, policy, purchase, customPortfolio, buildRules: buildPreviewRules });
 
   return (
     <li>
@@ -155,7 +155,7 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
 
         {text.trim() === "" ? (
           <p className="rounded-md bg-unknown-soft px-3 py-2 text-ink" data-testid="threshold-empty-note">
-            <span className="font-semibold">No threshold has been set.</span>{" "}
+            <span className="font-semibold">{t("No threshold has been set.")}</span>{" "}
             {rule.origin === "SYSTEM_PROPOSED"
               ? "The system proposes the kind of rule, never the number. Enter the value you want before confirming."
               : "A rule with an empty number is left out of the confirmation and stays proposed."}
@@ -175,7 +175,7 @@ export function ProposedRuleCard({ rule, objective, personaId, policy, purchase,
           }}
         />
 
-        <details><summary className="cursor-pointer text-sm font-medium text-ink-muted">Preview this limit</summary><DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} purchase={purchase} /></details>
+        <details><summary className="cursor-pointer text-sm font-medium text-ink-muted">{t("Preview this limit")}</summary><DraftPreviewPanel preview={preview} ruleId={rule.rule_id} ruleType={rule.rule_type} purchase={purchase} /></details>
       </article>
     </li>
   );
@@ -202,7 +202,7 @@ export function PolicyRuleCard({ rule, objective, className }: { rule: Rule; obj
           >
             {thresholdText(rule)}
           </span>
-          {rule.status === "SUPERSEDED" ? <span className="ml-2 text-sm font-semibold text-ink-muted">no longer in force</span> : null}
+          {rule.status === "SUPERSEDED" ? <span className="ml-2 text-sm font-semibold text-ink-muted">{t("no longer in force")}</span> : null}
         </p>
         <RuleDetails rule={rule} objective={objective} />
       </article>

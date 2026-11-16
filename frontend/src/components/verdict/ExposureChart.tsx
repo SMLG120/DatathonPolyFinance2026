@@ -5,6 +5,7 @@ import { ChevronIcon } from "@/components/ui/icons";
 import type { Exposure, ExposureBreakdown, IssuerExposure } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { EPS, formatFraction, formatFractionRange } from "@/lib/format";
+import { t } from "@/lib/i18n";
 
 export interface ExposureChartProps {
   /** The engine's chart rows: at most ten companies, in the engine's order. Every value drawn is one of its fields. */
@@ -92,20 +93,18 @@ function BreakdownTable({ issuer, exposure, limit, limitLabel }: { issuer: Issue
   const extras = [exposure.possible_extra.starting, exposure.possible_extra.proposed];
   return (
     <table className="w-full max-w-2xl border-collapse text-left" data-testid="exposure-breakdown">
-      <caption className="sr-only">{issuer.name}: the values drawn in the bars, as a share of the portfolio</caption>
+      <caption className="sr-only">{issuer.name}{t(": the values drawn in the bars, as a share of the portfolio")}</caption>
       <thead>
         <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
           <td className="py-1.5 pr-3" />
           <th scope="col" className="py-1.5 pl-3 text-right font-semibold">
-            Before the purchase
-          </th>
+            {t("Before the purchase")}</th>
           <th scope="col" className="py-1.5 pl-3 text-right font-semibold">
-            After the purchase
-          </th>
+            {t("After the purchase")}</th>
         </tr>
       </thead>
       <tbody>
-        <ValueRow label="Direct holding" rowKey="direct" values={states.map((state) => formatFraction(state.direct, DETAIL))} />
+        <ValueRow label={t("Direct holding")} rowKey="direct" values={states.map((state) => formatFraction(state.direct, DETAIL))} />
         {fundIds(issuer).map((fundId) => (
           <ValueRow
             key={fundId}
@@ -117,13 +116,13 @@ function BreakdownTable({ issuer, exposure, limit, limitLabel }: { issuer: Issue
             })}
           />
         ))}
-        <ValueRow label="Proven total" rowKey="lower" strong values={states.map((state) => formatFraction(state.lower, DETAIL))} />
+        <ValueRow label={t("Proven total")} rowKey="lower" strong values={states.map((state) => formatFraction(state.lower, DETAIL))} />
         <ValueRow
-          label="Possible extra, not measured"
+          label={t("Possible extra, not measured")}
           rowKey="possible"
           values={extras.map((extra) => (extra > EPS ? `up to ${formatFraction(extra, DETAIL)}` : "None"))}
         />
-        <ValueRow label="Possible range" rowKey="range" strong values={states.map((state) => formatFractionRange(state.lower, state.upper, DETAIL))} />
+        <ValueRow label={t("Possible range")} rowKey="range" strong values={states.map((state) => formatFractionRange(state.lower, state.upper, DETAIL))} />
         {limit !== null ? <ValueRow label={limitLabel} rowKey="limit" values={states.map(() => formatFraction(limit, DETAIL))} /> : null}
       </tbody>
     </table>
@@ -179,7 +178,7 @@ export function ExposureChart({
       <figcaption id={captionId} className="font-semibold text-ink">
         {caption}
       </figcaption>
-      <p className="mt-1 text-sm text-ink-muted">Select a company to see the value of each part of its bars.</p>
+      <p className="mt-1 text-sm text-ink-muted">{t("Select a company to see the value of each part of its bars.")}</p>
 
       {/*
         Limit label. From the md width up it sits at the marker, on the side with more room, and the spacer beside it
@@ -222,12 +221,12 @@ export function ExposureChart({
                     <ChevronIcon size={16} className="mt-1 text-ink-muted" />
                     <span className="min-w-0 font-semibold text-ink">
                       {issuer.name}
-                      <span className="sr-only">, breakdown.</span>
+                      <span className="sr-only">{t(", breakdown.")}</span>
                     </span>
                   </span>
-                  <StateText label="After" state={issuer.proposed} testId="exposure-after" />
+                  <StateText label={t("After")} state={issuer.proposed} testId="exposure-after" />
                   <StateBar state={issuer.proposed} possibleExtra={extras.proposed} axisMax={axis.max} limit={limit} />
-                  <StateText label="Before" state={issuer.starting} testId="exposure-before" />
+                  <StateText label={t("Before")} state={issuer.starting} testId="exposure-before" />
                   <StateBar state={issuer.starting} possibleExtra={extras.starting} axisMax={axis.max} limit={limit} thin />
                 </span>
               </summary>
@@ -256,20 +255,17 @@ export function ExposureChart({
         </span>
       </div>
 
-      <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink" aria-label="Legend">
+      <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-ink" aria-label={t("Legend")}>
         <li className="flex items-center gap-2" data-key="direct">
           <span className="byb-swatch" data-seg="direct" aria-hidden="true" />
-          Direct holding
-        </li>
+          {t("Direct holding")}</li>
         <li className="flex items-center gap-2" data-key="indirect">
           <span className="byb-swatch" data-seg="indirect" aria-hidden="true" />
-          Through a fund, from its reported holdings (one segment per fund)
-        </li>
+          {t("Through a fund, from its reported holdings (one segment per fund)")}</li>
         {hasPossible ? (
           <li className="flex items-center gap-2" data-key="possible">
             <span className="byb-swatch" data-seg="possible" aria-hidden="true" />
-            Possible extra, not measured (fund weight not attributed to any company)
-          </li>
+            {t("Possible extra, not measured (fund weight not attributed to any company)")}</li>
         ) : null}
         {limit !== null ? (
           <li className="flex items-center gap-2" data-key="limit">
@@ -283,8 +279,7 @@ export function ExposureChart({
               <span className="byb-seg" data-seg="direct" style={{ width: "100%" }} />
             </span>
           </span>
-          Thin bar: before the purchase
-        </li>
+          {t("Thin bar: before the purchase")}</li>
       </ul>
     </figure>
   );

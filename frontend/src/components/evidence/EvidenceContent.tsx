@@ -23,6 +23,7 @@ import { findEvidence } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
 import type { EvidenceRequest } from "./EvidenceProvider";
+import { t } from "@/lib/i18n";
 
 /**
  * What the drawer says about sources, on test data and on the live service alike. No route of the
@@ -35,33 +36,33 @@ function CorrectionNote({ correction }: { correction: ProposedCorrection }) {
   return (
     <li className="rounded-md border border-dashed border-unknown bg-unknown-soft p-3" data-testid="proposed-correction">
       <Badge tone="unknown" dashed icon={<UnknownIcon size={16} />}>
-        Proposed correction — unverified
+        Proposed correction: unverified
       </Badge>
       <dl className="mt-2 space-y-2 text-sm">
         <div>
-          <dt className="font-semibold text-ink-muted">Value proposed</dt>
+          <dt className="font-semibold text-ink-muted">{t("Value proposed")}</dt>
           <dd className="tabular text-ink" data-testid="correction-asserted">
             {formatValueInUnit(correction.asserted_value, correction.asserted_unit)}
           </dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Value on record when it was proposed</dt>
+          <dt className="font-semibold text-ink-muted">{t("Value on record when it was proposed")}</dt>
           <dd className="tabular text-ink">{formatValueInUnit(correction.original_value, correction.original_unit)}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Reason given</dt>
+          <dt className="font-semibold text-ink-muted">{t("Reason given")}</dt>
           <dd className="whitespace-pre-line text-ink">{correction.provenance.user_note}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Source named by the user</dt>
+          <dt className="font-semibold text-ink-muted">{t("Source named by the user")}</dt>
           <dd className="whitespace-pre-line text-ink">{correction.provenance.user_source ?? "None"}</dd>
         </div>
         <div>
-          <dt className="font-semibold text-ink-muted">Provenance</dt>
-          <dd className="text-ink">Asserted by the user on {formatDateTime(correction.provenance.asserted_at)}. Not verified against any source.</dd>
+          <dt className="font-semibold text-ink-muted">{t("Provenance")}</dt>
+          <dd className="text-ink">{t("Asserted by the user on")} {formatDateTime(correction.provenance.asserted_at)}{t(". Not verified against any source.")}</dd>
         </div>
       </dl>
-      <p className="mt-2 text-sm font-semibold text-ink">Not used in any calculation. The recorded value above is unchanged.</p>
+      <p className="mt-2 text-sm font-semibold text-ink">{t("Not used in any calculation. The recorded value above is unchanged.")}</p>
     </li>
   );
 }
@@ -78,7 +79,7 @@ function InputValue({ record }: { record: EvidenceRecord }) {
       </span>
       <span className="tabular font-semibold text-ink">
         {formatEvidenceValue(record)}
-        {typeof record.value === "number" && record.unit === "fraction" ? <span className="font-normal text-ink-muted"> (as a fraction: {record.value})</span> : null}
+        {typeof record.value === "number" && record.unit === "fraction" ? <span className="font-normal text-ink-muted"> {t("(as a fraction:")} {record.value})</span> : null}
       </span>
     </li>
   );
@@ -110,32 +111,31 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
       </div>
 
       <Facts>
-        <Fact label="Subject">{subjectText(record.subject)}</Fact>
-        <Fact label="Date or period">
+        <Fact label={t("Subject")}>{subjectText(record.subject)}</Fact>
+        <Fact label={t("Date or period")}>
           <span className="tabular" data-testid="evidence-period">
             {periodText(record.period)}
           </span>
         </Fact>
         <Fact label="Unit">{unitText(record.unit)}</Fact>
-        <Fact label="Policy version">{record.policy_version === null ? "None — a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
+        <Fact label="Policy version">{record.policy_version === null ? "None: a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
         <Fact label="Calculation version">
           <span className="break-all font-mono text-sm">{record.calculation_version}</span>
         </Fact>
-        <Fact label="Record">
+        <Fact label={t("Record")}>
           <span className="break-all font-mono text-sm">{record.evidence_id}</span>
         </Fact>
       </Facts>
 
       <div data-testid="evidence-calculation">
-        <h4 className="font-semibold text-ink">How it was calculated</h4>
+        <h4 className="font-semibold text-ink">{t("How it was calculated")}</h4>
         {record.formula === null && !hasInputs ? (
           <p className="mt-1 text-ink-muted" data-testid="evidence-no-calculation">
-            No calculation: this value is taken as recorded.
-          </p>
+            {t("No calculation: this value is taken as recorded.")}</p>
         ) : null}
         {record.formula !== null ? (
           <div className="mt-2">
-            <h5 className="text-sm font-semibold text-ink-muted">Formula, as recorded by the engine</h5>
+            <h5 className="text-sm font-semibold text-ink-muted">{t("Formula, as recorded by the engine")}</h5>
             <p className="tabular mt-1 whitespace-pre-wrap break-words rounded-md border border-line bg-canvas px-3 py-2 font-mono text-[0.9375rem] text-ink" data-testid="evidence-formula">
               {record.formula}
             </p>
@@ -143,15 +143,14 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
         ) : null}
         {hasInputs ? (
           <div className="mt-3">
-            <h5 className="text-sm font-semibold text-ink-muted">Values it was computed from</h5>
+            <h5 className="text-sm font-semibold text-ink-muted">{t("Values it was computed from")}</h5>
             <ul className="mt-1" data-testid="evidence-inputs">
               {inputs.found.map((input) => (
                 <InputValue key={input.evidence_id} record={input} />
               ))}
               {inputs.missing.map((evidenceId) => (
                 <li key={evidenceId} className="py-1.5 text-ink" data-testid="evidence-input-missing">
-                  Record <span className="font-mono text-[0.8125rem]">{evidenceId}</span> is named as an input but is not in this result.
-                </li>
+                  {t("Record")} <span className="font-mono text-[0.8125rem]">{evidenceId}</span> {t("is named as an input but is not in this result.")}</li>
               ))}
             </ul>
           </div>
@@ -159,7 +158,7 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
       </div>
 
       <div>
-        <h4 className="font-semibold text-ink">Assumptions</h4>
+        <h4 className="font-semibold text-ink">{t("Assumptions")}</h4>
         {record.assumptions.length > 0 ? (
           <ul className="mt-1 list-disc space-y-1 pl-5 text-ink" data-testid="evidence-assumptions">
             {record.assumptions.map((assumption) => (
@@ -167,12 +166,12 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
             ))}
           </ul>
         ) : (
-          <p className="mt-1 text-ink-muted">None recorded.</p>
+          <p className="mt-1 text-ink-muted">{t("None recorded.")}</p>
         )}
       </div>
 
       <div>
-        <h4 className="font-semibold text-ink">Sources</h4>
+        <h4 className="font-semibold text-ink">{t("Sources")}</h4>
         {record.source_ids.length > 0 ? (
           <ul className="mt-1 flex flex-wrap gap-2" data-testid="evidence-sources">
             {record.source_ids.map((sourceId) => (
@@ -190,7 +189,7 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
 
       {corrections.length > 0 ? (
         <div>
-          <h4 className="font-semibold text-ink">Proposed corrections</h4>
+          <h4 className="font-semibold text-ink">{t("Proposed corrections")}</h4>
           <ul className="mt-2 space-y-2">
             {corrections.map((correction) => (
               <CorrectionNote key={correction.correction_id} correction={correction} />
@@ -201,8 +200,7 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
 
       {result.preview ? null : (
         <LinkButton href={stageHref("challenge")} size="sm" onClick={() => onChallenge(record.evidence_id)}>
-          Challenge this figure
-        </LinkButton>
+          {t("Challenge this figure")}</LinkButton>
       )}
     </section>
   );
@@ -218,7 +216,7 @@ export function EvidenceContent({ request, onChallenge }: { request: EvidenceReq
   return (
     <div className="space-y-6">
       {request.result.preview ? (
-        <UnknownBlock title="Preview with draft rules — not a confirmed policy">
+        <UnknownBlock title="Preview with draft rules: not a confirmed policy">
           <p>These records belong to a preview. They are not part of any stored report.</p>
         </UnknownBlock>
       ) : null}
@@ -236,11 +234,9 @@ export function EvidenceContent({ request, onChallenge }: { request: EvidenceReq
             onChallenge={onChallenge}
           />
         ) : (
-          <UnknownBlock key={evidenceId} title="Evidence record not found">
+          <UnknownBlock key={evidenceId} title={t("Evidence record not found")}>
             <p>
-              This figure refers to evidence <span className="font-mono">{evidenceId}</span>, which is not in this result. Treat the figure as
-              unverified.
-            </p>
+              {t("This figure refers to evidence")} <span className="font-mono">{evidenceId}</span>{t(", which is not in this result. Treat the figure as unverified.")}</p>
           </UnknownBlock>
         );
       })}

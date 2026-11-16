@@ -351,6 +351,11 @@ def main() -> int:
               f"{fund['publication_date']}")
         if fund["holdings_date"] == fund["retrieval_date"]:
             record("WARN", "Q20", f"{fund_id}: holdings_date equals retrieval_date; confirm against the file text")
+        # Q29: no look-ahead. The portfolio is valued on VALUATION_DATE; a fund composition printed for a later date
+        # is information nobody had on that date, so it may not be used for the look-through of that portfolio.
+        check(fund["holdings_date"] <= VALUATION_DATE, "Q29",
+              f"{fund_id}: holdings_date {fund['holdings_date']} is on or before the valuation date {VALUATION_DATE} (no look-ahead)",
+              "the holdings file is dated AFTER the valuation date: use the issuer file as of the valuation date or earlier")
 
     # ------------------------------------------------------------ market data
     prices_csv = read_csv_dicts(STARTER_DIR / "prices_daily.csv")

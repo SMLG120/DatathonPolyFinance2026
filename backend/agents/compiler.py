@@ -202,6 +202,9 @@ def _inside(span: tuple[int, int], outer: tuple[int, int]) -> bool:
     return outer[0] <= span[0] and span[1] <= outer[1]
 
 
+_COMPARATIVE_LOOKAHEAD = 12  # characters read past a direction span to find the number a one-word comparative needs
+
+
 def _offsets(span: Span) -> tuple[int, int]:
     return span[1], span[2]
 
@@ -597,9 +600,14 @@ class _Compiler:
         # "I want more than 10% in X" read as a cap. Only on company shares: "lose more than 20%" is a loss limit.
         comparative = COMPARATIVE_VETO.get(clause.direction) if clause.subject_kind in ("EACH_COMPANY", "NAMED_COMPANIES") else None
         for span in spans:
-            for match in comparative.finditer(span[0]) if comparative else ():
+            # Read a few characters past the span: a one-word comparative counts only before a number, and the model
+            # often marks "Above" alone as the direction words. Only a comparative that starts inside the span counts.
+            window_end = min(len(self.text), span[2] + _COMPARATIVE_LOOKAHEAD)
+            for match in comparative.finditer(self.text, span[1], window_end) if comparative else ():
+                if match.start() >= span[2]:
+                    continue
                 # a negation anywhere before it in the sentence keeps the reading ("no company ever makes up more than")
-                start = span[1] + match.start()
+                start = match.start()
                 sentence = self._sentence_of((start, start)) or (0, len(self.text))
                 if not COMPARATIVE_NEGATION_RE.search(self.text[sentence[0]:start]):
                     return True

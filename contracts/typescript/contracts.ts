@@ -1039,6 +1039,8 @@ export interface InvestigationJob {
   explanation: ExplanationStatement[];
   failure: InvestigationFailure | null;
   proposed_corrections: ProposedCorrection[];
+  /** The exact fictional portfolio this job is checked against, fixed at creation. Absent only on jobs stored before this member existed. */
+  portfolio?: Portfolio;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1150,6 +1152,15 @@ export interface PortfolioResponse {
   purchasable_instrument_ids: InstrumentId[];
 }
 
+/**
+ * A user-edited fictional portfolio (POST /check, POST /investigations). Weights only: the server builds
+ * the full portfolio and its id. cash_weight + sum(position weights) = 1; instruments unique and purchasable.
+ */
+export interface CustomPortfolio {
+  cash_weight: Fraction;
+  positions: Position[];
+}
+
 /** POST /rules/interpret: request. */
 export interface InterpretRequest {
   persona_id: PersonaId;
@@ -1197,6 +1208,8 @@ export interface CheckRequest {
   purchase_request: PurchaseRequest;
   /** Null: evaluate the stored policy version. Array: evaluate exactly these rules; the result has `preview: true` and nothing is stored. */
   draft_rules: Rule[] | null;
+  /** Optional. Absent or null: the persona's scenario portfolio. An object: this customized fictional portfolio is checked instead. */
+  custom_portfolio?: CustomPortfolio | null;
 }
 
 /** POST /check: 200. */
@@ -1209,6 +1222,8 @@ export interface InvestigationCreateRequest {
   policy_version: number;
   request: PurchaseRequest | UnresolvedPurchaseRequest;
   parent_investigation_id: Id | null;
+  /** Optional. Absent or null: the persona's scenario portfolio. An object: this customized fictional portfolio is investigated and stored with the job. */
+  custom_portfolio?: CustomPortfolio | null;
 }
 
 export interface PollInstruction {

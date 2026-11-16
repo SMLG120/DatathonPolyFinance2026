@@ -1,7 +1,9 @@
-# Before You Buy
+# ETHOS
+
+*ETHOS — The AI Agent That Challenges Your Investments Before the Market Does.*
 
 **PolyFinances AlphaForge AI Datathon 2026.** Before an investor changes a
-portfolio, Before You Buy investigates whether the decision respects the rules
+portfolio, ETHOS investigates whether the decision respects the rules
 that investor has explicitly confirmed, and shows evidence the investor can
 inspect and challenge.
 
@@ -70,6 +72,14 @@ Core formulas (units are portfolio fractions, 10% = 0.10):
     total issuer exposure = direct weight
                           + sum(fund portfolio weight x issuer weight in that fund)
     cash after purchase   = starting cash - (target direct weight - starting direct weight)
+
+**Customize this profile (added 2026-11-15, verified locally, see section 4 for what is deployed).** Starting
+from a persona, a user can edit the fictional portfolio (weights and cash, supported assets only, total exactly
+100%, no shorting or leverage) and the wording of the objective, then run a real investigation on that
+portfolio. The edited weights travel with each request (`custom_portfolio`, `contracts/api.md` section 2a);
+the server validates them, the Python engine checks that portfolio, and every investigation stores and returns
+the exact portfolio it was checked against, so an earlier report stays reproducible after another edit. An
+edited objective is context only: it never creates, changes or confirms a rule.
 
 The two demonstration scenarios, step by step with their outcomes on the real
 data and on the synthetic fixtures, are in
@@ -172,7 +182,12 @@ integration coordinator's local run on the candidate with the real data,
 | 7 | Independent validation | Third pass on `d223714`: 1268 passed, 6 strict expected failures; verdict "go with disclosed limits", **conditional on fixing F-20** (HIGH: model-chosen strings in public tool steps; fix in progress). Fourth pass (interpreter, new IAM) in progress | Reported by the coordinator; the validation report is not in the repository yet |
 | 8 | Deliverables, hosted frontend, push | Documents written. **Nothing deployed or hosted.** `integration/rc` is not pushed; GitHub `main` holds an earlier snapshot that is not a validated release | `docs/DEPLOYMENT.md` |
 
-Extensions (Amira, horizon analysis, 2D map, questionnaire) are not started.
+Amira is selectable as a third persona since PR #16 (2026-11-15); her scripted Amira demonstration beyond
+that, horizon analysis, the 2D map and the questionnaire are not started. Status on 2026-11-15, after this
+table was written: a first release was deployed and hosted (`infra/evidence/release-2026-11-15.md`), then replaced
+the same evening by the release that carries "Customize this profile", the Amira persona and the corrected data
+snapshot (`infra/evidence/release-2026-11-15-customize.md`: exact artifacts, checks run, and what was not checked).
+The status block at the top of this file and the table in section 4 predate both releases.
 The submission deadline and the exact hour at which the AWS account expires
 are unresolved (`docs/PLAN.md` P2).
 

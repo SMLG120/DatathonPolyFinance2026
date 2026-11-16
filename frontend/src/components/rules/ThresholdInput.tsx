@@ -5,6 +5,7 @@ import { describedBy, errorId, hintId } from "@/components/ui/Field";
 import { ErrorIcon } from "@/components/ui/icons";
 import { cn } from "@/lib/cn";
 import { percentInputToFraction } from "@/lib/format";
+import { t } from "@/lib/i18n";
 
 export interface ThresholdInputProps {
   id: string;
@@ -55,7 +56,7 @@ export function ThresholdInput({ id, label, hint, value, onChange, error, slider
             autoComplete="off"
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            placeholder="Not set"
+            placeholder={t("Not set")}
             aria-invalid={error ? true : undefined}
             aria-describedby={describedBy(id, { hint: Boolean(hint), error: Boolean(error) })}
             className={cn(

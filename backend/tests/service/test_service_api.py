@@ -321,8 +321,8 @@ def test_svc18_get_returns_public_view_without_internal_fields(svc):
     job = svc.get(JOB_ID)
     stored = svc.s3.json(JOB_KEY)
     assert "internal" in stored and "internal" not in job and "request_hash" not in json.dumps(job) and "lambda_request_id" not in json.dumps(job)
-    from backend.common.jobview import PUBLIC_MEMBERS
-    assert set(job) == set(PUBLIC_MEMBERS)
+    from backend.common.jobview import OPTIONAL_PUBLIC_MEMBERS, PUBLIC_MEMBERS
+    assert set(job) == set(PUBLIC_MEMBERS) | set(OPTIONAL_PUBLIC_MEMBERS)  # "portfolio": every job created now carries one
     validate_api_body("investigation_job.schema.json", job)
 
 

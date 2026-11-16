@@ -9,6 +9,7 @@ import { Notice } from "@/components/ui/Notice";
 import type { DemoChallenge, InvestigationJob, Objective } from "@/lib/contracts";
 import { stageHref } from "@/state/stage";
 import { clarificationKey, useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 /**
  * Path 2: clarify a preference. The text goes back through the interpreter.
@@ -53,22 +54,20 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
 
   return (
     <div className="space-y-6">
-      <h3 className="text-lg font-semibold text-ink">Clarify a preference</h3>
+      <h3 className="text-lg font-semibold text-ink">{t("Clarify a preference")}</h3>
       <p className="max-w-prose text-ink">
-        If the result does not reflect what you meant, say it in your own words. Your text is read again. Nothing becomes a rule unless you confirm
-        it, so the confirmed policy and this report do not change here.
-      </p>
+        {t("If the result does not reflect what you meant, say it in your own words. Your text is read again. Nothing becomes a rule unless you confirm it, so the confirmed policy and this report do not change here.")}</p>
 
       {example && exampleText !== null ? (
         <p>
           <Button size="sm" onClick={fillExample} data-testid="fill-example-preference">
-            Fill in the scenario&apos;s example: {example.label}
+            {t("Fill in the scenario&apos;s example:")} {example.label}
           </Button>
         </p>
       ) : null}
 
       <form onSubmit={onSubmit} noValidate className="space-y-5" data-testid="clarify-preference-form">
-        <Field htmlFor={textId} label="What did you mean?" hint="For example what a word in your objective should cover." error={error}>
+        <Field htmlFor={textId} label={t("What did you mean?")} hint={t("For example what a word in your objective should cover.")} error={error}>
           <TextArea
             id={textId}
             rows={3}
@@ -79,9 +78,9 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
           />
         </Field>
         {objectives.length > 0 ? (
-          <Field htmlFor={objectiveFieldId} label="Which objective is this about? (optional)" hint="Kept with your words as context.">
+          <Field htmlFor={objectiveFieldId} label={t("Which objective is this about? (optional)")} hint={t("Kept with your words as context.")}>
             <Select id={objectiveFieldId} value={objectiveId} onChange={(event) => setObjectiveId(event.target.value)} aria-describedby={describedBy(objectiveFieldId, { hint: true })}>
-              <option value="">No particular objective</option>
+              <option value="">{t("No particular objective")}</option>
               {objectives.map((objective) => (
                 <option key={objective.objective_id} value={objective.objective_id}>
                   {objective.original_words}
@@ -91,8 +90,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
           </Field>
         ) : null}
         <Button type="submit" variant="primary" busy={busy} busyLabel="Reading your text…" data-testid="submit-preference">
-          Record this clarification
-        </Button>
+          {t("Record this clarification")}</Button>
       </form>
 
       {response ? (
@@ -100,27 +98,24 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
           <div role="status">
             <Notice
               tone="info"
-              title="Your clarification was read. No rule was changed."
+              title={t("Your clarification was read. No rule was changed.")}
               action={
                 <LinkButton href={stageHref("goals")} size="sm">
-                  Review it in Goals &amp; rules
-                </LinkButton>
+                  {t("Review it in Goals &amp; rules")}</LinkButton>
               }
             >
               <p>
-                Read from: &ldquo;{response.original_words}&rdquo; Everything below is a draft. The confirmed policy and the report are exactly as they
-                were.
-              </p>
+                {t("Read from: &ldquo;")}{response.original_words}{t("&rdquo; Everything below is a draft. The confirmed policy and the report are exactly as they were.")}</p>
             </Notice>
           </div>
 
           {response.unsupported.length > 0 ? (
             <div>
-              <h4 className="font-semibold text-ink">Not turned into a rule</h4>
+              <h4 className="font-semibold text-ink">{t("Not turned into a rule")}</h4>
               <ul className="mt-1 space-y-2">
                 {response.unsupported.map((item) => (
                   <li key={`${item.code}-${item.words}`} className="rounded-md border border-dashed border-line-strong bg-canvas p-3 text-ink" data-testid="unsupported-request">
-                    <span className="block font-semibold">&ldquo;{item.words}&rdquo;</span>
+                    <span className="block font-semibold">{t("&ldquo;")}{item.words}{t("&rdquo;")}</span>
                     <span className="block text-sm">{item.reason}</span>
                   </li>
                 ))}
@@ -132,8 +127,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
             <div>
               <h4 className="font-semibold text-ink">
                 {response.clarifications.length === 1 ? "One question needs your answer" : `${response.clarifications.length} questions need your answer`}{" "}
-                before a rule can be written
-              </h4>
+                {t("before a rule can be written")}</h4>
               <ul className="mt-2 space-y-4">
                 {response.clarifications.map((clarification) => {
                   // Named by this answer as well as by its id: the question asked in Goals & rules can have the same id.
@@ -155,7 +149,7 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
 
           {response.proposed_rules.length > 0 ? (
             <div>
-              <h4 className="font-semibold text-ink">Rules drafted from your words — inactive until you confirm them</h4>
+              <h4 className="font-semibold text-ink">Rules drafted from your words: inactive until you confirm them</h4>
               <ul className="mt-1 space-y-2">
                 {response.proposed_rules.map((draft) => (
                   <li key={draft.rule_id} className="rounded-md border border-line bg-canvas p-3" data-testid="drafted-rule">
@@ -171,10 +165,10 @@ export function ClarifyPreferenceForm({ job, objectives, example }: { job: Inves
 
           {response.objectives.length > 0 ? (
             <div>
-              <h4 className="font-semibold text-ink">Kept as an objective, word for word</h4>
+              <h4 className="font-semibold text-ink">{t("Kept as an objective, word for word")}</h4>
               <ul className="mt-1 list-disc pl-5 text-ink">
                 {response.objectives.map((objective) => (
-                  <li key={objective.objective_id}>&ldquo;{objective.original_words}&rdquo;</li>
+                  <li key={objective.objective_id}>{t("&ldquo;")}{objective.original_words}{t("&rdquo;")}</li>
                 ))}
               </ul>
             </div>

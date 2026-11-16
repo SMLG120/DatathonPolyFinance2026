@@ -13,11 +13,13 @@ import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { Tabs } from "@/components/ui/Tabs";
 import type { ChallengeType } from "@/lib/contracts";
+import { portfolioCheckedLabel } from "@/lib/customize";
 import { describePurchase } from "@/lib/portfolio";
 import { assessResult } from "@/lib/result";
 import { verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { t } from "@/lib/i18n";
 
 const LEAD = "Disagree with a figure, with how your preference was read, or with one of your own rules? Each path keeps the earlier report exactly as it was.";
 
@@ -52,14 +54,14 @@ export function ChallengeStage() {
     return (
       <StageFrame stage="challenge" lead={LEAD}>
         <EmptyBlock
-          title="There is no report to challenge yet"
+          title={t("There is no report to challenge yet")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm">
-              Go to Proposed purchase
+              Go to Test an idea
             </LinkButton>
           }
         >
-          <p>A challenge is made against a report whose checks ran. Run an investigation first.</p>
+          <p>{t("A challenge is made against a report whose checks ran. Run an investigation first.")}</p>
         </EmptyBlock>
         {state.comparison ? <ComparisonPanel /> : null}
       </StageFrame>
@@ -67,6 +69,8 @@ export function ChallengeStage() {
   }
 
   const result = assessment.result;
+  const scenarioPortfolio = state.portfolio.data?.scenario.portfolio ?? null;
+  const personaLabel = state.portfolio.data?.scenario.persona.display_name ?? "This persona";
   const policy = derived.policyFor(job);
   const current = derived.currentPolicy;
   const isCurrentPolicy = policy !== null && current !== null && policy.policy_id === current.policy_id && policy.version === current.version;
@@ -74,28 +78,35 @@ export function ChallengeStage() {
 
   return (
     <StageFrame stage="challenge" lead={LEAD}>
-      <Panel title="Report being challenged" tone="sunken" figures>
+      <Panel title={t("Report being challenged")} tone="sunken" figures>
         <Facts className="sm:grid-cols-3">
-          <Fact label="Result">
+          <Fact label={t("Result")}>
             <span data-testid="challenged-headline">{headline.title}</span>
           </Fact>
-          <Fact label="Request">
+          <Fact label={t("Request")}>
             <span className="tabular">{describePurchase(result.purchase_request)}</span>
           </Fact>
           <Fact label="Checked against">
-            Confirmed policy — version <span className="tabular">{job.policy_version}</span>
+            Confirmed policy: version <span className="tabular">{job.policy_version}</span>
           </Fact>
+          {job.portfolio ? (
+            <Fact label="Portfolio checked" wide>
+              <span data-testid="report-portfolio-label">{portfolioCheckedLabel(job.portfolio, scenarioPortfolio, personaLabel)}</span>
+              <span className="block text-sm text-ink-muted">
+                Stored with this report. A rule change re-checks this same portfolio, whatever customization is applied now.
+              </span>
+            </Fact>
+          ) : null}
         </Facts>
         <div className="mt-4">
           <LinkButton href={stageHref("verdict")} size="sm">
-            Open this report
-          </LinkButton>
+            {t("Open this report")}</LinkButton>
         </div>
       </Panel>
 
-      <Panel id="challenge-forms" title="What do you want to challenge?" description="Choose one of three paths. Each has its own form.">
+      <Panel id="challenge-forms" title={t("What do you want to challenge?")} description={t("Choose one of three paths. Each has its own form.")}>
         <Tabs
-          label="Ways to challenge this report"
+          label={t("Ways to challenge this report")}
           value={tab}
           onValueChange={(next) => {
             actions.clearChallengeError();
@@ -125,11 +136,10 @@ export function ChallengeStage() {
                     title={`This report was checked against policy version ${job.policy_version}, which is no longer the one in force`}
                     action={
                       <Button size="sm" onClick={() => actions.viewReport(null)}>
-                        Use the latest report instead
-                      </Button>
+                        {t("Use the latest report instead")}</Button>
                     }
                   >
-                    <p>A rule is changed starting from the version in force{current ? ` (version ${current.version})` : ""}.</p>
+                    <p>{t("A rule is changed starting from the version in force")}{current ? ` (version ${current.version})` : ""}.</p>
                   </Notice>
                 ),
             },
@@ -137,13 +147,13 @@ export function ChallengeStage() {
         />
         {state.challenge.status === "error" ? (
           state.challenge.kind === "no_fixture" ? (
-            <Notice tone="info" role="status" title="The test data holds no answer to this challenge" className="mt-5">
+            <Notice tone="info" role="status" title={t("The test data holds no answer to this challenge")} className="mt-5">
               <p data-testid="challenge-not-recorded">{state.challenge.error}</p>
-              <p>Nothing was changed: no correction, no rule and no report.</p>
+              <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </Notice>
           ) : (
-            <ErrorBlock className="mt-5" title="Your challenge could not be recorded" message={state.challenge.error ?? "The request failed."}>
-              <p>Nothing was changed: no correction, no rule and no report.</p>
+            <ErrorBlock className="mt-5" title={t("Your challenge could not be recorded")} message={state.challenge.error ?? "The request failed."}>
+              <p>{t("Nothing was changed: no correction, no rule and no report.")}</p>
             </ErrorBlock>
           )
         ) : null}
@@ -165,7 +175,7 @@ function ComparisonPanel() {
         id="rule-change-comparison"
         focusableHeading
         className="border-2 border-accent"
-        eyebrow="Outcome of the rule change — separate from the form above"
+        eyebrow="Outcome of the rule change: separate from the form above"
         title="Version comparison: before and after the rule change"
         description="The earlier report was not edited. It still says what it said under the earlier policy version."
       >
