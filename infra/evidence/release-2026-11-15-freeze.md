@@ -1,44 +1,44 @@
-# Code freeze record, 2026-11-15 (about 22:45 EST)
+# Code freeze record, 2026-11-15 (22:52 EST)
 
-Written by the release coordinator at the freeze. Nothing was deployed for this record: the deployed inputs already
-match the final code.
+Written by the release coordinator at the freeze. The backend was not redeployed. The site was published once more
+(job 9) because PR #35 was merged into `main` at 22:41 EST, during the freeze checks, and changed two frontend files.
 
 ## What is deployed
 
 | Item | Value |
 | --- | --- |
-| Site | https://main.dwtdk87nismj6.amplifyapp.com/ , Amplify app `dwtdk87nismj6`, branch `main`, **job 8**, `SUCCEED` 22:21 EST (`release-2026-11-15-ethos.md`) |
-| Site source | commit `d1dc98a`; final `main` differs from it only by release records, validation scripts and one unit test |
+| Site | https://main.dwtdk87nismj6.amplifyapp.com/ , Amplify app `dwtdk87nismj6`, branch `main`, **job 9**, `SUCCEED` 22:50:46 EST |
+| Site source | `main` at `22b2d9d6` (merge of PR #35); the merge of this record adds one unit test and this file, no site file |
+| Site zip | `frontend.zip` sha256 `96ed3bc7ef3dd5087e6a4e5bd288dbeb6c6a8249f9a57fe5582068f7c48cd68f`, built from that source; only API address in it: the stack's `ApiBaseUrl`; kept locally as `dist/frontend-22b2d9d/frontend.zip` (git-ignored) |
+| Previous site | job 8, source `d1dc98a` (`release-2026-11-15-ethos.md`): the rollback target |
 | Backend code | `lambda/byb-backend-3366f6357259c7ec.zip`, sha256 `3366f6357259c7ec2deb4a272cb85e80ce80dbd877abc4c3dee7376c6780e977` |
 | Data snapshot | `snap-2026-11-12-2662b7a89c03` (XIU.TO as of 2026-11-12; no look-ahead) |
 | Stack | `before-you-buy`, `UPDATE_COMPLETE`, last updated 2026-11-16 01:41:30Z; no pending change set |
 | Release language | English. The French toggle is not exposed |
 
-## How the match between code and deployment was checked (22:35 to 22:43 EST)
+## Sequence at the freeze
 
-- **Backend:** `scripts/package.py` on final `main` produces `byb-backend-3366f6357259c7ec.zip`; the `CodeSha256` of the API,
-  worker and authorizer functions equals the sha256 of that zip.
-- **Site:** a production build of final `main` references the same 11 content-hashed bundles as the hosted page, and each
-  hosted bundle is byte-identical to the local one. (`index.html` itself differs between two builds of the same source, so
-  it is not compared.) The only API address in the build is the stack's `ApiBaseUrl`.
-- The zip published as job 8 (`dist/ethos-frontend-d1dc98a.zip`, sha256 `bd13c1e0...ab183cda` according to
-  `release-2026-11-15-ethos.md`) was built in another session and is **not on the coordinator's machine**: its hash was not
-  re-verified. A reference build of final `main` is kept locally as `dist/frontend-freeze/frontend.zip`
-  (sha256 `915208874b83f6d984e97a604bf255581f3b0697395b1460776d1be32a8e79f3`, 43 files, git-ignored).
+1. 22:36: final `main` was `70435c1`. Checked on it: fullstack 42 of 42; hosted site (job 8) 78 of 78 with the real model;
+   the hosted bundles byte-identical to a build of that `main`; the Lambda code hashes equal to the zip packaged from it.
+2. 22:41: PR #35 ("Start the journey at step 1 instead of jumping to later steps") was merged on GitHub by a teammate:
+   `BrandHero.tsx`, `PersonaStage.tsx` and their tests. `main` became `22b2d9d`, one product change ahead of the site.
+3. 22:45 to 22:50: the same checks were run again on `22b2d9d` (below), all green, and the site was published from it
+   with `cloudshell_release.py host` (gates: the stack runs the planned backend; both backend checks recorded a pass on it).
+4. 22:51: hosted check on job 9.
 
-## Checks at the freeze (actual results)
+## Checks on the final source (`22b2d9d` plus this record's test), actual results
 
 | Check | Result |
 | --- | --- |
-| `acceptance/fullstack` specs 01 to 07 on final `main`, real handlers on loopback, fresh build | **42 passed** (3.0 min) |
-| Hosted site, `validation/print_report/hosted_check.py` (job 8, real model) | **78 of 78**; investigations `inv-2084c6ff659409c961d96146db7e0ef7` (Robert customized) and `inv-27736f66c4852ebae23247f08a55289d` (Mateo, UNKNOWN), both agent mode `MODEL` |
-| `cloudshell_customize_check.py` on the deployed backend | **17 of 17**, investigation in `MODEL` mode |
-| `cloudshell_smoke.py` on the deployed backend | First run: 23 checks pass but the investigation ended in `DETERMINISTIC_FALLBACK` (`TOOL_ROUNDS_EXCEEDED` in the worker log), so the script reported failure. Rerun: **PASS, 23 checks, `MODEL` mode** |
 | Frontend unit tests | 659 passed, 1 skipped (the French round trip, see below) |
 | Frontend type check and lint | clean |
-| Not re-run at the freeze | Python suites (backend unchanged since it was deployed and checked) and `frontend/e2e` |
-
-Job 8's own record says no investigation had been run on the hosted site after it was published; the hosted check above closes that gap.
+| `acceptance/fullstack` specs 01 to 07, real handlers on loopback, fresh build | **42 passed** (3.0 min) |
+| `frontend/e2e` (fixtures mode, accessibility checks included) | **33 passed** |
+| Backend: `scripts/package.py` on this source | `byb-backend-3366f6357259c7ec.zip`; the `CodeSha256` of the API, worker and authorizer functions equals its sha256 |
+| `cloudshell_customize_check.py` on the deployed backend | **17 of 17**, investigation in `MODEL` mode |
+| `cloudshell_smoke.py` on the deployed backend | First run: 23 checks pass but the investigation ended in `DETERMINISTIC_FALLBACK` (`TOOL_ROUNDS_EXCEEDED` in the worker log), so the script reported failure. Rerun: **PASS, 23 checks, `MODEL` mode** |
+| Hosted site after job 9, `validation/print_report/hosted_check.py` (real model) | **78 of 78**; investigations `inv-f240ad26d8e2092976820177df921c2e` (Robert customized) and `inv-3b763893b14c0d92299fdf7ea7e89104` (Mateo, UNKNOWN), both agent mode `MODEL` |
+| Not re-run at the freeze | Python suites (the backend is unchanged since it was deployed and checked) |
 
 ## Known limitations at the freeze
 
@@ -58,5 +58,7 @@ Job 8's own record says no investigation had been run on the hosted site after i
 
 ## Rollback, if ever needed
 
-Site: publish the `frontend.zip` of job 7 (sha256 `fc2ebd76537e1076f07ba8ef2939bf314482b7ca8d4bd320d74d20b845be3502`).
+Site: publish again the site of job 8 (source `d1dc98a`; a build of that source is `dist/frontend-freeze/frontend.zip`, sha256
+`915208874b83f6d984e97a604bf255581f3b0697395b1460776d1be32a8e79f3`, kept locally), or the `frontend.zip` of job 7
+(sha256 `fc2ebd76537e1076f07ba8ef2939bf314482b7ca8d4bd320d74d20b845be3502`).
 Backend: `cloudshell_release.py rollback --code-key lambda/byb-backend-3a2220a805a80ce1.zip` (`scripts/deploy.md`, "Rollback").
