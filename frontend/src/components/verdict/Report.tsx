@@ -1,8 +1,6 @@
 "use client";
 
 import { FeasibilityTable } from "@/components/portfolio/FeasibilityTable";
-import { LinkButton } from "@/components/ui/Button";
-import { stageHref } from "@/state/stage";
 import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Notice } from "@/components/ui/Notice";
@@ -18,6 +16,7 @@ import { ExposurePanel } from "./ExposurePanel";
 import { ruleLookup, RuleResultsList, StartingFindingsList } from "./RuleResults";
 import { ScenarioPanel } from "./ScenarioPanel";
 import { VerdictSummary, type SummaryLink } from "./VerdictSummary";
+import { WhatNext } from "./WhatNext";
 
 export interface ReportProps {
   /** The finished job the report belongs to: its explanation sentences and how it was run. */
@@ -113,7 +112,7 @@ export function Report({ job, result, policy, objectives, instruments, scenarioP
           </p>
         ) : null}
       </VerdictSummary>
-      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">Modify my idea</LinkButton><LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton></div>
+      <WhatNext result={result} />
 
       {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
       {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}

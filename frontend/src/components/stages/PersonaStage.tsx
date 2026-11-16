@@ -119,6 +119,35 @@ export function PersonaStage() {
       stage="persona"
       lead="Pick a fictional investor to try a portfolio decision."
     >
+      <section aria-labelledby="how-it-works-title" className="rounded-xl border border-line bg-surface p-5" data-testid="how-it-works">
+        <h2 id="how-it-works-title" className="text-lg font-semibold text-ink">
+          What this tool does
+        </h2>
+        <p className="mt-1 max-w-prose text-ink-muted">
+          Before you buy something, it checks whether the purchase would break limits you set for yourself, such as
+          &ldquo;no more than 10% of my money in one company&rdquo;. It counts what you hold directly and what you hold inside funds,
+          and it says plainly when the data cannot prove an answer. Everything is fictional: it gives no advice and places no trade.
+        </p>
+        <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Choose a profile", "Pick a fictional investor and look at what they own."],
+            ["Set your limits", "Confirm the limits you want checked. Nothing is checked until you confirm it."],
+            ["Test an idea", "Pick one investment and the share of the portfolio it would have after buying."],
+            ["Understand the result", "See which limits pass or fail, what is still unknown, and the evidence behind each figure."],
+          ].map(([title, text], index) => (
+            <li key={title} className="flex gap-3 rounded-lg bg-sunken p-3">
+              <span aria-hidden="true" className="tabular flex size-7 flex-none items-center justify-center rounded-md border border-line-strong bg-surface text-xs font-semibold text-ink-muted">
+                {index + 1}
+              </span>
+              <span className="text-sm">
+                <span className="block font-semibold text-ink">{title}</span>
+                <span className="text-ink-muted">{text}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
       <Panel title="Who would you like to try?">
         <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PERSONAS.filter((persona) => persona.available).map((persona) => (

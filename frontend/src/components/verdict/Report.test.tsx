@@ -35,7 +35,7 @@ describe("Report, page order", () => {
     const report = renderRobert();
     const blocks = [...report.children];
     expect(blocks[0]).toHaveAttribute("data-testid", "verdict-summary");
-    expect(blocks[1]).toHaveAttribute("data-testid", "result-actions");
+    expect(blocks[1]).toHaveAttribute("data-testid", "what-next");
     expect(blocks[2]).toHaveAttribute("id", "report-rules");
     expect(blocks[3]).toHaveAttribute("id", "report-exposure");
     expect(within(blocks[2] as HTMLElement).getAllByTestId("rule-result")).toHaveLength(2);

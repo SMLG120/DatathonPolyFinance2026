@@ -234,7 +234,7 @@ describe("Purchase stage, a request the service cannot evaluate (the recorded in
     expect(within(alert).queryByRole("button")).toBeNull();
     expect(createInvestigation).toHaveBeenCalledTimes(1);
     // The page stays on the purchase stage: nothing was started.
-    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Step 2 of 3: Test an idea");
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Step 3 of 4: Test an idea");
   });
 
   it("keeps the retry for a failure that another attempt can get past", async () => {
