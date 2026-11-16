@@ -4,28 +4,74 @@ import { expect, type Locator, type Page } from "@playwright/test";
 /** Every test opens the static build in fixtures mode, whatever the build was configured with. */
 export const START_URL = "/?fixtures=1";
 
-export const STAGE_TITLES = ["Persona & portfolio", "Goals & rules", "Proposed purchase", "Investigation steps", "Verdict & evidence", "Challenge"] as const;
+/** The four moments of the journey, as the stage navigation names them. */
+export const JOURNEY_TITLES = ["Choose a profile", "Set your limits", "Test an idea", "Understand the result"] as const;
+
+/**
+ * Every screen, by the id in its address (`#/purchase`): the moment of the
+ * journey it belongs to and the title of its heading. "Analysis details" and
+ * "Review this result" are secondary views of the result.
+ */
+export const SCREENS = {
+  persona: { step: 1, title: "Choose a profile" },
+  goals: { step: 2, title: "Your limits" },
+  purchase: { step: 3, title: "Test an idea" },
+  investigation: { step: 4, title: "Analysis details" },
+  verdict: { step: 4, title: "Your result" },
+  challenge: { step: 4, title: "Review this result" },
+} as const;
+export type ScreenId = keyof typeof SCREENS;
 
 export function stageHeading(page: Page): Locator {
   return page.locator("[data-stage-heading]");
 }
 
-/** The stage is shown and — because a stage change is a page change — its heading has focus. */
-export async function expectStage(page: Page, number: number, { focused = true }: { focused?: boolean } = {}) {
-  const heading = stageHeading(page);
-  await expect(heading).toHaveText(`Step ${number} of 6: ${STAGE_TITLES[number - 1]}`);
-  if (focused) await expect(heading).toBeFocused();
-  await expect(page.getByRole("link", { name: new RegExp(`^Step ${number} of 6: `) })).toHaveAttribute("aria-current", "step");
+/** A link of the stage navigation, by the number of its moment. A finished moment reads "(completed)" after its title. */
+export function stepLink(page: Page, step: 1 | 2 | 3 | 4): Locator {
+  return page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link", { name: new RegExp(`^Step ${step} of 4: ${JOURNEY_TITLES[step - 1]}`) });
 }
 
-/** The labels that must be on screen on every stage. */
+/** The screen is shown and — because a screen change is a page change — its heading has focus. */
+export async function expectScreen(page: Page, id: ScreenId, { focused = true }: { focused?: boolean } = {}) {
+  const { step, title } = SCREENS[id];
+  const heading = stageHeading(page);
+  await expect(heading).toHaveText(`Step ${step} of 4: ${title}`);
+  if (focused) await expect(heading).toBeFocused();
+  await expect(page.getByRole("navigation", { name: "Stages of the simulation" }).getByRole("link")).toHaveCount(4);
+  await expect(stepLink(page, step)).toHaveAttribute("aria-current", "step");
+  await expect(page.locator('nav[aria-label="Stages of the simulation"] [aria-current]')).toHaveCount(1);
+}
+
+/**
+ * The labels that must be there on every screen. The simulation label and the
+ * test-data label are visible. The valuation date is in the notice as text for
+ * assistive technology only (it is visually hidden), so its text is checked,
+ * not its visibility.
+ */
 export async function expectPersistentLabels(page: Page) {
   await expect(page.getByTestId("simulation-label")).toBeVisible();
-  await expect(page.getByTestId("simulation-label")).toHaveText("Simulation — fictional portfolio, not advice");
+  await expect(page.getByTestId("simulation-label")).toHaveText("Simulation: fictional portfolio, not advice");
   await expect(page.getByTestId("fixtures-label")).toBeVisible();
-  await expect(page.getByTestId("fixtures-label")).toHaveText("Test data — fixtures");
-  await expect(page.getByTestId("valuation-date")).toBeVisible();
+  await expect(page.getByTestId("fixtures-label")).toHaveText("Test data: fixtures");
   await expect(page.getByTestId("valuation-date")).toHaveText("Valuation date: 12 Nov 2026");
+}
+
+/** The first screen has loaded the persona's portfolio. The table itself is inside a closed panel until it is asked for. */
+export async function expectPortfolioLoaded(page: Page, persona = "Robert") {
+  await expect(page.getByTestId(`persona-${persona.toLowerCase()}`).getByTestId("persona-selected")).toBeVisible();
+  await expect(page.getByTestId("portfolio-table")).toContainText(`${persona}’s fictional portfolio`);
+}
+
+/** The summary line of a closed panel, by the panel's title. */
+export function panelSummary(page: Page, title: string): Locator {
+  return page.getByRole("main").locator("summary").filter({ has: page.getByRole("heading", { name: title, exact: true }) });
+}
+
+/** Screen 1 with the pointer: open "View the fictional portfolio" and see the table. */
+export async function openPortfolioPanel(page: Page) {
+  await expect(page.getByTestId("portfolio-table")).toBeHidden();
+  await panelSummary(page, "View the fictional portfolio").click();
+  await expect(page.getByTestId("portfolio-table")).toBeVisible();
 }
 
 /**
@@ -73,22 +119,54 @@ export function mainAlert(page: Page): Locator {
   return page.getByRole("main").getByRole("alert");
 }
 
-/** Stage 2 with the pointer: the scenario's rules are offered as proposals; confirm them with their numbers. */
+/**
+ * From screen 1 with the pointer: "Set your limits" offers the scenario's rules
+ * as proposals; confirm them with their numbers.
+ */
 export async function confirmScenarioRules(page: Page) {
-  await page.getByRole("link", { name: "Continue to Goals & rules" }).click();
+  await page.getByTestId("continue-link").click();
+  await expectScreen(page, "goals");
   await expect(page.getByTestId("rule-card").first()).toBeVisible();
   await page.getByTestId("confirm-rules").click();
   await expect(page.getByTestId("policy-rule-card").first()).toBeVisible();
 }
 
+/** From "Your limits" to "Test an idea", with the pointer. */
+export async function continueToPurchase(page: Page) {
+  await page.getByTestId("continue-link").click();
+  await expectScreen(page, "purchase");
+}
+
+/** The panel of the purchase screen that holds the service's preview is closed until asked for. */
+export async function openPurchasePreview(page: Page) {
+  await panelSummary(page, "Preview cash and exposures").click();
+  await expect(page.getByTestId("purchase-preview")).toBeVisible();
+}
+
+/** "Check my idea" leads straight to the result screen, which waits for the investigation and then shows its report. */
+export async function checkIdeaAndWaitForReport(page: Page) {
+  await page.getByTestId("start-investigation").click();
+  await expectScreen(page, "verdict");
+  await expect(page.getByTestId("report")).toBeVisible({ timeout: 30_000 });
+}
+
+/** The exposure chart and the explorer are inside the closed panel "Explore my exposures" of the report. */
+export async function openExposurePanel(page: Page) {
+  await panelSummary(page, "Explore my exposures").click();
+  await expect(page.locator("#report-exposure")).toHaveJSProperty("open", true);
+}
+
+/** Opens every closed section of the page at once, the nested ones included. */
+export async function openEverySection(page: Page) {
+  await page.evaluate(() => document.querySelectorAll("main details").forEach((details) => ((details as HTMLDetailsElement).open = true)));
+}
+
 /** From the first screen to the report of the scenario's scripted request, with the pointer. */
 export async function openReport(page: Page) {
-  await expect(page.getByTestId("portfolio-table")).toBeVisible();
+  await expectPortfolioLoaded(page);
   await confirmScenarioRules(page);
-  await page.getByRole("link", { name: "Continue to Proposed purchase" }).click();
-  await page.getByTestId("start-investigation").click();
-  await page.getByTestId("see-verdict").click({ timeout: 30_000 });
-  await expect(page.getByTestId("report")).toBeVisible();
+  await continueToPurchase(page);
+  await checkIdeaAndWaitForReport(page);
 }
 
 /**
@@ -137,7 +215,7 @@ export async function expectNoAxeViolations(page: Page, context: string) {
     rule: violation.id,
     impact: violation.impact,
     help: violation.help,
-    nodes: violation.nodes.slice(0, 5).map((node) => `${node.target.join(" ")} — ${node.failureSummary?.replace(/\s+/g, " ")}`),
+    nodes: violation.nodes.slice(0, 5).map((node) => `${node.target.join(" ")}: ${node.failureSummary?.replace(/\s+/g, " ")}`),
   }));
   expect(summary, `axe violations on: ${context}`).toEqual([]);
   // Guard against an empty run passing by accident.

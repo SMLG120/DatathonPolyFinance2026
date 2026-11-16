@@ -5,8 +5,9 @@ import { Badge, StatusBadge } from "@/components/ui/Badge";
 import { Button, LinkButton } from "@/components/ui/Button";
 import { TestDataTag } from "@/components/ui/TestDataTag";
 import { measuredText } from "@/components/verdict/RuleMeasure";
-import type { InvestigationJob, Policy, RuleResult } from "@/lib/contracts";
+import type { InvestigationJob, Policy, Portfolio, RuleResult } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
+import { portfolioCheckedLabel } from "@/lib/customize";
 import { formatFraction } from "@/lib/format";
 import { assessResult } from "@/lib/result";
 import { limitNoun, ruleTypeLabel, thresholdText } from "@/lib/rules";
@@ -126,6 +127,27 @@ function ReportCard({ label, job, onOpen }: { label: string; job: InvestigationJ
 }
 
 /**
+ * Whether the two reports were checked against the same portfolio, as far as the two jobs say:
+ * - "same": both jobs carry a portfolio and the ids are equal;
+ * - "different": both carry one and the ids differ;
+ * - "legacy": both jobs are known and neither carries one (stored before jobs kept their portfolio:
+ *   each was then checked against the scenario portfolio, contracts/api.md section 2a);
+ * - "pending": the new job has not reported anything yet;
+ * - "unknown": only one of the two carries a portfolio, so sameness cannot be confirmed.
+ * Nothing is inferred from the weights: only the ids the service gave are compared.
+ */
+export type PortfolioMatch = "same" | "different" | "legacy" | "pending" | "unknown";
+
+export function portfolioMatch(older: InvestigationJob | undefined, newer: InvestigationJob | undefined): PortfolioMatch {
+  if (!newer) return "pending";
+  const before = older?.portfolio;
+  const after = newer.portfolio;
+  if (before && after) return before.portfolio_id === after.portfolio_id ? "same" : "different";
+  if (!before && !after) return older ? "legacy" : "unknown";
+  return "unknown";
+}
+
+/**
  * After a rule change: policy v(n) against v(n+1), and the result under each,
  * side by side. The earlier report is not altered and can still be opened.
  * Every figure is read from the two results; nothing is compared by
@@ -135,6 +157,7 @@ export function RuleChangeComparison() {
   const { state, actions, derived } = useWorkflow();
   const comparison = state.comparison;
   if (!comparison) return null;
+  const scenarioData = state.portfolio.data?.scenario ?? null;
 
   const older = state.investigations[comparison.olderId];
   const newer = state.investigations[comparison.newerId];
@@ -146,6 +169,10 @@ export function RuleChangeComparison() {
     actions.viewReport(id);
     goToStage("verdict");
   };
+  const match = portfolioMatch(older, newer);
+  const named = (portfolio: Portfolio) => (
+    <span className="font-semibold text-ink">{portfolioCheckedLabel(portfolio, scenarioData?.portfolio ?? null, scenarioData?.persona.display_name ?? "This persona")}</span>
+  );
 
   return (
     <div className="space-y-8" data-testid="rule-change-comparison">
@@ -161,10 +188,36 @@ export function RuleChangeComparison() {
 
       <section aria-labelledby="comparison-reports-title">
         <h3 id="comparison-reports-title" className="text-lg font-semibold text-ink">
-          {t("The same purchase under each version")}</h3>
+          The same purchase under each version
+        </h3>
+        {/* Said from the two jobs' own portfolio ids. Sameness is claimed only when both jobs carry the same id. */}
+        {older?.portfolio || newer?.portfolio ? (
+          <p className="mt-1 text-sm text-ink-muted" data-testid="comparison-portfolio" data-portfolio-match={match}>
+            {match === "same" && older?.portfolio ? (
+              <>Both reports were checked against the portfolio stored with the earlier one: {named(older.portfolio)}.</>
+            ) : match === "different" && older?.portfolio && newer?.portfolio ? (
+              <>
+                The two reports were not checked against the same portfolio. The earlier report used: {named(older.portfolio)}. The new report used:{" "}
+                {named(newer.portfolio)}.
+              </>
+            ) : match === "pending" && older?.portfolio ? (
+              <>The earlier report was checked against: {named(older.portfolio)}. The new check has not reported its portfolio yet.</>
+            ) : older?.portfolio ? (
+              <>
+                The earlier report was checked against: {named(older.portfolio)}. The service did not say which portfolio the new report was checked against,
+                so this page cannot confirm that both used the same one.
+              </>
+            ) : newer?.portfolio ? (
+              <>
+                The new report was checked against: {named(newer.portfolio)}. The service did not say which portfolio the earlier report was checked
+                against, so this page cannot confirm that both used the same one.
+              </>
+            ) : null}
+          </p>
+        ) : null}
         <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <ReportCard                     label={`${t("Earlier report")} — ${t("policy version")} ${older?.policy_version ?? t("unknown")} — ${t("Unchanged")}`} job={older} onOpen={() => open(comparison.olderId)} />
-          <ReportCard label={`${t("New report")} — ${t("policy version")} ${newer?.policy_version ?? newerPolicy?.version ?? "unknown"}`} job={newer} onOpen={() => open(comparison.newerId)} />
+          <ReportCard label={`Earlier report: policy version ${older?.policy_version ?? "unknown"}: unchanged`} job={older} onOpen={() => open(comparison.olderId)} />
+          <ReportCard label={`New report: policy version ${newer?.policy_version ?? newerPolicy?.version ?? "unknown"}`} job={newer} onOpen={() => open(comparison.newerId)} />
         </div>
       </section>
 
@@ -212,8 +265,15 @@ export function RuleChangeComparison() {
         </section>
       ) : null}
 
-      <p className="text-sm text-ink-muted">
-        {t("A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the same purchase and the same sources.")}</p>
+      <p className="text-sm text-ink-muted" data-testid="comparison-cause" data-portfolio-match={match}>
+        {match === "same" || match === "legacy"
+          ? "A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the same purchase and the same sources."
+          : match === "different"
+            ? "The two reports were not checked against the same portfolio, so a different result under the new version can come from the portfolio as well as from the rule that was changed."
+            : match === "pending"
+              ? "A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio. That is known once the new check reports its portfolio."
+              : "A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio, which this page cannot confirm for these two."}
+      </p>
     </div>
   );
 }

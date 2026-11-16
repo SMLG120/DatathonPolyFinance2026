@@ -22,7 +22,7 @@ describe("App shell", () => {
     const user = userEvent.setup();
     renderApp();
     await screen.findByTestId("portfolio-table");
-    expect(within(screen.getByRole("navigation", { name: "Stages of the simulation" })).getAllByRole("link")).toHaveLength(3);
+    expect(within(screen.getByRole("navigation", { name: "Stages of the simulation" })).getAllByRole("link")).toHaveLength(4);
     expect(screen.getByTestId("portfolio-table").closest("details")).not.toHaveAttribute("open");
     await confirmScenarioRules(user);
     await go("purchase");
@@ -40,10 +40,10 @@ describe("App shell", () => {
     await screen.findByTestId("portfolio-table");
     for (const stage of STAGES) {
       await go(stage.id);
-      expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation — fictional portfolio, not advice");
-      expect(screen.getByTestId("fixtures-label")).toHaveTextContent("Test data — fixtures");
+      expect(screen.getByTestId("simulation-label")).toHaveTextContent("Simulation: fictional portfolio, not advice");
+      expect(screen.getByTestId("fixtures-label")).toHaveTextContent("Test data: fixtures");
       expect(screen.getByTestId("valuation-date")).toHaveTextContent("Valuation date: 12 Nov 2026");
-      expect(screen.getByRole("link", { current: "step" })).toHaveAccessibleName(`Step ${journeyFor(stage.id).number} of 3: ${journeyFor(stage.id).title}`);
+      expect(screen.getByRole("link", { current: "step" })).toHaveAccessibleName(`Step ${journeyFor(stage.id).number} of 4: ${journeyFor(stage.id).title}`);
     }
   });
 
@@ -55,7 +55,7 @@ describe("App shell", () => {
 
     await go("goals");
     expect(stageHeading()).toHaveFocus();
-    expect(document.title).toBe("Your limits — Before You Buy — fictional simulation");
+    expect(document.title).toBe("Your limits: ETHOS: fictional simulation");
   });
 
   it("has one main landmark, one banner notice and one h1", async () => {
@@ -73,7 +73,7 @@ describe("App shell", () => {
     await go("investigation");
     expect(screen.getByText("No investigation has been started")).toBeInTheDocument();
     await go("verdict");
-    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+    expect(screen.getByText("There is no result to show yet")).toBeInTheDocument();
     await go("challenge");
     expect(screen.getByText("There is no report to challenge yet")).toBeInTheDocument();
     await go("purchase");
@@ -81,12 +81,30 @@ describe("App shell", () => {
     expect(screen.getByText("Needs at least one confirmed rule.")).toBeInTheDocument();
   });
 
-  it("marks Amira as coming after core and offers no way to select her", async () => {
+  it("offers Amira as the third persona, after Robert and Mateo, without changing the default", async () => {
     renderApp();
     await screen.findByTestId("portfolio-table");
-    expect(screen.queryByTestId("persona-amira")).toBeNull();
+    const cards = screen.getAllByTestId(/^persona-(robert|mateo|amira)$/);
+    expect(cards.map((card) => card.getAttribute("data-testid"))).toEqual(["persona-robert", "persona-mateo", "persona-amira"]);
     expect(within(screen.getByTestId("persona-robert")).getByTestId("persona-selected")).toBeInTheDocument();
     expect(within(screen.getByTestId("persona-mateo")).getByRole("button", { name: "Use Mateo’s portfolio" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("persona-amira")).getByRole("button", { name: "Use Amira’s portfolio" })).toBeInTheDocument();
+    expect(screen.queryByText(/Not available in this build/)).toBeNull();
+  });
+
+  it("loads Amira's fictional portfolio exactly as recorded, crypto included, with the fiction notice", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await user.click(screen.getByRole("button", { name: "Use Amira’s portfolio" }));
+    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Amira’s fictional portfolio"));
+    const { scenario } = FIXTURES.portfolioAmira.response;
+    expect(scenario.fictional).toBe(true);
+    expect(screen.getByTestId("fiction-notice")).toHaveTextContent(scenario.fiction_notice);
+    const table = screen.getByTestId("portfolio-table");
+    expect(within(table).getAllByTestId("portfolio-row")).toHaveLength(scenario.portfolio.positions.length + 1);
+    for (const name of ["Bitcoin", "Ether", "Shopify", "JPMorgan Chase", "NVIDIA"]) expect(table).toHaveTextContent(name);
+    expect(within(screen.getByTestId("persona-amira")).getByTestId("persona-selected")).toBeInTheDocument();
   });
 
   it("shows the portfolio and the fiction notice exactly as the service sent them", async () => {
@@ -117,7 +135,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     const cards = await screen.findAllByTestId("rule-card");
     expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-issuer-cap-1", "robert-loss-budget-1"]);
     for (const card of cards) {
-      expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+      expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
       expect(card).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
       expect(within(card).getByRole("textbox")).toHaveValue("10");
     }
@@ -222,7 +240,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(preview).toHaveTextContent("Preview: Fail");
     expect(preview).toHaveTextContent("draft limit 20.0%");
     expect(within(preview).getByTestId("rule-gap")).toHaveTextContent("6.2 points over the limit");
-    expect(within(form).getByTestId("draft-preview")).toHaveTextContent("Preview with draft threshold — not your confirmed policy");
+    expect(within(form).getByTestId("draft-preview")).toHaveTextContent("Preview with draft threshold: not your confirmed policy");
 
     // Nothing was confirmed or challenged, and the report still says what it said.
     expect(confirmRules).toHaveBeenCalledTimes(1);
@@ -265,7 +283,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(challengeInvestigation.mock.calls[0]?.[1]).toEqual(exchange.request);
     expect(correction.status).toBe("UNVERIFIED");
     expect(correction.applied_to_calculation).toBe(false);
-    expect(card).toHaveTextContent("Proposed correction — unverified");
+    expect(card).toHaveTextContent("Proposed correction: unverified");
     expect(within(card).getByTestId("correction-proposed")).toHaveTextContent("8.00%");
     expect(within(card).getByTestId("correction-original")).toHaveTextContent("6.00%");
     expect(card).toHaveTextContent("Asserted by the user on");
@@ -296,7 +314,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     const user = await toVerdict({ api: { ...fixtures, challengeInvestigation } });
     await go("challenge");
     const form = screen.getByTestId("change-rule-form");
-    expect(within(form).getByLabelText("Rule to change")).toHaveDisplayValue("Maximum exposure to a single company — now 10.0%");
+    expect(within(form).getByLabelText("Rule to change")).toHaveDisplayValue("Maximum exposure to a single company: now 10.0%");
     expect(within(form).getByTestId("current-threshold")).toHaveTextContent("Confirmed now: 10.0%");
 
     // Gated: no change without a different number.
@@ -381,7 +399,7 @@ describe("Robert: the six stages in fixtures mode", () => {
     expect(within(forms).getByRole("heading", { level: 2 })).toHaveTextContent("What do you want to challenge?");
     expect(within(form).getByRole("heading", { level: 3, name: "Change a rule" })).toBeInTheDocument();
     expect(within(section).getByRole("heading", { level: 2 })).toHaveTextContent("Version comparison: before and after the rule change");
-    expect(section).toHaveTextContent("Outcome of the rule change — separate from the form above");
+    expect(section).toHaveTextContent("Outcome of the rule change: separate from the form above");
     expect(within(comparison).getAllByRole("heading", { level: 3 }).map((heading) => heading.textContent)).toEqual([
       "What changed in the policy",
       "The same purchase under each version",
@@ -548,12 +566,12 @@ describe("A policy version conflict (finding F-04)", () => {
     // The stale version is no longer presented as the policy in force.
     expect(screen.queryAllByTestId("policy-rule-card")).toHaveLength(0);
     expect(screen.queryByTestId("policy-rule-card")).toBeNull();
-    expect(screen.queryByRole("heading", { name: /^Confirmed policy — version/ })).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^Confirmed policy: version/ })).toBeNull();
     // Every rule is a proposal again: the one being confirmed keeps the number typed, the scenario's other rule is offered again.
     const proposals = screen.getAllByTestId("rule-card");
     expect(proposals.map((card) => card.getAttribute("data-rule-id"))).toEqual(["robert-loss-budget-1", "robert-issuer-cap-1"]);
     expect(proposals.map((card) => (within(card).getByRole("textbox") as HTMLInputElement).value)).toEqual(["12", "10"]);
-    for (const card of proposals) expect(within(card).getByText("Proposed — inactive")).toBeInTheDocument();
+    for (const card of proposals) expect(within(card).getByText("Proposed: inactive")).toBeInTheDocument();
 
     // Nothing can be checked until a rule is confirmed again.
     await go("purchase");
@@ -700,6 +718,40 @@ async function toVerdictWithoutReport(api: ReturnType<typeof createFixturesClien
   await waitFor(() => expect(stageHeading()).toHaveTextContent("Your result"));
   return user;
 }
+
+describe("Amira: wording that needs clarification, not a verdict", () => {
+  it("offers her fictional-scenario rule and answers her sentence with a question, never a number or a contradiction", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    await user.click(screen.getByRole("button", { name: "Use Amira’s portfolio" }));
+    await waitFor(() => expect(screen.getByTestId("portfolio-table")).toHaveTextContent("Amira’s fictional portfolio"));
+
+    await go("goals");
+    const cards = await screen.findAllByTestId("rule-card");
+    expect(cards.map((card) => card.getAttribute("data-rule-id"))).toEqual(["amira-issuer-cap-1"]);
+    expect(cards[0]).toHaveAttribute("data-rule-origin", "FICTIONAL_SCENARIO");
+    expect(within(cards[0] as HTMLElement).getByRole("textbox")).toHaveValue("20");
+
+    await user.click(screen.getByTestId("use-scenario-sentence"));
+    expect(screen.getByDisplayValue("I want maximum growth and strict diversification.")).toBeInTheDocument();
+    await user.click(screen.getByTestId("interpret-words"));
+    const interpretation = await screen.findByTestId("interpretation");
+    const answer = FIXTURES.interpret.amira.response;
+    const question = within(interpretation).getByTestId("clarification-card");
+    expect(question).toHaveTextContent(answer.clarifications[0]?.question as string);
+    expect(within(question).getAllByTestId("unsupported-option").length).toBeGreaterThan(0);
+    // "maximum growth" is reported as something no rule measures, not turned into a rule.
+    expect(interpretation).toHaveTextContent("maximum growth");
+    expect(interpretation).toHaveTextContent(answer.unsupported[0]?.reason as string);
+    // No drafted rule carries a number, and nothing claims a contradiction between her two wishes.
+    expect(answer.proposed_rules).toEqual([]);
+    expect(interpretation.textContent?.toLowerCase().replace("not a proven contradiction", "")).not.toMatch(/contradict/);
+    // Nothing is confirmed by interpreting: the scenario's card is still the only proposal and no policy exists.
+    expect(screen.getAllByTestId("rule-card")).toHaveLength(1);
+    expect(screen.queryAllByTestId("policy-rule-card")).toHaveLength(0);
+  });
+});
 
 describe("Mateo: a preference that needs a definition, and missing data", () => {
   it("asks instead of guessing, lists no check twice, and reports two failures with what was already failing kept apart", async () => {
@@ -993,7 +1045,7 @@ describe("Requests the test data holds no answer for", () => {
     expect(screen.getByText("No investigation was created.")).toBeInTheDocument();
     expect(stageHeading()).toHaveTextContent("Test an idea");
     await go("verdict");
-    expect(screen.getByText("There is no result yet")).toBeInTheDocument();
+    expect(screen.getByText("There is no result to show yet")).toBeInTheDocument();
   });
 
   it("says so when words other than the recorded sentence are interpreted, and keeps the offered rules", async () => {

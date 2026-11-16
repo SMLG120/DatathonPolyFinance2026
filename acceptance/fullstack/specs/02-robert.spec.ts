@@ -11,15 +11,20 @@ import {
   engineCheck,
   expectNoTestDataMarkers,
   figureText,
+  goToChallenge,
   goToGoals,
   goToPurchase,
   openAllDetails,
+  openAnalysisDetails,
+  openPortfolioPanel,
+  openPreview,
   percentTokens,
   openApp,
   resetBackend,
   serverLog,
   setPurchase,
   shot,
+  startAndOpenVerdict,
   Traffic,
   unexplainedFigures,
 } from "./helpers";
@@ -46,6 +51,7 @@ test.describe("Robert: the complete demonstration, live against the local backen
     // ---- Stage 1: the portfolio table shows the API's weights -------------------------------------------------
     const portfolio = (await traffic.last("GET", /^\/portfolios\/robert$/)).body;
     const positions = portfolio.scenario.portfolio.positions;
+    await openPortfolioPanel(page); // closed by default on the three-step interface
     await expect(page.getByTestId("portfolio-row")).toHaveCount(positions.length + 1); // + the cash row
     for (const position of positions) {
       const row = page.getByTestId("portfolio-row").filter({ hasText: position.instrument_id });
@@ -63,7 +69,12 @@ test.describe("Robert: the complete demonstration, live against the local backen
     expect(confirm.status).toBe(201);
     const v1 = confirm.body.policy;
     expect(v1.version).toBe(1);
-    await expect(page.getByRole("heading", { name: `Confirmed policy — version ${v1.version}` })).toBeVisible();
+    // The confirmed policy is headed "Your confirmed limits"; its version is under "History and source".
+    const policyPanel = page.locator("#confirmed-policy");
+    await expect(policyPanel.getByRole("heading", { name: "Your confirmed limits" })).toBeVisible();
+    await policyPanel.getByText("History and source").click();
+    await expect(policyPanel.locator("details", { hasText: "History and source" }).locator("dl > div").filter({ hasText: /^Version/ }).first()).toHaveText(new RegExp(`^Version\\s*${v1.version}$`));
+    await expect(policyPanel).toContainText("Nothing: first version");
     const confirmedRules = v1.rules.filter((rule: any) => rule.status === "CONFIRMED");
     await expect(page.getByTestId("policy-rule-card")).toHaveCount(confirmedRules.length);
     await expect(page.getByTestId("policy-rule-threshold")).toHaveText(confirmedRules.map((rule: any) => formatFraction(rule.threshold)));
@@ -73,12 +84,13 @@ test.describe("Robert: the complete demonstration, live against the local backen
     // ---- Stage 3: NVDA to 25%, the preview is the service's answer --------------------------------------------
     await goToPurchase(page);
     await setPurchase(page, "NVDA", "25");
-    const preview = page.getByTestId("purchase-preview");
+    const preview = await openPreview(page); // "Preview cash and exposures", closed by default
     await expect(preview.getByTestId("cash-after")).toBeVisible();
     const check = await traffic.last("POST", /^\/check$/, (call) => call.requestBody?.purchase_request?.instrument_id === "NVDA" && call.status === 200);
     expect(check.requestBody.purchase_request.target_direct_weight).toBe(0.25);
     const checked = check.body;
-    await expect(page.getByTestId("entered-target")).toHaveText(formatFraction(check.requestBody.purchase_request.target_direct_weight));
+    // The entered target, as the service echoes it in the "After" cell of the purchased position.
+    await expect(preview.locator('tr[data-row="purchase"] td').last()).toHaveText(formatFraction(check.requestBody.purchase_request.target_direct_weight));
     await expect(preview.getByTestId("cash-after")).toHaveText(formatFraction(checked.feasibility.cash_after));
     await expect(preview.getByTestId("additional-purchase")).toHaveText(formatChange(checked.feasibility.additional_purchase));
     await expect(page.getByTestId("purchase-preview-label")).toContainText("Preview");
@@ -94,8 +106,10 @@ test.describe("Robert: the complete demonstration, live against the local backen
     await shot(page, "03-robert-purchase-preview-live-local-backend-real-data", { fullPage: true });
 
     // ---- Stage 4: one investigation, with a bearer header and an idempotency key -------------------------------
-    await page.getByTestId("start-investigation").click();
-    await expect(page.getByTestId("see-verdict")).toBeVisible({ timeout: 60_000 });
+    // "Check my idea" moves to step 3 by itself; the steps of the job are on the secondary "Analysis details" screen.
+    await startAndOpenVerdict(page);
+    await openAnalysisDetails(page);
+    await expect(page.getByTestId("see-verdict")).toBeVisible();
     const created = await traffic.last("POST", /^\/investigations$/);
     expect(created.status).toBe(202);
     expect(created.requestHeaders["idempotency-key"]).toMatch(/^[A-Za-z0-9_-]{8,64}$/);
@@ -149,7 +163,8 @@ test.describe("Robert: the complete demonstration, live against the local backen
     }
 
     // ---- Stage 6: raise the single-company limit to 30% -> policy version 2 -> a new investigation -------------
-    await page.getByRole("link", { name: "Challenge this result" }).click();
+    await goToChallenge(page);
+    // Robert's scenario example is a rule change, so that tab is the one open.
     const form = page.getByTestId("change-rule-form");
     await expect(form).toBeVisible();
     const capRule = v1.rules.find((rule: any) => rule.rule_type === "max_issuer_exposure");
@@ -248,16 +263,14 @@ test.describe("Robert: the complete demonstration, live against the local backen
     await goToGoals(page);
     await confirmOfferedRules(page);
     await goToPurchase(page);
-    await expect(page.getByTestId("purchase-preview").getByTestId("cash-after")).toBeVisible();
-    await page.getByTestId("start-investigation").click();
-    await page.getByTestId("see-verdict").click({ timeout: 60_000 });
-    await expect(page.getByTestId("report")).toBeVisible();
+    await expect((await openPreview(page)).getByTestId("cash-after")).toBeVisible();
+    await startAndOpenVerdict(page);
     const job = (await traffic.last("GET", /^\/investigations\/inv-[0-9a-f]+$/, (call) => call.body?.status === "SUCCEEDED")).body;
     // A sourced fact of the result, with a fraction as its unit: the first one the API lists.
     const record = job.result.evidence.find((candidate: any) => candidate.label === "FACT" && candidate.unit === "fraction" && typeof candidate.value === "number");
     expect(record, "the result holds a FACT record with a fraction").toBeTruthy();
 
-    await page.getByRole("link", { name: "Challenge this result" }).click();
+    await goToChallenge(page);
     await page.getByRole("tab", { name: "Correct a fact" }).click();
     const form = page.getByTestId("correct-fact-form");
     await form.getByLabel("Which figure?").selectOption(record.evidence_id);

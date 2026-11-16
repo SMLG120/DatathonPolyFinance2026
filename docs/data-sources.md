@@ -110,6 +110,23 @@ while exploring and then registered with `--from-file`: the XIU CSV (22:30:01, b
 been read) and the terms page itself (22:34:58, `curl` run with a browser-like User-Agent string). The owner
 has decided to keep both holdings files as fetched (section 5.5).
 
+**State on 2026-11-15** (manifest records `*_2026-11-15` were added that day):
+
+- SPY holdings and product page were fetched again by `acquire_holdings.py` (19:06:40Z and 19:11:28Z). The
+  holdings spreadsheet is byte-identical to the 2026-11-14 one (same SHA-256, as of 12-Nov-2026); the build now
+  reads `SPY_2026-11-15.xlsx` and `SPY_PAGE_2026-11-15.html` (as of Nov 12 2026, SHA-256 `7644e3e9…5d39`; its
+  fund-level sector figures are the ones printed in section 5.3).
+- An XIU file was downloaded by hand in a browser and registered (`XIU_2026-11-15.csv`, SHA-256 `681023d8…7970`).
+  It is "as of Nov 13, 2026", one day **after** the valuation date, so it is **not used**: the build takes the
+  latest file dated on or before the valuation date (`build_processed.py`, `pick_record`), and quality check Q29
+  fails if a later one is ever in `holdings.json`. The official case (p. 14, "Time consistency") requires this:
+  "do not use information in a simulation before it was available".
+- The file in use for XIU.TO is the one of the table above, `XIU_2026-11-14.csv` (as of Nov 12, 2026). It was
+  restored on 2026-11-15 from a teammate's copy and verified against the manifest: SHA-256
+  `9caae3aa6b3aa4ad4faf2b37c9f96fd604f2a10c8cb60831f388ad0a28947527`, 11,137 bytes.
+- For a few hours on 2026-11-15 the processed data and the deployed snapshot `snap-2026-11-12-c2289f2b406d` were
+  built from the Nov 13 file. The corrected snapshot is `snap-2026-11-12-2662b7a89c03`.
+
 Every other automated request made to blackrock.com, all on 2026-11-14: the XIU product page and a first test
 of the CSV URL (22:26, before the terms were read), and `robots.txt` (22:36:39, 75 seconds after the clause on
 automated access had been read). Nothing was requested from blackrock.com after that.
@@ -458,7 +475,7 @@ in fractions or rescaled to 1; duplicate (fund, instrument); `n_holdings` or cov
 rows; coverage of an index fund outside [0.95, 1.0005]; a holding whose issuer is missing from the registry;
 share classes not aggregated (Alphabet, Fox, News Corp); NVDA or XOM missing from SPY or implausible; a starter
 equity not joined to its fund line; a sector that the issuer file does not print; a holdings date in the future
-or confused with the retrieval date; a source without hash, dates or terms; a price series that differs from
+or confused with the retrieval date; a fund composition dated after the valuation date (Q29, no look-ahead); a source without hash, dates or terms; a price series that differs from
 the starter file; a controversy record without retrieved evidence, with an event date that is not printed on a
 cited page, or a registry that does not say absence means "not assessed"; a terms quotation that is not in the
 retrieved terms page; and any output that the validators in `contracts/python/byb_contracts` reject (Q28,

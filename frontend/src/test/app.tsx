@@ -32,7 +32,7 @@ export async function go(stage: StageId): Promise<void> {
   act(() => {
     window.location.hash = `#/${stage}`;
   });
-  await waitFor(() => expect(stageHeading()).toHaveTextContent(`Step ${target.number} of 3: ${SCREEN_TITLES[stage]}`));
+  await waitFor(() => expect(stageHeading()).toHaveTextContent(`Step ${target.number} of 4: ${SCREEN_TITLES[stage]}`));
 }
 
 /** Stage 1: switches from the default persona to Mateo and waits for his portfolio. */

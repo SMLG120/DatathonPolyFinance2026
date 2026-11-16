@@ -17,6 +17,8 @@ import { RuntimeProvider, useRuntime } from "@/state/runtime";
 import { SCREEN_TITLES, useStage, type StageId } from "@/state/stage";
 import { useWorkflow, WorkflowProvider } from "@/state/workflow";
 
+const APP_NAME = "ETHOS: fictional simulation";
+
 const subscribeToNothing = () => () => {};
 
 /** False while the page is the static HTML from the build, true once it runs in a browser. */
@@ -81,7 +83,7 @@ function StageRouter() {
 
   return (
     <>
-      <PageTitle>{`${t(SCREEN_TITLES[stage])} — ${t("Before You Buy")} — ${t("fictional simulation")}`}</PageTitle>
+      <PageTitle>{`${SCREEN_TITLES[stage]}: ${APP_NAME}`}</PageTitle>
       <StageView stage={stage} />
     </>
   );
@@ -93,7 +95,7 @@ function Gate() {
     <AppShell>
       {needsAccessCode ? (
         <>
-          <PageTitle>{`${t("Access code")} — ${t("Before You Buy")} — ${t("fictional simulation")}`}</PageTitle>
+          <PageTitle>{`Access code: ${APP_NAME}`}</PageTitle>
           <AccessCodeForm />
         </>
       ) : (
@@ -135,7 +137,7 @@ export function App() {
         <PageTitle>{`${t("Before You Buy")} — ${t("fictional simulation")}`}</PageTitle>
         <div className="bg-banner px-4 py-2 text-sm font-semibold text-on-banner sm:px-6">{t(SIMULATION_LABEL)}</div>
         <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8 sm:px-6">
-          <h1 className="text-3xl font-bold tracking-tight text-ink">{t("Before You Buy")}</h1>
+          <h1 className="text-3xl font-bold tracking-tight text-ink">ETHOS</h1>
           <p className="mt-2 text-lg text-ink-muted" role="status">
             {t("Loading the simulation…")}
           </p>

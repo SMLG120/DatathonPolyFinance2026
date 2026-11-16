@@ -59,6 +59,11 @@ def m_future_holdings_date(docs):
     docs["holdings.json"]["funds"]["SPY"]["holdings_date"] = "2099-01-01"
 
 
+def m_holdings_dated_after_the_valuation_date(docs):
+    """One day of look-ahead: a composition printed for the day after the portfolio is valued."""
+    docs["holdings.json"]["funds"]["SPY"]["holdings_date"] = "2026-11-13"
+
+
 def m_holdings_date_is_retrieval_date(docs):
     fund = docs["holdings.json"]["funds"]["XIU.TO"]
     fund["holdings_date"] = fund["retrieval_date"]
@@ -187,6 +192,7 @@ MUTATIONS = [
     ("holding with an issuer missing from the registry", m_unknown_issuer, "Q09"),
     ("share classes of Alphabet not aggregated", m_split_share_classes, "Q10"),
     ("holdings_date in the future", m_future_holdings_date, "Q20"),
+    ("holdings dated after the valuation date (look-ahead)", m_holdings_dated_after_the_valuation_date, "Q29"),
     ("holdings_date confused with retrieval_date", m_holdings_date_is_retrieval_date, "Q20"),
     ("sector invented for a constituent whose file prints none", m_invented_sector, "Q17"),
     ("ETF 'Broad market' label used as a constituent sector", m_etf_label_as_sector, "Q17"),

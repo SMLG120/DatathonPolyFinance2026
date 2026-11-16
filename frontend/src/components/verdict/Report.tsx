@@ -1,13 +1,12 @@
 "use client";
 
 import { FeasibilityTable } from "@/components/portfolio/FeasibilityTable";
-import { LinkButton } from "@/components/ui/Button";
-import { stageHref } from "@/state/stage";
 import { EmptyBlock } from "@/components/ui/AsyncStates";
 import { Disclosure } from "@/components/ui/Disclosure";
 import { Notice } from "@/components/ui/Notice";
 import { Fact, Facts, Panel } from "@/components/ui/Panel";
-import type { CheckResult, InvestigationJob, Objective, Policy } from "@/lib/contracts";
+import { PortfolioChecked } from "@/components/portfolio/PortfolioChecked";
+import type { CheckResult, InvestigationJob, Objective, Policy, Portfolio } from "@/lib/contracts";
 import { formatCoverage, formatDate, formatDateTime, formatFraction } from "@/lib/format";
 import { describePurchase, FUNDING_STATEMENT, instrumentName, type InstrumentRegistry } from "@/lib/portfolio";
 import { coverageText } from "@/lib/verdict";
@@ -17,7 +16,7 @@ import { ExposurePanel } from "./ExposurePanel";
 import { ruleLookup, RuleResultsList, StartingFindingsList } from "./RuleResults";
 import { ScenarioPanel } from "./ScenarioPanel";
 import { VerdictSummary, type SummaryLink } from "./VerdictSummary";
-import { t } from "@/lib/i18n";
+import { WhatNext } from "./WhatNext";
 
 export interface ReportProps {
   /** The finished job the report belongs to: its explanation sentences and how it was run. */
@@ -29,6 +28,10 @@ export interface ReportProps {
   /** Objectives to quote when the policy version is not held. */
   objectives: Objective[];
   instruments: InstrumentRegistry;
+  /** The persona's scenario portfolio, to name the portfolio stored with the job as the original or a customized one. */
+  scenarioPortfolio?: Portfolio | null;
+  /** Whose fictional portfolio this is, for the caption of the "Portfolio checked" table. */
+  personaName?: string;
 }
 
 /** "SPY complete · XIU.TO partial (98.0%)": what stays visible while the coverage section is closed. */
@@ -56,7 +59,7 @@ function coverageHint(result: CheckResult): string {
  * Every figure is a field of the engine's result. Nothing is added, subtracted
  * or counted here.
  */
-export function Report({ job, result, policy, objectives, instruments }: ReportProps) {
+export function Report({ job, result, policy, objectives, instruments, scenarioPortfolio = null, personaName = "This persona" }: ReportProps) {
   const lookup = ruleLookup(policy);
   const purchase = result.purchase_request;
   const feasibility = result.feasibility;
@@ -105,7 +108,10 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
             {summary.rules_not_evaluated === 1 ? "was" : "were"} {t("not evaluated;")} {summary.rules_not_evaluated === 1 ? "it is" : "they are"} {t("listed with the confirmed rules.")}</p>
         ) : null}
       </VerdictSummary>
-      <div className="flex flex-wrap gap-3" data-testid="result-actions"><LinkButton href={stageHref("purchase")} variant="primary">{t("Modify my idea")}</LinkButton><LinkButton href={stageHref("challenge")}>{t("Review or dispute this result")}</LinkButton></div>
+      <WhatNext result={result} />
+
+      {/* The job's own stored portfolio, never the customization applied now: a report keeps what it was checked against. */}
+      {job.portfolio ? <PortfolioChecked portfolio={job.portfolio} scenarioPortfolio={scenarioPortfolio} instruments={instruments} personaName={personaName} /> : null}
 
       {result.policy_consistency.status === "PROVEN_CONFLICT" ? (
         <Notice tone="error" title={t("Two confirmed rules cannot both be respected")} role="alert">
@@ -178,9 +184,9 @@ export function Report({ job, result, policy, objectives, instruments }: ReportP
         id="report-objectives"
         focusableHeading
         figures
-        title={t("Context for the objectives")}
-        eyebrow="Qualitative — not scored"
-        description={t("Objectives are not rules. What follows relates measured values to the words of each objective, without a pass or a fail.")}
+        title="Context for the objectives"
+        eyebrow="Qualitative: not scored"
+        description="Objectives are not rules. What follows relates measured values to the words of each objective, without a pass or a fail."
       >
         <GoalContextList result={result} objectives={policy?.objectives ?? objectives} />
       </Panel>

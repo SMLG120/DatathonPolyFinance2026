@@ -41,8 +41,8 @@
   --color-on-banner-muted: #dfeaff;
 
   /* Exposure chart: one hue, darker = held more directly (validated as an ordinal ramp). */
-  --color-chart-direct: #2d5be5;
-  --color-chart-indirect: #3d5ec8;
+  --color-chart-direct: #2247bd; /* 7.8:1 on the card */
+  --color-chart-indirect: #5b82e6; /* 2.1:1 lighter than direct; still 3.3:1 on the track */
   --color-chart-track: #edf3ff;
 
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;

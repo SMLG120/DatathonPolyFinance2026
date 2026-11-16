@@ -92,8 +92,16 @@ describe("fixtures client — portfolios", () => {
     for (const id of ids) expect(response.instruments[id]).toEqual(registry[id]);
   });
 
+  it("replays the recorded answer for Amira, crypto assets outside company-exposure scope", async () => {
+    const response = await client().getPortfolio("amira");
+    expect(response).toEqual(FIXTURES.portfolioAmira.response);
+    expect(response.scenario.fictional).toBe(true);
+    for (const position of response.scenario.portfolio.positions) expect(response.instruments[position.instrument_id]).toBeDefined();
+    expect(response.instruments["BTC-USD"]?.equity_scope).toBe(false);
+    expect(response.instruments["ETH-USD"]?.equity_scope).toBe(false);
+  });
+
   it("has no portfolio for a persona without recorded data", async () => {
-    expect((await failure(client().getPortfolio("amira"))).kind).toBe("not_found");
     expect((await failure(client().getPortfolio("nobody"))).kind).toBe("not_found");
   });
 

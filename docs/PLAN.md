@@ -116,6 +116,14 @@ Inventory on 2026-11-14:
 | `XIU_2026-11-14.csv` | BlackRock Canada | 2026-11-12 | 0.9977 (60 holdings) | Valid. Fetched by script; kept by the owner's decision because provenance and contents validate. How it was fetched and the issuer's terms are disclosed in `docs/data-sources.md`. |
 | ESGV, QQQ | — | — | — | Not acquired by design; exposure through them is UNKNOWN. |
 
+Inventory on 2026-11-15 (files in use after that day's refresh and correction):
+
+| File | Issuer | Holdings date | Coverage | Status |
+| --- | --- | --- | --- | --- |
+| `SPY_2026-11-15.xlsx` | State Street | 2026-11-12 | 0.99871 (503 holdings) | In use. Byte-identical to `SPY_2026-11-14.xlsx` (same SHA-256). Fetched by script. |
+| `XIU_2026-11-14.csv` | BlackRock Canada | 2026-11-12 | 0.9977 (60 holdings) | In use. Restored from a teammate's copy, SHA-256 verified against the manifest. |
+| `XIU_2026-11-15.csv` | BlackRock Canada | 2026-11-13 | 0.9973 (60 holdings) | Registered, **not used**: dated after the valuation date (look-ahead). The build skips it and quality check Q29 guards it (`docs/data-sources.md` 2.2). |
+
 ## P7. Milestones
 
 | # | Milestone | State on 2026-11-15T00:40Z | Estimated remaining effort |

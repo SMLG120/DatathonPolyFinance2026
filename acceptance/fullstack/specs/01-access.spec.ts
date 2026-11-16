@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { accessForm, API, CODE, expectNoTestDataMarkers, mainAlert, resetBackend, serverLog, shot, storedKeys, submitCode, Traffic } from "./helpers";
+import { accessForm, API, CODE, expectNoTestDataMarkers, expectProfileLoaded, mainAlert, openPortfolioPanel, resetBackend, serverLog, shot, storedKeys, submitCode, Traffic } from "./helpers";
 
 /**
  * The access-code gate against the real authorizer handler behind the emulated gateway. The gateway answers a
@@ -46,7 +46,8 @@ test.describe("access gate, live against the local authorizer", () => {
     page.on("console", (message) => consoleText.push(message.text()));
     await page.goto("/");
     await submitCode(page, CODE);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectProfileLoaded(page, "Robert");
+    await openPortfolioPanel(page);
     await page.waitForLoadState("networkidle");
 
     const stored = await page.evaluate(() => ({
@@ -81,7 +82,8 @@ test.describe("access gate, live against the local authorizer", () => {
 
     // The code belongs to this tab: a reload keeps it, another tab asks again.
     await page.reload();
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectProfileLoaded(page, "Robert");
+    await openPortfolioPanel(page);
     const other = await context.newPage();
     await other.goto("/");
     await expect(accessForm(other).heading).toBeVisible();
@@ -93,7 +95,7 @@ test.describe("access gate, live against the local authorizer", () => {
     const traffic = new Traffic(page);
     await page.goto("/");
     await submitCode(page, CODE);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectProfileLoaded(page, "Robert");
 
     // 403: stand-in for a code that was rotated while the tab was open.
     await page.evaluate(() => sessionStorage.setItem("byb.accessCode", "rotated-away-0000000000"));
@@ -108,8 +110,8 @@ test.describe("access gate, live against the local authorizer", () => {
     const failed = mainAlert(page).filter({ hasText: "The portfolio could not be loaded" });
     await expect(failed).toBeVisible();
     await failed.getByRole("button", { name: "Try again" }).click();
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
-    await expect(page.getByTestId("persona-selected")).toBeVisible();
+    await expectProfileLoaded(page, "Mateo");
+    await openPortfolioPanel(page);
 
     // 401: the header is removed on the way (a proxy that strips it), so the gateway never calls the authorizer.
     await page.route(`${API}/portfolios/robert`, async (route) => {
@@ -126,10 +128,10 @@ test.describe("access gate, live against the local authorizer", () => {
   });
 
   test("after a refused code is replaced, the page does not print the gateway's body", async ({ page }) => {
-    test.fail(true, "F-01: the client reads `message` from a gateway body; the page prints \"Forbidden\" as the reason the portfolio could not be loaded");
+    // Finding F-01 of the first run (the page printed "Forbidden"), fixed since: this is now a plain assertion.
     await page.goto("/");
     await submitCode(page, CODE);
-    await expect(page.getByTestId("portfolio-table")).toBeVisible();
+    await expectProfileLoaded(page, "Robert");
     await page.evaluate(() => sessionStorage.setItem("byb.accessCode", "rotated-away-0000000000"));
     await page.getByRole("button", { name: "Use Mateo’s portfolio" }).click();
     await expect(accessForm(page).heading).toBeVisible();
@@ -138,6 +140,10 @@ test.describe("access gate, live against the local authorizer", () => {
     await expect(failed).toBeVisible();
     // contracts/api.md, Authentication: "Clients treat 401 and 403 alike: ... do not read the body."
     await expect(failed).not.toContainText("Forbidden");
+    await expect(page.locator("body")).not.toContainText(/Forbidden|Unauthorized/);
+    // Not a dead end: the request that was refused can be made again, and then works.
+    await failed.getByRole("button", { name: "Try again" }).click();
+    await expectProfileLoaded(page, "Mateo");
   });
 
   test("an unknown route is the gateway's 404 {message}, with or without a code (there is no $default route)", async () => {

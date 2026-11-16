@@ -2,17 +2,18 @@
 
 import { useMemo, type ReactNode } from "react";
 import { Badge } from "@/components/ui/Badge";
-import { Button } from "@/components/ui/Button";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { formatDate } from "@/lib/format";
 import { t, useLocale } from "@/lib/i18n";
 import { isTerminalJobStatus } from "@/lib/verdict";
 import { useRuntime } from "@/state/runtime";
 import { type StageId, useStage } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
+import { BRAND_TAGLINE } from "./BrandHero";
 import { Stepper } from "./Stepper";
 
-export const SIMULATION_LABEL = "Simulation — fictional portfolio, not advice";
-export const FIXTURES_LABEL = "Test data — fixtures";
+export const SIMULATION_LABEL = "Simulation: fictional portfolio, not advice";
+export const FIXTURES_LABEL = "Test data: fixtures";
 
 const FIXTURES_REASONS = {
   "no-base-url": "This build has no service address, so every figure comes from recorded test data.",
@@ -94,23 +95,23 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <header className="border-b border-line bg-[linear-gradient(90deg,rgba(232,240,255,0.98)_0%,rgba(255,255,255,0.99)_38%,rgba(238,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl px-4 py-5 sm:px-6 sm:py-6">
-          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">{t("B")}</span>{t("Before You Buy")}</p>
-            <p className="hidden text-sm text-ink-muted sm:block">{t("Checks a proposed purchase against the rules you confirmed.")}</p>
-            </div>
-            <label className="flex items-center gap-2 text-sm font-medium text-ink">
-              <span>{t("Language")}</span>
-              <select
-                aria-label={t("Language")}
-                className="min-h-10 rounded-md border border-line-strong bg-surface px-2 text-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-                value={locale}
-                onChange={(event) => setLocale(event.currentTarget.value as "en" | "fr")}
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+            <p className="flex items-center gap-3 text-xl font-semibold tracking-tight text-ink"><span aria-hidden="true" className="flex size-9 items-center justify-center rounded-xl bg-[linear-gradient(135deg,#2f5bdb,#8b5cf6)] text-sm font-bold text-white shadow-sm shadow-indigo-200/70">E</span><span className="tracking-[0.14em]">ETHOS</span></p>
+            <p className="hidden text-sm text-ink-muted sm:block">Checks a proposed purchase against the rules you confirmed.</p>
+            {/* A separate page (/evidence/). Shown at every width; it wraps under the name on a narrow screen. */}
+            <nav aria-label="Tools" className="ml-auto">
+              <LinkButton
+                href={`/evidence/${config.mode === "fixtures" && config.fixturesReason === "requested" ? "?fixtures=1" : ""}`}
+                target="_blank"
+                // Same-origin page: "opener" keeps the tab's sessionStorage copy (the access code) in the new tab.
+                rel="opener"
+                size="sm"
+                data-testid="evidence-investigator-link"
               >
-                <option value="en">{t("English")}</option>
-                <option value="fr">{t("Français")}</option>
-              </select>
-            </label>
+                Evidence Investigator{" "}
+                <span className="sr-only">(opens in a new tab; your progress on this page is kept)</span>
+              </LinkButton>
+            </nav>
           </div>
           <div className="mt-4">{needsAccessCode ? <div className="pb-4" /> : <Stepper current={stage} completed={completed} />}</div>
         </div>
@@ -122,8 +123,10 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       <footer className="border-t border-line bg-[linear-gradient(90deg,rgba(239,246,255,0.96)_0%,rgba(255,255,255,0.99)_44%,rgba(243,232,255,0.82)_100%)]">
         <div className="mx-auto w-full max-w-6xl space-y-2 px-4 py-5 text-sm text-ink-muted sm:px-6">
-          <details><summary className="cursor-pointer font-medium">{t("About this simulation and its data")}</summary><p className="mt-3">
-            {t("A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no trades. Fees and taxes are excluded from every calculation.")}
+          <p className="font-semibold text-ink" data-testid="brand-tagline">{BRAND_TAGLINE}</p>
+          <details><summary className="cursor-pointer font-medium">About this simulation and its data</summary><p className="mt-3">
+            A fictional simulation built for a datathon. It gives no financial advice, makes no recommendation and no forecast, and places no
+            trades. Fees and taxes are excluded from every calculation.
           </p>
           {config.mode === "fixtures" && config.fixturesReason ? (
             <p>

@@ -1,5 +1,6 @@
 "use client";
 
+import { PortfolioUsedLabel } from "@/components/portfolio/PortfolioChecked";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { EmptyBlock, ErrorBlock, LoadingBlock, UnknownBlock } from "@/components/ui/AsyncStates";
 import { Badge } from "@/components/ui/Badge";
@@ -8,7 +9,7 @@ import { Notice } from "@/components/ui/Notice";
 import { Panel } from "@/components/ui/Panel";
 import { ExecutionState } from "@/components/verdict/ExecutionState";
 import { Report } from "@/components/verdict/Report";
-import type { InvestigationJob } from "@/lib/contracts";
+import type { InvestigationJob, Portfolio } from "@/lib/contracts";
 import { formatTime } from "@/lib/format";
 import { assessResult } from "@/lib/result";
 import { isTerminalJobStatus, verdictHeadline } from "@/lib/verdict";
@@ -26,7 +27,16 @@ function reportLine(job: InvestigationJob): string {
   return "No readable result";
 }
 
-function ReportList({ reports, viewedId, onOpen }: { reports: InvestigationJob[]; viewedId: string | null; onOpen: (id: string) => void }) {
+interface ReportListProps {
+  reports: InvestigationJob[];
+  viewedId: string | null;
+  onOpen: (id: string) => void;
+  /** The persona's scenario portfolio and name, to say which portfolio each report was checked against. */
+  scenarioPortfolio: Portfolio | null;
+  personaName: string;
+}
+
+function ReportList({ reports, viewedId, onOpen, scenarioPortfolio, personaName }: ReportListProps) {
   return (
     <Panel title={t("Reports of this session")} tone="sunken" figures description={t("A report never changes after it is produced. Earlier ones stay available.")}>
       <ol className="space-y-2" data-testid="report-list">
@@ -46,6 +56,12 @@ function ReportList({ reports, viewedId, onOpen }: { reports: InvestigationJob[]
                 <span className="block text-sm text-ink-muted">
                   {t("Started")} <span className="tabular">{formatTime(report.created_at)}</span> · {reportLine(report)}
                 </span>
+                {/* Two reports under one policy version can differ by portfolio alone: each entry names its job's own. */}
+                {report.portfolio ? (
+                  <span className="mt-1 block">
+                    <PortfolioUsedLabel portfolio={report.portfolio} scenarioPortfolio={scenarioPortfolio} personaName={personaName} testId="report-entry-portfolio" />
+                  </span>
+                ) : null}
               </p>
               {viewing ? (
                 <Badge tone="accent">{t("Shown above")}</Badge>
@@ -74,13 +90,18 @@ export function VerdictStage() {
     return (
       <StageFrame stage="verdict" lead={LEAD}>
         <EmptyBlock
-          title={t("There is no result yet")}
+          title="There is no result to show yet"
           action={
-            <LinkButton href={stageHref("purchase")} size="sm">
-              {t("Go to Proposed purchase")}</LinkButton>
+            <LinkButton href={stageHref("purchase")} size="sm" data-testid="empty-result-action">
+              Go to Test an idea
+            </LinkButton>
           }
         >
-          <p>{t("A verdict exists only after an investigation has run. Nothing is shown in its place.")}</p>
+          <p>A result exists only after you check an idea. Nothing is shown in its place.</p>
+          <p data-testid="empty-result-reload-note">
+            Results are kept only while this tab stays open: reloading the page or opening it from a saved link starts a new session.
+            Choose a profile, confirm your limits, then check your idea again.
+          </p>
         </EmptyBlock>
       </StageFrame>
     );
@@ -156,7 +177,7 @@ export function VerdictStage() {
               {job.clarification.options.map((option) => (
                 <li key={option.option_id}>
                   <span className="font-semibold">{option.label}</span>
-                  {option.supported ? "" : " (not supported)"} — {option.description}
+                  {option.supported ? "" : " (not supported)"}: {option.description}
                 </li>
               ))}
             </ul>
@@ -192,12 +213,22 @@ export function VerdictStage() {
             policy={derived.policyFor(assessment.result)}
             objectives={state.objectives}
             instruments={state.portfolio.data?.instruments ?? {}}
+            scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+            personaName={state.portfolio.data?.scenario.persona.display_name}
           />
 
         </>
       ) : null}
 
-      {reports.length > 1 ? <ReportList reports={reports} viewedId={id} onOpen={actions.viewReport} /> : null}
+      {reports.length > 1 ? (
+        <ReportList
+          reports={reports}
+          viewedId={id}
+          onOpen={actions.viewReport}
+          scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
+          personaName={state.portfolio.data?.scenario.persona.display_name ?? "This persona"}
+        />
+      ) : null}
     </StageFrame>
   );
 }

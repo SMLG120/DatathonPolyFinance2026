@@ -273,7 +273,12 @@ def test_v36_the_model_is_offered_one_tool_without_any_numeric_member_and_is_not
     interpret(shared, PLAIN + " I hold NVDA and Apple.", GOOD)
     request = shared.bedrock.requests[0]
     tools = request["toolConfig"]["tools"]
-    assert [t["toolSpec"]["name"] for t in tools] == [TOOL] and "toolChoice" not in request["toolConfig"]
+    # PR #17 (2026-11-15) made the interpreter a bounded agent: besides the submission tool it may call two read-only
+    # lookups that the server answers from the data snapshot (docs/INTERPRETER.md). The property this test guards is
+    # unchanged and is now checked on EVERY tool offered: no numeric member, closed objects, no forced tool choice.
+    names = [t["toolSpec"]["name"] for t in tools]
+    assert names[0] == TOOL and set(names) == {TOOL, "find_companies", "describe_sector"} and len(names) == 3, names
+    assert "toolChoice" not in request["toolConfig"]
     schema = tools[0]["toolSpec"]["inputSchema"]["json"]
     numeric, strings_without_enum = [], []
 
@@ -293,6 +298,16 @@ def test_v36_the_model_is_offered_one_tool_without_any_numeric_member_and_is_not
                 walk(value, f"{path}[{index}]")
 
     walk(schema, "$")
+    lookups_numeric, lookups_strings = [], []
+    numeric_of_submission, strings_of_submission = list(numeric), list(strings_without_enum)
+    for tool in tools[1:]:
+        numeric.clear(), strings_without_enum.clear()
+        walk(tool["toolSpec"]["inputSchema"]["json"], f"${tool['toolSpec']['name']}")
+        lookups_numeric += numeric
+        lookups_strings += strings_without_enum
+    assert lookups_numeric == [], f"a lookup tool takes a number from the model: {lookups_numeric}"
+    assert all(path.endswith((".words", ".sector")) for path in lookups_strings), f"a lookup takes free text other than the investor's words or a sector name: {lookups_strings}"
+    numeric[:], strings_without_enum[:] = numeric_of_submission, strings_of_submission
     assert all(path.endswith(".objective") for path in numeric) and numeric, f"only the index of an objective is a number: {numeric}"
     assert all(path.endswith((".words", ".threshold_words")) for path in strings_without_enum), f"free strings other than spans of the text: {strings_without_enum}"
     companies = schema["properties"]["rules"]["items"]["properties"]["issuer_id"]["enum"]

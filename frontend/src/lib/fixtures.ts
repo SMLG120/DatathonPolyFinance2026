@@ -20,6 +20,7 @@ import errorPolicyVersionConflict from "@/generated/contracts/fixtures/api/error
 import errorUnauthorized from "@/generated/contracts/fixtures/api/error_unauthorized.json";
 import errorValidation from "@/generated/contracts/fixtures/api/error_validation.json";
 import interpretAmira from "@/generated/contracts/fixtures/api/interpret_amira_ambiguous.json";
+import portfolioAmira from "@/generated/contracts/fixtures/api/portfolio_amira.json";
 import interpretMateo from "@/generated/contracts/fixtures/api/interpret_mateo_clarification.json";
 import investigationAccepted from "@/generated/contracts/fixtures/api/investigation_accepted.json";
 import investigationAmiraClarification from "@/generated/contracts/fixtures/api/investigation_amira_clarification.json";
@@ -99,6 +100,7 @@ export interface FixtureRegistry {
 
 export const FIXTURES = {
   portfolioRobert: recorded<null, PortfolioResponse>(portfolioRobert),
+  portfolioAmira: recorded<null, PortfolioResponse>(portfolioAmira),
   scenarios: {
     robert: robertScenario as unknown as Scenario,
     mateo: mateoScenario as unknown as Scenario,

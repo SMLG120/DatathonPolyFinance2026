@@ -35,7 +35,7 @@ describe("Report, page order", () => {
     const report = renderRobert();
     const blocks = [...report.children];
     expect(blocks[0]).toHaveAttribute("data-testid", "verdict-summary");
-    expect(blocks[1]).toHaveAttribute("data-testid", "result-actions");
+    expect(blocks[1]).toHaveAttribute("data-testid", "what-next");
     expect(blocks[2]).toHaveAttribute("id", "report-rules");
     expect(blocks[3]).toHaveAttribute("id", "report-exposure");
     expect(within(blocks[2] as HTMLElement).getAllByTestId("rule-result")).toHaveLength(2);
@@ -289,8 +289,8 @@ describe("Fund coverage wording", () => {
     renderWithApp(<CoverageBlock funds={result.data_coverage} instrumentName={(fundId) => fundId} />);
     const sentence = (fundId: string) =>
       within(screen.getAllByTestId("fund-coverage").find((fund) => fund.getAttribute("data-fund-id") === fundId) as HTMLElement).getByTestId("coverage-sentence").textContent;
-    expect(sentence("SPY")).toBe("Complete — 100.0% of the fund reported");
-    expect(sentence("XIU.TO")).toBe("Partial — 98.0% of the fund reported");
+    expect(sentence("SPY")).toBe("Complete: 100.0% of the fund reported");
+    expect(sentence("XIU.TO")).toBe("Partial: 98.0% of the fund reported");
   });
 
   it("truncates the percentage of a fund below full coverage, so it never reads 100.0% beside the word Partial", () => {
@@ -298,12 +298,12 @@ describe("Fund coverage wording", () => {
     renderWithApp(<CoverageBlock funds={result.data_coverage} instrumentName={(fundId) => fundId} />);
     const fund = screen.getAllByTestId("fund-coverage").find((item) => item.getAttribute("data-fund-id") === "XIU.TO") as HTMLElement;
     expect(fund).toHaveAttribute("data-coverage-status", "PARTIAL");
-    expect(within(fund).getByTestId("coverage-sentence")).toHaveTextContent("Partial — 99.9% of the fund reported");
+    expect(within(fund).getByTestId("coverage-sentence")).toHaveTextContent("Partial: 99.9% of the fund reported");
     expect(within(fund).getByTestId("coverage-sentence")).not.toHaveTextContent("100");
     const xiu = (fraction: number) => probe.withCoverage("XIU.TO", fraction).data_coverage.find((item) => item.fund_id === "XIU.TO");
     for (const [fraction, sentence] of [
-      [0.99999, "Partial — 99.9% of the fund reported"],
-      [0.9987, "Partial — 99.8% of the fund reported"],
+      [0.99999, "Partial: 99.9% of the fund reported"],
+      [0.9987, "Partial: 99.8% of the fund reported"],
     ] as const) {
       const partial = xiu(fraction);
       if (!partial) throw new Error("The recording changed.");

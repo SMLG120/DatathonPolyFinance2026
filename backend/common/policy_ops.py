@@ -134,7 +134,7 @@ def replacement_rule_id(old_rule_id: str, new_version: int, existing: set[str]) 
 
 
 def build_changed_rule_version(*, job_policy: dict, rule_id: str, new_threshold: float, user_note: str | None,
-                               new_version: int, now_iso: str) -> dict:
+                               new_version: int, now_iso: str, challenge_id: str | None = None) -> dict:
     """The policy version a CHANGE_RULE challenge creates. It always derives from the challenged job's version."""
     rules = copy.deepcopy(job_policy["rules"])
     old = next((rule for rule in rules if rule["rule_id"] == rule_id), None)
@@ -154,6 +154,8 @@ def build_changed_rule_version(*, job_policy: dict, rule_id: str, new_threshold:
     rules.insert(index + 1, replacement)
     # The note is a template. The user's own note stays on the challenge, verbatim and unobeyed.
     note = f"Challenge: the user changed the number of rule {rule_id} from {old['threshold']} to {new_threshold} (new rule {new_id})."
+    if challenge_id is not None:
+        note += f" Challenge {challenge_id}."
     return _finish({
         "schema_version": SCHEMA_VERSION, "policy_id": job_policy["policy_id"], "persona_id": job_policy["persona_id"],
         "version": new_version, "parent_version": job_policy["version"], "created_at": now_iso,

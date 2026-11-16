@@ -97,7 +97,7 @@ function RuleResultRow({ result, lookup, ruleResult }: { result: CheckResult; lo
                   <span className="tabular font-semibold">
                     {position.instrument_id} {formatFraction(position.weight)}
                   </span>{" "}
-                  — {position.reason}
+                 : {position.reason}
                 </li>
               ))}
             </ul>

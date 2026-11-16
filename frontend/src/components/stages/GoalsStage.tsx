@@ -1,6 +1,7 @@
 "use client";
 
 import { useId, useRef, useState, useLayoutEffect } from "react";
+import { ObjectivePendingNote } from "@/components/portfolio/CustomizePanel";
 import { ClarificationCard } from "@/components/rules/ClarificationCard";
 import { DraftOutcome, OptionOutcome, ruleName } from "@/components/rules/DraftOutcome";
 import { PolicyRuleCard, ProposedRuleCard, thresholdProblem } from "@/components/rules/RuleCard";
@@ -31,12 +32,24 @@ const OBJECTIVE_KIND: Record<Objective["kind"], string> = {
   constraint: "constraint",
 };
 
-function ObjectiveList({ objectives }: { objectives: Objective[] }) {
+/** `edited` is the scenario's own objective when the one listed under its id carries the user's wording instead. */
+function ObjectiveList({ objectives, edited }: { objectives: Objective[]; edited: Objective | null }) {
   return (
     <ul className="space-y-3">
       {objectives.map((objective) => (
-        <li key={objective.objective_id} className="rounded-md border border-line bg-canvas p-3" data-testid="objective">
-          <blockquote className="text-ink">{t("&ldquo;")}{objective.original_words}{t("&rdquo;")}</blockquote>
+        <li key={objective.objective_id} className="rounded-md border border-line bg-canvas p-3" data-testid="objective" data-objective-source={objective.source}>
+          {edited && edited.objective_id === objective.objective_id ? (
+            <p className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink" data-testid="objective-edited-note">
+              <Badge tone="accent" dashed>
+                Your wording
+              </Badge>
+              <span>
+                You edited this objective in step 1. The scenario said: &ldquo;{edited.original_words}&rdquo; It is context only: editing it created,
+                changed and confirmed no rule.
+              </span>
+            </p>
+          ) : null}
+          <blockquote className="text-ink">&ldquo;{objective.original_words}&rdquo;</blockquote>
           <p className="mt-1 text-sm text-ink-muted">
             {OBJECTIVE_SOURCE[objective.source]} · {OBJECTIVE_KIND[objective.kind]} {t("· recorded word for word · not scored")}{objective.case_reference ? ` · ${objective.case_reference}` : ""}
           </p>
@@ -81,8 +94,8 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
           <Fact label={t("Created")}>
             <span className="tabular">{formatDateTime(policy.created_at)}</span>
           </Fact>
-          <Fact label={t("Replaces")}>{policy.parent_version === null ? "Nothing — first version" : `Version ${policy.parent_version}`}</Fact>
-          <Fact label={t("Change note")} wide>
+          <Fact label="Replaces">{policy.parent_version === null ? "Nothing: first version" : `Version ${policy.parent_version}`}</Fact>
+          <Fact label="Change note" wide>
             {policy.change_note}
           </Fact>
         </Facts></details>
@@ -94,7 +107,8 @@ function PolicyPanel({ policy, earlier }: { policy: Policy | null; earlier: Poli
         {superseded.length > 0 ? (
           <details className="rounded-md border border-line bg-canvas p-3">
             <summary className="min-h-6 cursor-pointer font-semibold text-ink">
-              {t("Superseded rules (")}{superseded.length}{t(") — kept for the record, not checked")}</summary>
+              Superseded rules ({superseded.length}): kept for the record, not checked
+            </summary>
             <ul className="mt-3 space-y-4">
               {superseded.map((rule) => (
                 <PolicyRuleCard key={rule.rule_id} rule={rule} objective={objectiveOf(rule.objective_id)} />
@@ -226,6 +240,7 @@ export function GoalsStage() {
                   personaId={state.personaId}
                   policy={policy}
                   purchase={purchase}
+                  customPortfolio={derived.customPortfolio}
                   thresholdText={state.thresholdText[rule.rule_id] ?? ""}
                   onThresholdChange={(text) => actions.setThresholdText(rule.rule_id, text)}
                   buildPreviewRules={previewRulesFor(rule.rule_id)}
@@ -291,8 +306,9 @@ export function GoalsStage() {
       ) : null}
       {policy ? <PolicyPanel policy={policy} earlier={state.policies.slice(0, -1)} /> : null}
       <Panel
-        title={t("Why these limits?")}
-        collapsible
+        title="Why these limits?"
+        // An edited objective is stored with the next rule confirmation, if there is one, so it stays on screen while the user confirms.
+        collapsible={!state.objectiveEdited}
         eyebrow="Context, not rules"
         description={t("An objective is kept word for word to give results their context. It is never marked pass or fail, and it never implies a number.")}
       >
@@ -301,7 +317,10 @@ export function GoalsStage() {
             <p>{t("The objective and the offered rules come with the persona. Load one in stage 1.")}</p>
           </Notice>
         ) : state.objectives.length > 0 ? (
-          <ObjectiveList objectives={state.objectives} />
+          <div className="space-y-3">
+            <ObjectiveList objectives={state.objectives} edited={state.objectiveEdited ? (scenario?.objectives[0] ?? null) : null} />
+            <ObjectivePendingNote policy={policy} objective={scenario?.objectives[0] ? objectiveOf(scenario.objectives[0].objective_id) : undefined} />
+          </div>
         ) : (
           <EmptyBlock title={t("No objective is recorded")}>
             <p>{t("The scenario carries no objective for this persona.")}</p>

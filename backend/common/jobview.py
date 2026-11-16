@@ -8,6 +8,7 @@ too. So nothing of a terminal job can be rewritten.
 
 from __future__ import annotations
 
+import copy
 import hashlib
 from typing import Any
 
@@ -22,6 +23,8 @@ PUBLIC_MEMBERS = (
     "policy_id", "policy_version", "request", "resolved_request", "parent_investigation_id", "challenge", "agent", "steps",
     "clarification", "result", "explanation", "failure", "proposed_corrections",
 )
+# Shown only when the stored job has them (investigation_job.schema.json: optional, never null).
+OPTIONAL_PUBLIC_MEMBERS = ("portfolio",)
 
 
 def job_id_for(namespace: str, *parts: str) -> str:
@@ -32,7 +35,8 @@ def job_id_for(namespace: str, *parts: str) -> str:
 
 def new_job(*, job_id: str, now: float, deadline_seconds: int, expiry_seconds: int, idempotency_key: str, persona_id: str,
             policy_id: str, policy_version: int, request: dict, parent_investigation_id: str | None, challenge: dict | None,
-            model_id: str | None, request_hash: str, snapshot_id: str, api_request_id: str | None) -> dict[str, Any]:
+            model_id: str | None, request_hash: str, snapshot_id: str, api_request_id: str | None, portfolio: dict[str, Any]) -> dict[str, Any]:
+    """A QUEUED job. ``portfolio`` is the full portfolio document the job is checked against, fixed here for good."""
     structured = request.get("instrument_id") is not None
     return {
         "schema_version": SCHEMA_VERSION,
@@ -58,6 +62,8 @@ def new_job(*, job_id: str, now: float, deadline_seconds: int, expiry_seconds: i
         "explanation": [],
         "failure": None,
         "proposed_corrections": [],
+        # A copy: the job owns the exact portfolio it was created with (the scenario's, or a customized one).
+        "portfolio": copy.deepcopy(portfolio),
         "internal": {
             "kind": "investigation",
             "request_hash": request_hash,
@@ -94,6 +100,10 @@ def public_view(job: dict[str, Any], outcome: dict[str, Any] | None = None, corr
     else:
         view["result"], view["explanation"] = None, []
     view["proposed_corrections"] = list(corrections or [])
+    # Optional member: a job stored before jobs carried their portfolio has none, and the member may not be null.
+    for name in OPTIONAL_PUBLIC_MEMBERS:
+        if job.get(name) is not None:
+            view[name] = job[name]
     return view
 
 

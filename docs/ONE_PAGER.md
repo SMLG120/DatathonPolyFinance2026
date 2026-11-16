@@ -1,4 +1,4 @@
-# Before You Buy
+# ETHOS
 
 *PolyFinances AlphaForge AI Datathon 2026. Fictional simulation: no advice, no
 recommendation, no forecast, no trade.*

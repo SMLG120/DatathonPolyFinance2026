@@ -127,8 +127,8 @@ describe("rule lifecycle", () => {
   });
 
   it("labels a proposed rule as inactive", () => {
-    expect(ruleStatusLabel("PROPOSED")).toBe("Proposed — inactive");
-    expect(ruleStatusLabel("CONFIRMED")).toBe("Confirmed — active");
+    expect(ruleStatusLabel("PROPOSED")).toBe("Proposed: inactive");
+    expect(ruleStatusLabel("CONFIRMED")).toBe("Confirmed: active");
     expect(ruleStatusLabel("SUPERSEDED")).toBe("Superseded");
   });
 

@@ -1,4 +1,4 @@
-# Before You Buy — frontend
+# ETHOS — frontend
 
 A static single-page app (Next.js App Router, `output: "export"`) for the six
 stages of the simulation: persona and portfolio, goals and rules, proposed
@@ -20,6 +20,10 @@ is shared by both languages.
 ## Setup
 
 Node 22.12 or newer (developed on Node 24).
+
+The scoped `minimatch` override patches GHSA-g3hv-75wg-m249 in
+`@typescript-eslint/typescript-estree`'s development dependency. Remove it
+when that package requires a patched release itself; keep the lockfile in sync.
 
 ```
 npm ci
@@ -75,6 +79,9 @@ npm start          # serves out/ on http://127.0.0.1:4173
   `POLL_INTERVAL_MS` and `POLL_DEADLINE_MS`, in both modes. A failed poll
   (network, timeout, 429, 5xx) is retried at the same interval until the
   deadline; 401, 403, 404 and 410 stop it.
+  Individual HTTP timeouts and caller cancellation cover response bodies as
+  well as headers. Selecting a persona cancels the previous session's actions;
+  even late responses that ignore cancellation cannot update the new session.
 - **Ids from the interpreter:** it numbers questions, drafts and objectives
   from 1 in every answer. A question is keyed by its answer
   (`interpretation_id`) and its id; an objective is recognised by its words; a
@@ -109,7 +116,7 @@ What can be done on test data:
   already not respected before the purchase, one fund without a holdings
   file); a clarified preference. His recorded UNKNOWN preview is covered by
   component tests; no path in the interface sends that request.
-- **Amira** is listed as "Coming after core" and cannot be selected.
+- **Amira** is the third persona. Her portfolio is replayed from `portfolio_amira` in test data and comes from `GET /portfolios/amira` in live mode; her sentence gets a clarification question. The explicit min/max conflict pair in her scenario (`alternative_rule_sets`) is not offered in the interface.
 - `?simulate=job-failed`, `poll-timeout`, `portfolio-error` or `check-error`
   exercises the failure states.
 
@@ -126,6 +133,47 @@ and is listed in the header of the fixtures client:
    correction.
 5. `POST /check` on a stored policy version answers with the recorded result
    of the investigation of the same request under the same rules.
+
+## Customize this profile
+
+Stage 1 has an optional panel, "Customize this profile": the weights of the
+persona's fictional portfolio and the wording of its objective can be edited
+(`src/components/portfolio/CustomizePanel.tsx`, `src/lib/customize.ts`).
+
+- **One value is shown and sent.** The applied customization is
+  `state.customPortfolio` in the workflow store (null for the scenario
+  portfolio). `derived.effectivePortfolio` (what stage 1 and the purchase stage
+  show) is built from it, and `withCustomPortfolio(body, customPortfolio)` adds
+  it to every `POST /check` and `POST /investigations`. Without a
+  customization the member is left out, so the default requests are unchanged.
+- **Form validation only.** The editor adds the typed percentages up in whole
+  hundredths of a percent to require a total of exactly 100%. That is not a
+  portfolio figure: every exposure, verdict and cash figure stays the
+  service's, and the service checks the portfolio again.
+- **The objective is context.** An edited objective keeps its id and kind and
+  becomes `USER_STATED` with the user's words. It creates, changes and confirms
+  no rule and is not sent to the interpreter. A policy version already
+  confirmed keeps its wording; the new wording is stored only when another
+  rule is confirmed (it travels in that confirmation). A rule changed from a
+  result copies the stored wording, and the note on screen says so.
+- **Reports keep their own portfolio.** The report shows "Portfolio checked"
+  from `job.portfolio`, never from the customization applied now. A preview of
+  a rule change against a report is asked for that stored portfolio.
+  The same label is shown wherever a job appears without its report: the facts
+  of the investigation stage (running, failed and clarification jobs) and each
+  entry of "Reports of this session". A job stored without a portfolio says
+  nothing. The rule-change comparison says "the same portfolio" only when the
+  two jobs carry the same `portfolio_id`.
+- **Unapplied input is kept, not applied.** The text of the open editor is
+  `state.customizeDraft`, so leaving stage 1 does not drop it; it is never
+  shown as the portfolio and never sent. Apply, Cancel, Reset and choosing a
+  persona end it.
+- **Late answers are dropped.** `state.session` goes up each time a persona is
+  chosen. An answer to a request started in an earlier session (a start, a
+  confirmation, an interpretation, a challenge) changes nothing.
+- **Fixtures mode cannot calculate**, so the control is shown unavailable
+  there, and the fixtures client refuses a `check` or an investigation that
+  carries a `custom_portfolio`.
 
 ## Where things are
 

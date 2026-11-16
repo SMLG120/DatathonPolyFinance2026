@@ -1,6 +1,8 @@
 "use client";
 
+import { CustomizePanel } from "@/components/portfolio/CustomizePanel";
 import { PortfolioTable } from "@/components/portfolio/PortfolioTable";
+import { BrandHero } from "@/components/shell/BrandHero";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/AsyncStates";
 import { Badge } from "@/components/ui/Badge";
@@ -11,6 +13,7 @@ import { Fact, Facts, Panel } from "@/components/ui/Panel";
 import { PERSONAS, personaName, type PersonaCard } from "@/content/personas";
 import { cn } from "@/lib/cn";
 import type { Persona } from "@/lib/contracts";
+import { CUSTOMIZED_LABEL } from "@/lib/customize";
 import { formatDate, formatFraction } from "@/lib/format";
 import { useWorkflow } from "@/state/workflow";
 import { t } from "@/lib/i18n";
@@ -103,18 +106,52 @@ function CaseFacts({ persona }: { persona: Persona }) {
 
 /** Stage 1: choose a persona and read its fictional portfolio. */
 export function PersonaStage() {
-  const { state, actions } = useWorkflow();
+  const { state, actions, derived } = useWorkflow();
   const { portfolio, personaId } = state;
+  // The portfolio every check starts from: the scenario's, or the applied customization. One value, shown here and sent with each request.
+  const shown = derived.effectivePortfolio;
+  const customized = derived.customPortfolio !== null;
   const hasWork = state.policies.length > 0 || state.investigationIds.length > 0;
   const scenario = portfolio.data?.scenario ?? null;
 
   return (
+    <div className="space-y-8">
+    <BrandHero />
     <StageFrame
       stage="persona"
       lead={t("Pick a fictional investor to try a portfolio decision.")}
     >
-      <Panel title={t("Who would you like to try?")}>
-        <ul className="grid gap-4 md:grid-cols-2">
+      <section aria-labelledby="how-it-works-title" className="rounded-xl border border-line bg-surface p-5" data-testid="how-it-works">
+        <h2 id="how-it-works-title" className="text-lg font-semibold text-ink">
+          What this tool does
+        </h2>
+        <p className="mt-1 max-w-prose text-ink-muted">
+          Before you buy something, it checks whether the purchase would break limits you set for yourself, such as
+          &ldquo;no more than 10% of my money in one company&rdquo;. It counts what you hold directly and what you hold inside funds,
+          and it says plainly when the data cannot prove an answer. Everything is fictional: it gives no advice and places no trade.
+        </p>
+        <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Choose a profile", "Pick a fictional investor and look at what they own."],
+            ["Set your limits", "Confirm the limits you want checked. Nothing is checked until you confirm it."],
+            ["Test an idea", "Pick one investment and the share of the portfolio it would have after buying."],
+            ["Understand the result", "See which limits pass or fail, what is still unknown, and the evidence behind each figure."],
+          ].map(([title, text], index) => (
+            <li key={title} className="flex gap-3 rounded-lg bg-sunken p-3">
+              <span aria-hidden="true" className="tabular flex size-7 flex-none items-center justify-center rounded-md border border-line-strong bg-surface text-xs font-semibold text-ink-muted">
+                {index + 1}
+              </span>
+              <span className="text-sm">
+                <span className="block font-semibold text-ink">{title}</span>
+                <span className="text-ink-muted">{text}</span>
+              </span>
+            </li>
+          ))}
+        </ol>
+      </section>
+
+      <Panel title="Who would you like to try?">
+        <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PERSONAS.filter((persona) => persona.available).map((persona) => (
             <PersonaOption
               key={persona.persona_id}
@@ -136,8 +173,18 @@ export function PersonaStage() {
         eyebrow="Fictional simulation"
         figures
         aside={
-          <Badge tone="neutral" dashed>
-            {t("Invented holdings")}</Badge>
+          <>
+            {customized ? (
+              <span data-testid="customized-badge">
+                <Badge tone="accent" dashed>
+                  {CUSTOMIZED_LABEL}
+                </Badge>
+              </span>
+            ) : null}
+            <Badge tone="neutral" dashed>
+              Invented holdings
+            </Badge>
+          </>
         }
       >
         {portfolio.status === "idle" ? <LoadingBlock label={t("Preparing the portfolio…")} /> : null}
@@ -147,24 +194,37 @@ export function PersonaStage() {
             <p>{t("Nothing was changed. No figure is shown rather than a guessed one.")}</p>
           </ErrorBlock>
         ) : null}
-        {portfolio.status === "ready" && portfolio.data && scenario ? (
+        {portfolio.status === "ready" && portfolio.data && scenario && shown ? (
           <div className="space-y-5">
             <Notice tone="info" title={t("These holdings are invented")}>
               <p data-testid="fiction-notice">{scenario.fiction_notice}</p>
             </Notice>
+            {customized ? (
+              <Notice tone="info" title={CUSTOMIZED_LABEL}>
+                <p data-testid="customized-notice">
+                  These weights were entered by you in place of {scenario.persona.display_name}&rsquo;s original fictional portfolio. They are still invented,
+                  and they are the weights every check is asked for.
+                </p>
+              </Notice>
+            ) : null}
             <Facts className="sm:grid-cols-3">
-              <Fact label={t("Valuation date")}>
-                <span className="tabular">{formatDate(scenario.portfolio.valuation_date)}</span>
+              <Fact label="Valuation date">
+                <span className="tabular">{formatDate(shown.valuation_date)}</span>
               </Fact>
-              <Fact label={t("Reporting currency")}>{scenario.portfolio.base_currency}</Fact>
-              <Fact label={t("Cash")}>
-                <span className="tabular">{formatFraction(scenario.portfolio.cash_weight)}</span> {t("of the portfolio")}</Fact>
+              <Fact label="Reporting currency">{shown.base_currency}</Fact>
+              <Fact label="Cash">
+                <span className="tabular">{formatFraction(shown.cash_weight)}</span> of the portfolio
+              </Fact>
             </Facts>
-            <PortfolioTable portfolio={scenario.portfolio} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} />
+            <PortfolioTable portfolio={shown} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} customized={customized} />
             <CaseFacts persona={scenario.persona} />
           </div>
         ) : null}
       </Panel>
+
+      {/* Keyed by persona: another persona starts with a closed editor and no customization. */}
+      <CustomizePanel key={personaId ?? "none"} />
     </StageFrame>
+    </div>
   );
 }

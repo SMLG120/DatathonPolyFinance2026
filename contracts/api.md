@@ -155,6 +155,82 @@ the session.
 - No route reads a stored policy. The client keeps the `policy` returned by `POST /rules/confirm`
   and by a `CHANGE_RULE` challenge for the session.
 
+## 2a. Customized fictional portfolio (`custom_portfolio`)
+
+A user may edit the persona's fictional portfolio and have **that** portfolio checked. Nothing is
+stored per user: the edited weights travel with each request that needs them.
+
+`POST /check` and `POST /investigations` accept one **optional** member, `custom_portfolio`
+(`api.schema.json#/$defs/custom_portfolio`). It is the one exception to "every property is
+required", so that every request written before it existed stays valid:
+
+    "custom_portfolio": {
+      "cash_weight": 0.2,
+      "positions": [
+        { "instrument_id": "XBB.TO", "weight": 0.3 },
+        { "instrument_id": "SPY", "weight": 0.3 },
+        { "instrument_id": "NVDA", "weight": 0.2 }
+      ]
+    }
+
+- Absent or `null`: the persona's scenario portfolio is used, exactly as before.
+- An object: the server checks it and then uses it **instead of** the scenario portfolio for the
+  whole request (request validation, the engine run, every tool the investigator calls).
+
+Server rules (a violation is 400 `VALIDATION_ERROR` with `details[].path` under `custom_portfolio`;
+nothing is calculated or stored):
+
+1. Shape: `cash_weight` in [0, 1]; each position weight in (0, 1]; at most 40 positions. A
+   negative weight (shorting) is refused.
+2. `cash_weight + sum(positions.weight)` equals 1 within 1e-9. A total above 1 (leverage) or
+   below 1 is refused; the weights are never rescaled.
+3. Every `instrument_id` appears once and is one of `purchasable_instrument_ids` of
+   `GET /portfolios/{persona_id}`. No other asset can be held.
+4. The server, not the client, builds the portfolio document (`portfolio.schema.json`): the
+   persona, valuation date, currency and `fictional: true` of the scenario portfolio, the submitted
+   weights with positions in the submitted order, and
+   `portfolio_id = "pf-<persona_id>-custom-<12 hex>"`, the hex being derived from the weights
+   (SHA-256 of the canonical JSON of the cash weight and the positions sorted by instrument).
+   Equal weights always give the same id.
+5. A `custom_portfolio` whose weights equal the scenario portfolio's (same instruments, each weight
+   within 1e-9) **is** the scenario portfolio: the scenario's own `portfolio_id` is used.
+6. Holdings coverage is not affected by customization: a fund without a holdings file still gives
+   `UNKNOWN`, never zero exposure.
+
+Where the portfolio that was used is reported:
+
+- `POST /check`: `portfolio_id` of the result, and every figure in it.
+- `POST /investigations`: the job stores the full portfolio document at creation and
+  `GET /investigations/{id}` returns it as the optional member `portfolio`. It never changes, so a
+  report made on an earlier customization stays reproducible after the user edits again. The
+  worker and every investigator tool read this stored portfolio, never the scenario's. A job
+  stored before this member existed has no `portfolio`; it was checked against the scenario
+  portfolio.
+- A `CHANGE_RULE` challenge re-checks the **parent job's stored portfolio** under the new policy
+  version; the challenge request carries no portfolio.
+- Idempotency covers the portfolio: the same `Idempotency-Key` with another `custom_portfolio` is
+  409 `IDEMPOTENCY_KEY_REUSED`.
+- A follow-up investigation (`parent_investigation_id` set, section 6 rule 4) is about the same portfolio
+  as the investigation it follows: the request must resolve to the parent job's stored portfolio (a parent
+  stored without one counts as the scenario portfolio). Otherwise the route answers 400 `VALIDATION_ERROR`
+  with `details[0].path: "custom_portfolio"` and stores nothing. A parent of another persona is 404.
+- Evidence: in a result on a customized portfolio the records of the starting cash and position weights
+  keep the label `FICTIONAL_SCENARIO` (they are still invented, not facts) and carry the assumption
+  "Weight entered by the user in a customized fictional portfolio; it is not the persona scenario's
+  weight." Results on the scenario portfolio are unchanged.
+- A clarification (free-text request) offers a scenario demo request as a supported option only when it
+  can be evaluated on the job's portfolio. One that the engine would refuse there (for example a target
+  below the weight already held in a customized portfolio) is listed with `supported: false`, no
+  `purchase_request`, and the engine's reason in its description.
+- A stored request that the engine refuses when the worker runs it (`INVALID_REQUEST`, which rule 3 of
+  section 6 keeps from being stored in the first place) ends the job `FAILED` with
+  `failure.code: "DATA_UNAVAILABLE"`, `retryable: false`, and no result.
+
+Policies are independent of the portfolio. A qualitative objective edited by the user is sent in
+`objectives` of `POST /rules/confirm` (`source: "USER_STATED"`, `case_reference: null`, the same
+`objective_id`); it is stored verbatim in the new policy version and never creates or changes a
+rule. Rules still become active only through explicit confirmation.
+
 ## 3. POST /rules/interpret
 
 Turns the user's words into a **draft** (`interpretation.schema.json`). It never stores anything
@@ -303,7 +379,8 @@ Server rules:
 Deterministic and bounded: no model, no storage, 5 s budget. It runs the engine once and returns
 the full `check_result.schema.json`.
 
-Request: `api.schema.json#/$defs/check_request`. `draft_rules` selects the mode:
+Request: `api.schema.json#/$defs/check_request`. The optional `custom_portfolio` (section 2a)
+replaces the scenario portfolio for this check. `draft_rules` selects the mode:
 
 | `draft_rules` | What is evaluated | Result |
 |---|---|---|
@@ -494,7 +571,8 @@ Idempotency-Key: 0b6f0c9e-5a7e-4c0e-9a55-1f2d3c4b5a61
 `Idempotency-Key` is required and matches `^[A-Za-z0-9_-]{8,64}$` (a UUID fits). The client
 creates one key per user action and reuses it when it retries that action.
 
-Request: `api.schema.json#/$defs/investigation_create_request`.
+Request: `api.schema.json#/$defs/investigation_create_request`. The optional `custom_portfolio`
+(section 2a) replaces the scenario portfolio; the job stores the portfolio it was created with.
 
 <!-- fixture: investigation_accepted request_body complete -->
 ```json
@@ -544,7 +622,7 @@ Server rules:
    the worker again to recover a first invocation that was lost; a delivery for a job that is
    already claimed or terminal does nothing (no model call, no state change). The same key with a
    different body is 409. Keys are remembered until the job expires.
-3. A structured request is checked against the persona's portfolio before the job is stored. If the
+3. A structured request is checked against the job's portfolio (the scenario's, or the customized one) before the job is stored. If the
    engine would answer `INVALID_REQUEST`, the route answers 422 and `details[0].issue` starts with
    the execution code (for example `TARGET_BELOW_CURRENT_WEIGHT: ...`).
 4. A free-text request (`instrument_id` and `target_direct_weight` are `null`, `original_words` is
@@ -850,21 +928,32 @@ section 6.
   parameters and wording, `threshold = new_threshold`, `origin: "USER_STATED"`,
   `threshold_source: "USER_ENTERED"`, `status: "CONFIRMED"`, `supersedes_rule_id` = the old rule.
 - Child investigation: `parent_investigation_id` = the challenged job, `challenge` = this
-  challenge, the same resolved purchase request, the new policy version. Poll it as in section 7
+  challenge, the same resolved purchase request, the same stored `portfolio`, the new policy version. Poll it as in section 7
   (`fixtures/api/investigation_robert_after_challenge_succeeded.json`).
 - **The earlier policy version and the earlier report are preserved and unchanged**; both stay
   retrievable, which is what the old/new comparison uses.
 - Idempotency: the same key with the same body returns the same response (same policy version, same
   child `id`); with a different body, 409 `IDEMPOTENCY_KEY_REUSED`.
+  The service first reserves the child job with a fixed challenge timestamp and version candidate.
+  It then writes the policy and marks the reservation ready before dispatching the worker.
+  Concurrent retries resume this reservation; an interrupted policy write is recovered by comparing
+  the stored policy with the reserved operation. A version occupied by another operation advances
+  the reservation using a conditional write. The response always reads the child's stored policy.
+  Jobs from earlier deployments remain readable without a readiness marker.
 - If the worker cannot be started the route answers 503 `WORKER_INVOCATION_FAILED`. The client
   retries the challenge with a **new** key; a policy version left unused by the failed attempt is
   harmless, because a `CHANGE_RULE` always derives from the challenged job's version.
+
+The worker requires its data snapshot to match the snapshot recorded when a job was accepted.
+A deployment mismatch ends the job as `FAILED / DATA_UNAVAILABLE`, with no calculated result;
+it never silently replaces the accepted snapshot identifier. Retry as a new investigation once
+the API and worker are configured consistently.
 
 ## 9. Example index (`fixtures/api/`)
 
 | Route | Fixtures |
 |---|---|
-| `GET /portfolios/{persona_id}` | `portfolio_robert`, `error_unauthorized` (401) |
+| `GET /portfolios/{persona_id}` | `portfolio_robert`, `portfolio_amira`, `error_unauthorized` (401) |
 | `POST /rules/interpret` | `interpret_mateo_clarification`, `interpret_amira_ambiguous`, `error_interpreter_timeout` (504) |
 | `POST /rules/confirm` | `confirm_robert_v1` (201), `error_policy_version_conflict` (409) |
 | `POST /check` | `check_robert_preview`, `check_mateo_preview_unknown`, `check_invalid_request`, `error_validation` (400) |

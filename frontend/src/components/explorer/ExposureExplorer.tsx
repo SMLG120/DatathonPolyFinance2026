@@ -362,7 +362,7 @@ function SegmentDetails({ segment, onOpenEvidence }: { segment: ExplorerSegment;
   return (
     <div className="rounded-md border border-line bg-sunken p-3 sm:p-4" data-testid="explorer-details" data-segment={segment.id}>
       <p className="font-semibold text-ink">
-        {segmentLabel(segment)} — {STATE_LONG_TEXT[segment.state]}
+        {segmentLabel(segment)}: {STATE_LONG_TEXT[segment.state]}
       </p>
       <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 text-ink sm:grid-cols-2">
         <div>

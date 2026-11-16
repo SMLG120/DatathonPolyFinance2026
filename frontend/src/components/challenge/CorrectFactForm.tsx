@@ -50,7 +50,7 @@ export function readAssertedValue(text: string, unit: EvidenceUnit): number | st
 }
 
 function recordName(record: EvidenceRecord): string {
-  return `${metricLabel(record.metric_id)} — ${subjectText(record.subject)}`;
+  return `${metricLabel(record.metric_id)}: ${subjectText(record.subject)}`;
 }
 
 function CorrectionCard({ correction, result }: { correction: ProposedCorrection; result: CheckResult }) {
@@ -59,12 +59,13 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
     <li className="rounded-md border border-dashed border-unknown bg-unknown-soft p-3 sm:p-4" data-testid="correction-card" data-figures="true">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <Badge tone="unknown" dashed icon={<UnknownIcon size={16} />}>
-          {t("Proposed correction — unverified")}</Badge>
+          Proposed correction: unverified
+        </Badge>
         <TestDataTag />
       </div>
       <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">{t("Recorded in the report — unchanged")}</dt>
+          <dt className="text-sm font-semibold text-ink-muted">Recorded in the report: unchanged</dt>
           <dd className="text-ink" data-testid="correction-original">
             {original ? (
               <>
@@ -209,7 +210,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
             <option value="">{t("Choose a figure")}</option>
             {result.evidence.map((record) => (
               <option key={record.evidence_id} value={record.evidence_id}>
-                {recordName(record)} — {formatEvidenceValue(record)}
+                {recordName(record)}: {formatEvidenceValue(record)}
               </option>
             ))}
           </Select>

@@ -36,7 +36,8 @@ function CorrectionNote({ correction }: { correction: ProposedCorrection }) {
   return (
     <li className="rounded-md border border-dashed border-unknown bg-unknown-soft p-3" data-testid="proposed-correction">
       <Badge tone="unknown" dashed icon={<UnknownIcon size={16} />}>
-        {t("Proposed correction — unverified")}</Badge>
+        Proposed correction: unverified
+      </Badge>
       <dl className="mt-2 space-y-2 text-sm">
         <div>
           <dt className="font-semibold text-ink-muted">{t("Value proposed")}</dt>
@@ -116,9 +117,9 @@ function EvidenceCard({ record, result, corrections, onChallenge }: { record: Ev
             {periodText(record.period)}
           </span>
         </Fact>
-        <Fact label={t("Unit")}>{unitText(record.unit)}</Fact>
-        <Fact label={t("Policy version")}>{record.policy_version === null ? "None — a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
-        <Fact label={t("Calculation version")}>
+        <Fact label="Unit">{unitText(record.unit)}</Fact>
+        <Fact label="Policy version">{record.policy_version === null ? "None: a preview, not tied to a confirmed policy" : `Version ${record.policy_version}`}</Fact>
+        <Fact label="Calculation version">
           <span className="break-all font-mono text-sm">{record.calculation_version}</span>
         </Fact>
         <Fact label={t("Record")}>
@@ -215,8 +216,8 @@ export function EvidenceContent({ request, onChallenge }: { request: EvidenceReq
   return (
     <div className="space-y-6">
       {request.result.preview ? (
-        <UnknownBlock title={t("Preview with draft rules — not a confirmed policy")}>
-          <p>{t("These records belong to a preview. They are not part of any stored report.")}</p>
+        <UnknownBlock title="Preview with draft rules: not a confirmed policy">
+          <p>These records belong to a preview. They are not part of any stored report.</p>
         </UnknownBlock>
       ) : null}
       <p className="rounded-md border border-line bg-sunken px-3 py-2 text-sm text-ink" data-testid="source-details-note">
