@@ -17,7 +17,7 @@ import {
 } from "./helpers";
 
 const ROBERT_HEADLINE = "2 of 2 confirmed rules are not respected";
-const APP_NAME = "Before You Buy: fictional simulation";
+const APP_NAME = "ETHOS: fictional simulation";
 
 /**
  * The whole simulation, driven with the keyboard only (Tab, Shift+Tab, Enter,
@@ -54,6 +54,9 @@ test.describe("keyboard-only journey through the three steps", () => {
       stepLink(page, 2),
       stepLink(page, 3),
       stepLink(page, 4),
+      // The brand message opens the first screen: its two calls to action come before the profiles.
+      page.getByTestId("brand-cta-primary"),
+      page.getByTestId("brand-cta-secondary"),
       page.getByTestId("persona-robert").locator("summary"),
       page.getByTestId("persona-mateo").locator("summary"),
       page.getByRole("button", { name: "Use Mateo’s portfolio" }),

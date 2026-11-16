@@ -17,7 +17,7 @@ const LIVE_API = "http://127.0.0.1:4174"; // must match scripts/build-e2e.mjs
 const LIVE_SITE = "http://127.0.0.1:4175"; // must match playwright.config.ts
 const ACCEPTED_CODE = "e2e-accepted-code";
 const FORBIDDEN_CODE = "e2e-forbidden-code";
-const APP_NAME = "Before You Buy: fictional simulation";
+const APP_NAME = "ETHOS: fictional simulation";
 
 interface SeenRequest {
   method: string;
