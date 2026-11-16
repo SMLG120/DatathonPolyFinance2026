@@ -297,6 +297,10 @@ Values to recognise during the release:
 | `DataSnapshotId` | `snap-2026-11-12-c2289f2b406d` | `snap-2026-11-12-2662b7a89c03` |
 | Frontend | `frontend.zip` of `dist/cloudshell-release.zip` | `frontend.zip` of this bundle |
 
+**Since 20:28 EST the same day** the stack runs `lambda/byb-backend-3a2220a805a80ce1.zip` (interpreter update of PR #22, from
+`main` bffec35; backend only, same snapshot, same site): `infra/evidence/release-2026-11-15-interpreter.md`. For an interpreter
+change, run `cloudshell_interpreter_check.py` after the two backend checks: the generic smoke flow does not exercise new wording.
+
 ### Procedure (CloudShell; backend first, the site last)
 
 Upload `dist/cloudshell-release-customize.zip`, extract it into a **fresh** directory, `cd cloudshell-release`.
