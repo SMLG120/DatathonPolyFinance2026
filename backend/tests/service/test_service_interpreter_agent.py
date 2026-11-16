@@ -9,9 +9,11 @@ import json
 import pytest
 
 from backend.agents import interpreter as itp
-from backend.agents.prompts import DESCRIBE_SECTOR_TOOL_NAME, FIND_COMPANIES_TOOL_NAME, INTERPRETER_TOOL_NAME
-from service_fakes import final_response, tool_use_response
-from test_service_interpreter import EMPTY, PROSE, all_rules, answer, interpret, options_of, service
+from backend.agents.prompts import DESCRIBE_SECTOR_TOOL_NAME, FIND_COMPANIES_TOOL_NAME
+import reading_fixtures as rf
+from reading_fixtures import EMPTY, answer, clause, reading
+from service_fakes import tool_use_response
+from test_service_interpreter import PROSE, all_rules, interpret, options_of, service
 
 MATEO_SECTORS = ["Energy", "Financials", "Industrials", "Information Technology", "Utilities"]
 
@@ -20,8 +22,16 @@ def lookup(name, arguments, tool_use_id="tooluse_lookup"):
     return tool_use_response(name, arguments, tool_use_id=tool_use_id)
 
 
-def theme(words, code="ENVIRONMENTAL", polarity="ONLY", **extra):
-    return dict(EMPTY, ambiguous=[dict({"words": words, "topic": "THEME", "theme": code, "polarity": polarity}, **extra)])
+# keep_compatible 1: the old THEME polarity is the clause's intent in the IR.
+_THEME_INTENT = {"ONLY": "KEEP_ONLY", "AVOID": "EXCLUDE", "PREFER": "PREFERENCE"}
+
+
+def theme(words, code="ENVIRONMENTAL", polarity="ONLY", **members):
+    return reading(clause("c1", words, _THEME_INTENT.get(polarity, polarity), "THEME", "UNSPECIFIED", theme=code, **members))
+
+
+def focus(words, keep, exclusivity):
+    return reading(clause("c1", words, "KEEP_ONLY", "SECTOR", "UNSPECIFIED", sectors=keep, exclusivity_mention=exclusivity))
 
 
 # --------------------------------------------------------------------------- themes
@@ -65,7 +75,7 @@ def test_ia02_paraphrased_values_wishes_become_theme_questions(text, words, code
 ])
 def test_ia03_the_server_asks_the_theme_question_when_the_model_gives_no_code(text, about):
     """A weak answer (only an objective, or nothing) still yields the question: the safety net reads the request text."""
-    for extraction in (EMPTY, dict(EMPTY, objectives=[{"words": text.rstrip("."), "kind": "preference"}])):
+    for extraction in (EMPTY, reading(objectives=[rf.objective(text.rstrip("."), "preference")])):
         status, draft = interpret(service(answer(extraction)), text)
         assert status == 200 and [c["about_words"] for c in draft["clarifications"]] == [about]
         assert "recorded-controversies" in options_of(draft, about)
@@ -77,8 +87,8 @@ def test_ia04_the_safety_net_needs_a_cue_and_never_overrides_the_model_or_the_oi
     assert status == 200 and draft["clarifications"] == []
     # The model already gave the words a code: no second question.
     text = "Only green companies."
-    rule = {"words": "Only green companies", "rule_type": "controversy_exclusion"}
-    status, draft = interpret(service(answer(dict(EMPTY, rules=[rule]))), text)
+    rule = clause("c1", "Only green companies", "EXCLUDE", "CONTROVERSY", "NONE_AT_ALL")
+    status, draft = interpret(service(answer(reading(rule))), text)
     assert status == 200 and draft["clarifications"] == [] and [r["rule_type"] for r in draft["proposed_rules"]] == ["controversy_exclusion"]
     # Oil keeps its own question.
     status, draft = interpret(service(answer(EMPTY)), "Only oil-free, environmentally friendly holdings.")
@@ -89,7 +99,7 @@ def test_ia05_an_unknown_theme_or_polarity_code_is_rejected_then_502():
     bad = answer(theme("only environmental investments", code="GREEN"))
     status, body = interpret(service(bad, bad), "I want only environmental investments")
     assert (status, body["error"]["code"]) == (502, "INTERPRETER_FAILED")
-    bad = answer(theme("only environmental investments", polarity="MOSTLY"))
+    bad = answer(theme("only environmental investments", polarity="MOSTLY"))  # an intent outside the closed list
     status, _ = interpret(service(bad, bad), "I want only environmental investments")
     assert status == 502
 
@@ -97,14 +107,14 @@ def test_ia05_an_unknown_theme_or_polarity_code_is_rejected_then_502():
 # --------------------------------------------------------------------------- sector focus
 
 
-@pytest.mark.parametrize("text, words, keep", [
-    ("I only want tech stocks.", "only want tech stocks", ["Information Technology"]),
-    ("Just banks and utilities for me.", "Just banks and utilities", ["Financials", "Utilities"]),
-    ("Only Energy.", "Only Energy", ["Energy"]),
+@pytest.mark.parametrize("text, words, keep, exclusivity", [
+    ("I only want tech stocks.", "only want tech stocks", ["Information Technology"], "only"),
+    ("Just banks and utilities for me.", "Just banks and utilities", ["Financials", "Utilities"], "Just"),
+    ("Only Energy.", "Only Energy", ["Energy"], "Only"),
 ])
-def test_ia06_only_some_sectors_drafts_one_exclusion_per_other_sector_without_a_number(text, words, keep):
-    extraction = dict(EMPTY, ambiguous=[{"words": words, "topic": "SECTOR_FOCUS", "sectors": keep}])
-    status, draft = interpret(service(answer(extraction)), text)
+def test_ia06_only_some_sectors_drafts_one_exclusion_per_other_sector_without_a_number(text, words, keep, exclusivity):
+    # keep_compatible 6: the focus drafts exclusions only with an 'only'-type exclusivity_mention.
+    status, draft = interpret(service(answer(focus(words, keep, exclusivity))), text)
     assert status == 200 and draft["clarifications"] == [] and draft["unsupported"] == []
     excluded = [rule["parameters"]["definition"]["sector"] for rule in draft["proposed_rules"]]
     assert excluded == [label for label in MATEO_SECTORS if label not in keep]
@@ -115,17 +125,18 @@ def test_ia06_only_some_sectors_drafts_one_exclusion_per_other_sector_without_a_
 def test_ia07_a_sector_focus_the_investor_did_not_write_is_unsupported_not_guessed():
     """The model maps "environmental" to Utilities: the server does not accept a sector the words do not name."""
     text = "I want only environmental investments"
-    extraction = dict(EMPTY, ambiguous=[{"words": "only environmental investments", "topic": "SECTOR_FOCUS", "sectors": ["Utilities"]}])
-    status, draft = interpret(service(answer(extraction)), text)
+    status, draft = interpret(service(answer(focus("only environmental investments", ["Utilities"], "only"))), text)
     assert status == 200 and draft["proposed_rules"] == []
     [unsupported] = draft["unsupported"]
     assert unsupported["code"] == "UNSUPPORTED_DEFINITION" and "Utilities" in unsupported["reason"] and "could not be matched" in unsupported["reason"]
 
 
-def test_ia08_a_sector_focus_label_outside_the_snapshot_is_rejected():
-    extraction = dict(EMPTY, ambiguous=[{"words": "only tech", "topic": "SECTOR_FOCUS", "sectors": ["Crypto"]}])
-    status, _ = interpret(service(answer(extraction), answer(extraction)), "I want only tech.")
-    assert status == 502
+def test_ia08_a_sector_focus_label_outside_the_snapshot_is_not_used():
+    """keep_compatible 1: Bedrock's enum refuses a label outside the snapshot; one that still arrives is not used and
+    the focus is unsupported for that clause (per-clause degradation), where the old shape rejected the answer."""
+    status, draft = interpret(service(answer(focus("only tech", ["Crypto"], "only"))), "I want only tech.")
+    assert status == 200 and draft["proposed_rules"] == [] and "Crypto" not in json.dumps(draft)
+    assert [(u["words"], u["code"]) for u in draft["unsupported"]] == [("only tech", "UNSUPPORTED_DEFINITION")]
 
 
 # --------------------------------------------------------------------------- companies
@@ -140,8 +151,9 @@ def test_ia09_common_company_names_resolve_without_a_lookup():
 
 def test_ia10_the_agent_looks_up_a_misspelled_company_and_may_then_use_it():
     text = "At most 5% in Microsft."
-    rule = {"words": "At most 5% in Microsft", "rule_type": "max_issuer_exposure", "issuer_id": "MICROSOFT"}
-    svc = service(lookup(FIND_COMPANIES_TOOL_NAME, {"words": "Microsft"}), answer(dict(EMPTY, rules=[rule])))
+    rule = rf.company("c1", "At most 5% in Microsft", "LIMIT", "AT_MOST", "Microsft", ["MICROSOFT"], direction_mention="At most",
+                      quantity_mention="5%")
+    svc = service(lookup(FIND_COMPANIES_TOOL_NAME, {"words": "Microsft"}), answer(reading(rule)))
     status, draft = interpret(svc, text)
     assert status == 200 and len(svc.bedrock.calls) == 2
     [result] = svc.bedrock.calls[1]["messages"][2]["content"]
@@ -149,16 +161,21 @@ def test_ia10_the_agent_looks_up_a_misspelled_company_and_may_then_use_it():
     assert result["toolResult"]["content"][0]["json"]["matches"][0]["issuer_id"] == "MICROSOFT"
     [drafted] = draft["proposed_rules"]
     assert drafted["parameters"] == {"issuer_scope": "MICROSOFT"} and drafted["threshold"] == 0.05 and drafted["threshold_quote"] == "5%"
+    # keep_compatible 5: the submit_reading company enum holds MICROSOFT from the first call, and the tool config is
+    # identical on every call of the request (it no longer grows after a lookup).
     schema = svc.bedrock.calls[1]["toolConfig"]["tools"][0]["toolSpec"]["inputSchema"]["json"]
-    assert "MICROSOFT" in schema["properties"]["rules"]["items"]["properties"]["issuer_id"]["enum"]
+    assert "MICROSOFT" in schema["properties"]["clauses"]["items"]["properties"]["company_ids"]["items"]["enum"]
+    assert svc.bedrock.calls[0]["toolConfig"] == svc.bedrock.calls[1]["toolConfig"]
 
 
 def test_ia11_a_lookup_for_words_the_investor_never_wrote_finds_nothing_and_gives_no_company():
     text = "At most 5% in one company."
-    rule = {"words": "At most 5% in one company", "rule_type": "max_issuer_exposure", "issuer_id": "MICROSOFT"}
-    svc = service(lookup(FIND_COMPANIES_TOOL_NAME, {"words": "Microsoft"}), answer(dict(EMPTY, rules=[rule])), answer(dict(EMPTY, rules=[rule])))
-    status, _ = interpret(svc, text)
-    assert status == 502, "MICROSOFT was never resolved from the investor's words"
+    rule = rf.company("c1", "At most 5% in one company", "LIMIT", "AT_MOST", "one company", ["MICROSOFT"], quantity_mention="5%")
+    svc = service(lookup(FIND_COMPANIES_TOOL_NAME, {"words": "Microsoft"}), answer(reading(rule)))
+    status, draft = interpret(svc, text)
+    # keep_compatible 4 (grounding on subject_mention): the ungrounded id is dropped, where the old shape rejected the
+    # whole answer; MICROSOFT was never resolved from the investor's words and appears nowhere.
+    assert status == 200 and draft["proposed_rules"] == [] and "MICROSOFT" not in json.dumps(draft)
     assert svc.bedrock.calls[1]["messages"][2]["content"][0]["toolResult"]["status"] == "error"
 
 
@@ -192,23 +209,22 @@ def test_ia14_a_slow_lookup_round_that_leaves_no_time_is_504_and_prose_never_lea
     status, body = interpret(svc, "Avoid Exxon.")
     assert (status, body["error"]["code"]) == (504, "INTERPRETER_TIMEOUT") and len(svc.bedrock.calls) == 1
     svc = service(tool_use_response(FIND_COMPANIES_TOOL_NAME, {"words": "Exxon"}, text=PROSE),
-                  answer(dict(EMPTY, rules=[{"words": "Avoid Exxon", "rule_type": "exclusion", "issuer_ids": ["EXXON_MOBIL"]}])))
+                  answer(reading(rf.company("c1", "Avoid Exxon", "EXCLUDE", "NONE_AT_ALL", "Exxon", ["EXXON_MOBIL"]))))
     status, draft = interpret(svc, "Avoid Exxon.")
     assert status == 200 and PROSE not in json.dumps(draft) and draft["proposed_rules"][0]["parameters"]["definition"]["issuer_ids"] == ["EXXON_MOBIL"]
 
 
 # --------------------------------------------------------------------------- sector focus the model misfiles
 
+IT = ["Information Technology"]
 
-@pytest.mark.parametrize("extraction", [
-    # what the real model answered for "I want only tech stocks": an unsupported sector limit
-    dict(EMPTY, unsupported=[{"words": "I want only tech stocks", "reason": "SECTOR_LIMIT"}]),
-    dict(EMPTY, unsupported=[{"words": "only tech stocks", "reason": "NOT_MEASURABLE"}]),
-    dict(EMPTY, objectives=[{"words": "I want only tech stocks", "kind": "preference"}]),  # only an objective
+
+@pytest.mark.parametrize("submitted", [
+    reading(objectives=[rf.objective("I want only tech stocks", "preference")]),  # only an objective
     EMPTY,  # nothing at all
-], ids=["sector-limit", "not-measurable", "objective-only", "empty"])
-def test_ia15_only_tech_stocks_is_a_sector_focus_whatever_the_model_answers(extraction):
-    status, draft = interpret(service(answer(extraction)), "I want only tech stocks")
+], ids=["objective-only", "empty"])
+def test_ia15_only_tech_stocks_is_a_sector_focus_whatever_the_model_answers(submitted):
+    status, draft = interpret(service(answer(submitted)), "I want only tech stocks")
     assert status == 200 and draft["unsupported"] == [] and draft["clarifications"] == []
     excluded = [rule["parameters"]["definition"]["sector"] for rule in draft["proposed_rules"]]
     assert excluded == ["Energy", "Financials", "Industrials", "Utilities"]
@@ -216,13 +232,29 @@ def test_ia15_only_tech_stocks_is_a_sector_focus_whatever_the_model_answers(extr
     assert all(rule["threshold"] is None and rule["origin"] == "SYSTEM_PROPOSED" for rule in draft["proposed_rules"])
 
 
-@pytest.mark.parametrize("text, words", [
-    ("At most 30% in tech, only tech.", "At most 30% in tech"),  # a stated share per sector stays a sector limit
-    ("I want only green energy.", "only green energy"),  # a theme, not the Energy label
-    ("I do not want only tech stocks.", "I do not want only tech stocks"),  # negated
+@pytest.mark.parametrize("submitted", [
+    # what the real model answered for "I want only tech stocks" before interpreter-4: an unsupported sector limit
+    reading(clause("c1", "I want only tech stocks", "LIMIT", "SECTOR", "UNSPECIFIED", sectors=IT)),
+    reading(clause("c1", "only tech stocks", "OTHER", "UNCLEAR", "UNSPECIFIED", unsupported_reason="NOT_MEASURABLE")),
+], ids=["sector-limit", "not-measurable"])
+def test_ia15_a_clause_that_reads_the_focus_otherwise_is_not_overridden_by_the_safety_net(submitted):
+    """Replaces the 'sector-limit' and 'not-measurable' cases of ia15. The focus net drafts the widest rule the server
+    writes from the words alone, so it runs only where no clause covers the words (compile rules J): a clause the model
+    read as something else keeps that lower outcome, and nothing is excluded on the strength of a regex."""
+    status, draft = interpret(service(answer(submitted)), "I want only tech stocks")
+    assert status == 200 and draft["proposed_rules"] == [] and len(draft["unsupported"]) == 1
+
+
+@pytest.mark.parametrize("text, submitted", [
+    # a stated share per sector stays a sector limit
+    ("At most 30% in tech, only tech.", clause("c1", "At most 30% in tech", "LIMIT", "SECTOR", "AT_MOST", sectors=IT, quantity_mention="30%")),
+    # a theme, not the Energy label
+    ("I want only green energy.", clause("c1", "only green energy", "LIMIT", "SECTOR", "UNSPECIFIED", sectors=["Energy"])),
+    # negated
+    ("I do not want only tech stocks.", clause("c1", "I do not want only tech stocks", "KEEP_ONLY", "SECTOR", "UNSPECIFIED", sectors=IT,
+                                               exclusivity_mention="only", polarity="NEGATED")),
 ])
-def test_ia16_the_server_does_not_read_a_focus_into_a_share_a_theme_or_a_refusal(text, words):
-    extraction = dict(EMPTY, unsupported=[{"words": words, "reason": "SECTOR_LIMIT"}])
-    status, draft = interpret(service(answer(extraction)), text)
+def test_ia16_the_server_does_not_read_a_focus_into_a_share_a_theme_or_a_refusal(text, submitted):
+    status, draft = interpret(service(answer(reading(submitted))), text)
     assert status == 200 and draft["proposed_rules"] == []
-    assert [item["words"] for item in draft["unsupported"]] == [words]
+    assert [item["words"] for item in draft["unsupported"]] == [submitted["evidence"]]

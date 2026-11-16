@@ -331,7 +331,7 @@ def build_interpreter(bedrock: "FakeBedrock", clock: FakeClock, **options: Any):
 
     counter = iter(range(1, 10_000))
     model = BedrockConverse(bedrock, "test-model", clock, max_attempts=2, base_delay_seconds=0.5, max_delay_seconds=1.0,
-                            min_call_budget_seconds=13.0, rng=lambda: 1.0)
+                            min_call_budget_seconds=13.0, rng=lambda: 1.0, prompt_cache=True)
     return Interpreter(model, clock, new_id=lambda: hashlib.sha256(f"int-{next(counter)}".encode()).hexdigest()[:32], call_budget_seconds=13.0, **options)
 
 

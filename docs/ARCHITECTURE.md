@@ -165,8 +165,9 @@ policy version and a child investigation (`CHANGE_RULE`).
 | The interpreter and the investigator cannot confirm or alter a policy: only `POST /rules/confirm` and a `CHANGE_RULE` challenge do, with the number the user sent | Local |
 
 Runtime model: `us.anthropic.claude-sonnet-5-5` on Amazon Bedrock, a stack
-parameter. Prompt versions `investigator-4` and `interpreter-3`
-(`backend/agents/prompts.py`) have never been sent to the real model:
+parameter. Prompt versions `investigator-4` and `interpreter-5`
+(`backend/agents/prompts.py`). The interpreter prompt has been evaluated against the real model with
+`scripts/eval_interpreter.py` (see `docs/INTERPRETER.md`); the investigator prompt has never been sent to it:
 Unverified. The development model (Claude Fable 5.2 in Claude Code) is not
 used by the application.
 

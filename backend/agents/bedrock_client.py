@@ -11,6 +11,12 @@ Request shape notes for the configured model (Claude Sonnet 5.5):
 * No ``temperature`` / ``topP`` and no forced ``toolChoice``: this model
   generation rejects non-default sampling parameters and forced tool choice.
   The server does not rely on the model calling a tool anyway.
+* With ``prompt_cache`` (the interpreter), a ``cachePoint`` block follows the
+  system prompt and the tool list, so the long, request-independent prefix is
+  read from Bedrock's prompt cache. If Bedrock refuses cache points
+  (a ValidationException naming them), the call is repeated at once without
+  them and caching stays off for this client: caching is never a reason for a
+  failed call.
 """
 
 from __future__ import annotations
@@ -41,6 +47,7 @@ RETRYABLE_CODES = THROTTLING_CODES | frozenset(
         "InternalServerException",
     }
 )
+_CACHE_POINT = {"cachePoint": {"type": "default"}}
 _TRANSPORT_ERRORS = (ReadTimeoutError, ConnectTimeoutError, EndpointConnectionError, ConnectionClosedError)
 
 
@@ -67,6 +74,7 @@ class BedrockConverse:
         max_delay_seconds: float = 8.0,
         min_call_budget_seconds: float = 3.0,
         rng: Callable[[], float] = random.random,
+        prompt_cache: bool = False,
     ) -> None:
         self._client = client
         self.model_id = model_id
@@ -76,6 +84,7 @@ class BedrockConverse:
         self._max_delay = max_delay_seconds
         self._min_call_budget = min_call_budget_seconds
         self._rng = rng
+        self._prompt_cache = prompt_cache
 
     def converse(
         self,
@@ -98,16 +107,23 @@ class BedrockConverse:
                     attempts=attempt,
                 )
             attempt += 1
+            cached = self._prompt_cache
             try:
                 response = self._client.converse(
                     modelId=self.model_id,
-                    system=[{"text": system}],
+                    system=[{"text": system}, *([_CACHE_POINT] if cached else [])],
                     messages=messages,
-                    toolConfig=tool_config,
+                    toolConfig=dict(tool_config, tools=[*tool_config["tools"], _CACHE_POINT]) if cached else tool_config,
                     inferenceConfig={"maxTokens": max_tokens},
                 )
             except ClientError as error:
                 aws_error = str(error.response.get("Error", {}).get("Code", "Unknown"))
+                if cached and aws_error == "ValidationException" and "cach" in str(error.response.get("Error", {}).get("Message", "")).lower():
+                    # The model or region does not take cache points: drop them for good and repeat the call now.
+                    self._prompt_cache = False
+                    attempt -= 1
+                    log.warning("bedrock_prompt_cache_disabled", model_id=self.model_id)
+                    continue
                 retryable = aws_error in RETRYABLE_CODES
                 failure = FAILURE_MODEL_THROTTLED if aws_error in THROTTLING_CODES else FAILURE_MODEL_ERROR
             except _TRANSPORT_ERRORS as error:
