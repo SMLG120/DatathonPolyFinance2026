@@ -8,7 +8,6 @@ import {
   expectScreen,
   openReport,
   START_URL,
-  stepLink,
 } from "./helpers";
 
 const HEADLINE = "Invest with conviction.Not contradiction.";
@@ -22,15 +21,16 @@ async function expectBrand(page: Page) {
   await expect(page.getByTestId("brand-headline")).toHaveText(HEADLINE);
   await expect(page.getByTestId("brand-subtitle")).toHaveText(SUBTITLE);
   await expect(page.getByTestId("brand-tagline")).toHaveText(TAGLINE);
-  await expect(page.getByRole("link", { name: "Analyze My Portfolio" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Explore 3D Portfolio" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start with a profile" })).toBeVisible();
+  // No call to action jumps ahead from the first screen: it would skip the profile and the limits.
+  await expect(page.getByTestId("brand-hero").getByRole("link")).toHaveCount(0);
   // The former product name, in its own capitals. "Before you buy something, …" in the introduction is ordinary prose.
   await expect(page.getByText(/Before You Buy/)).toHaveCount(0);
   await expect(page.getByText(/investra/i)).toHaveCount(0);
   await expectPersistentLabels(page);
 }
 
-/** The whole path of both calls to action, at the viewport of the surrounding block. */
+/** The brand message's call to action, then the 3D explorer in the place it has data to draw: the result. */
 async function brandJourney(page: Page, context: string) {
   await page.goto(START_URL);
   await expectPortfolioLoaded(page);
@@ -39,43 +39,25 @@ async function brandJourney(page: Page, context: string) {
   await expectNoHorizontalOverflow(page, `${context}, first screen`);
   await expectNoAxeViolations(page, `${context}, first screen with the brand message`);
 
-  // "Analyze My Portfolio" opens the purchase step.
-  await page.getByRole("link", { name: "Analyze My Portfolio" }).click();
-  await expectScreen(page, "purchase");
-  await expect(page.getByRole("main")).not.toBeEmpty();
+  // "Start with a profile" stays on step 1 and moves focus to the persona chooser.
+  await page.getByRole("button", { name: "Start with a profile" }).click();
+  await expectScreen(page, "persona", { focused: false });
+  const chooser = page.getByRole("heading", { name: "Who would you like to try?" });
+  await expect(chooser).toBeFocused();
+  await expect(chooser).toBeInViewport();
 
-  // With no result yet, "Explore 3D Portfolio" says so and leads to the same working step, never to an empty page.
-  await stepLink(page, 1).click();
-  await expectScreen(page, "persona");
-  const explore = page.getByRole("link", { name: "Explore 3D Portfolio" });
-  await expect(explore).toHaveAttribute("href", "#/purchase");
-  await expect(page.getByTestId("brand-cta-note")).toContainText("none has been checked in this session yet");
-  await explore.click();
-  await expectScreen(page, "purchase");
-  await expect(page.getByTestId("start-investigation")).toBeVisible();
-
-  // After an analysis, the same button opens the exposure section of the report, where the explorer is.
-  await stepLink(page, 1).click();
-  await expectScreen(page, "persona");
+  // The 3D explorer is reached through the journey: it sits in the result's exposure section.
   await openReport(page);
-  await expect(page.locator("#report-exposure")).toHaveJSProperty("open", false);
-  await stepLink(page, 1).click();
-  await expectScreen(page, "persona");
-  await expect(explore).toHaveAttribute("href", "#/verdict");
-  await expect(page.getByTestId("brand-cta-note")).toHaveText("Opens the 3D exposure view of the latest result in this session.");
-  await explore.click();
-  await expectScreen(page, "verdict", { focused: false });
+  await page.locator("#report-exposure > summary").click();
   await expect(page.locator("#report-exposure")).toHaveJSProperty("open", true);
   const explorer = page.getByTestId("exposure-explorer");
   await expect(explorer).toBeVisible();
-  await expect(explorer).toBeInViewport();
-  await expect(page.locator("#report-exposure > summary")).toBeFocused();
-  await expectNoHorizontalOverflow(page, `${context}, explorer opened from the brand message`);
+  await expectNoHorizontalOverflow(page, `${context}, explorer opened in the result`);
   return explorer;
 }
 
-test.describe("ETHOS brand message and its two calls to action", () => {
-  test("desktop: branding, both calls to action, and the explorer after an analysis", async ({ page }) => {
+test.describe("ETHOS brand message and its call to action", () => {
+  test("desktop: branding, the call to action, and the explorer in the result", async ({ page }) => {
     test.setTimeout(120_000);
     const explorer = await brandJourney(page, "desktop");
     await expect(explorer).toHaveAttribute("data-status", "READY");
@@ -86,7 +68,7 @@ test.describe("ETHOS brand message and its two calls to action", () => {
 
   test.describe("at a phone's width", () => {
     test.use({ viewport: { width: 390, height: 844 } });
-    test("mobile: branding, both calls to action, and the explorer after an analysis", async ({ page }) => {
+    test("mobile: branding, the call to action, and the explorer in the result", async ({ page }) => {
       test.setTimeout(120_000);
       const explorer = await brandJourney(page, "mobile");
       await expect(explorer).toHaveAttribute("data-status", "READY");

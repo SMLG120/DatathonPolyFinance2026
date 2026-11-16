@@ -2,7 +2,7 @@
 
 import { CustomizePanel } from "@/components/portfolio/CustomizePanel";
 import { PortfolioTable } from "@/components/portfolio/PortfolioTable";
-import { BrandHero } from "@/components/shell/BrandHero";
+import { BrandHero, PERSONA_CHOICE } from "@/components/shell/BrandHero";
 import { StageFrame } from "@/components/shell/StageFrame";
 import { ErrorBlock, LoadingBlock } from "@/components/ui/AsyncStates";
 import { Badge } from "@/components/ui/Badge";
@@ -150,7 +150,7 @@ export function PersonaStage() {
         </ol>
       </section>
 
-      <Panel title="Who would you like to try?">
+      <Panel id={PERSONA_CHOICE} focusableHeading title="Who would you like to try?">
         <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PERSONAS.filter((persona) => persona.available).map((persona) => (
             <PersonaOption

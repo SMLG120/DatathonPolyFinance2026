@@ -1,8 +1,9 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { App } from "@/components/App";
-import { go, renderApp, toVerdict } from "@/test/app";
+import { renderApp } from "@/test/app";
 import { BRAND_TAGLINE } from "./BrandHero";
 
 describe("BrandHero", () => {
@@ -32,29 +33,24 @@ describe("BrandHero", () => {
     expect(screen.getByTestId("brand-hero").querySelector("h1, h2, h3, h4")).toBeNull();
   });
 
-  it("with no result, both calls to action lead to the purchase step and the 3D one says why", async () => {
+  it("has one call to action that starts at step 1 and never jumps ahead", async () => {
     renderApp();
     await screen.findByTestId("portfolio-table");
-    expect(screen.getByRole("link", { name: "Analyze My Portfolio" })).toHaveAttribute("href", "#/purchase");
-    const explore = screen.getByRole("link", { name: "Explore 3D Portfolio" });
-    expect(explore).toHaveAttribute("href", "#/purchase");
-    expect(explore).toHaveAccessibleDescription(/none has been checked in this session yet/);
+    const hero = screen.getByTestId("brand-hero");
+    // No link out of the first step: a jump to a later step would skip the profile and the limits.
+    expect(hero.querySelectorAll("a")).toHaveLength(0);
+    expect(screen.queryByText("Explore 3D Portfolio")).toBeNull();
+    expect(screen.queryByText("Analyze My Portfolio")).toBeNull();
+    expect(screen.getByRole("button", { name: "Start with a profile" })).toBeInTheDocument();
   });
 
-  it("with a result, the 3D call to action opens the exposure section of the report", async () => {
-    const user = await toVerdict();
-    await screen.findByTestId("report");
-    expect(document.getElementById("report-exposure")).not.toHaveAttribute("open");
-
-    await go("persona");
-    const explore = screen.getByRole("link", { name: "Explore 3D Portfolio" });
-    expect(explore).toHaveAttribute("href", "#/verdict");
-    expect(explore).toHaveAccessibleDescription("Opens the 3D exposure view of the latest result in this session.");
-
-    await user.click(explore);
-    // jsdom does not follow a link's hash, so the navigation the href performs in a browser is made here.
-    await go("verdict");
-    await waitFor(() => expect(document.getElementById("report-exposure")).toHaveAttribute("open"));
-    expect(screen.getByTestId("exposure-explorer")).toBeInTheDocument();
+  it("the call to action moves focus to the persona chooser on the same step", async () => {
+    const user = userEvent.setup();
+    renderApp();
+    await screen.findByTestId("portfolio-table");
+    const before = window.location.hash;
+    await user.click(screen.getByRole("button", { name: "Start with a profile" }));
+    expect(screen.getByRole("heading", { name: "Who would you like to try?" })).toHaveFocus();
+    expect(window.location.hash).toBe(before);
   });
 });
