@@ -24,7 +24,8 @@ async function expectBrand(page: Page) {
   await expect(page.getByTestId("brand-tagline")).toHaveText(TAGLINE);
   await expect(page.getByRole("link", { name: "Analyze My Portfolio" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Explore 3D Portfolio" })).toBeVisible();
-  await expect(page.getByText("Before You Buy")).toHaveCount(0);
+  // The former product name, in its own capitals. "Before you buy something, …" in the introduction is ordinary prose.
+  await expect(page.getByText(/Before You Buy/)).toHaveCount(0);
   await expect(page.getByText(/investra/i)).toHaveCount(0);
   await expectPersistentLabels(page);
 }
