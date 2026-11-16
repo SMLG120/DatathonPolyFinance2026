@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from backend.agents.themes import sectors_written_in
@@ -22,6 +23,25 @@ def _sector_labels(registry: dict, funds: dict) -> list[str]:
     for fund in funds.values():
         labels.update(row.get("sector") for row in fund.get("holdings", []) if isinstance(row, dict))
     return sorted(label for label in labels if isinstance(label, str) and label)
+
+
+_COMPANY_RE = re.compile(r"\b(compan(?:y|ies)|issuers?|single (?:name|stock|company)|one stock)\b", re.IGNORECASE)
+_TOKEN_RE = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:\.[A-Za-z]{1,3})?")
+
+
+def fund_named_in(question: str, registry: dict) -> str | None:
+    """The one fund of the registry whose identifier (``XIU.TO`` or its ticker ``XIU``) is written in the question, else ``None``.
+
+    Recognition only: the identifier must already be in the snapshot. Two different funds named -> no focus is guessed.
+    """
+    tickers: dict[str, str] = {}
+    for instrument_id, instrument in registry.items():
+        if instrument.get("is_fund"):
+            tickers[instrument_id.upper()] = instrument_id
+            tickers.setdefault(instrument_id.split(".")[0].upper(), instrument_id)
+    # An identifier counts when written in capitals ("SPY"), so an ordinary word is never taken for a ticker.
+    found = {tickers[token] for token in _TOKEN_RE.findall(question) if token.isupper() and token in tickers}
+    return next(iter(found)) if len(found) == 1 else None
 
 
 def portfolio_coverage(portfolio: dict, registry: dict, scans: dict[str, dict]) -> dict[str, Any]:
@@ -80,6 +100,9 @@ def investigate(*, snapshot: Any, scenario: dict, policy: dict | None, fund_id: 
     held_funds = [instrument_id for instrument_id, _ in held_positions(portfolio) if (registry.get(instrument_id) or {}).get("is_fund")]
     scans = {held: scan_fund(held, registry, funds, sources, valuation_date) for held in held_funds}
     focus = None
+    fund_recognised = None
+    if fund_id is None:
+        fund_recognised = fund_id = fund_named_in(question, registry)
     if fund_id is not None:
         focus = scans.get(fund_id) or scan_fund(fund_id, registry, funds, sources, valuation_date)
     coverage = portfolio_coverage(portfolio, registry, scans)
@@ -180,7 +203,13 @@ def investigate(*, snapshot: Any, scenario: dict, policy: dict | None, fund_id: 
 
     if topic == "unsupported":
         sections = {"what_we_know": [], "what_is_missing": [], "hypothetical": [], "verify_next": []}
-    head = explain.headline(topic, sections, summary, impacts, len(unique), sector_bounds)
+    headline_impacts = impacts
+    if topic == "constraint" and not asked_sectors and _COMPANY_RE.search(question):
+        headline_impacts = [impact for impact in impacts if impact["rule_type"] == "max_issuer_exposure"]
+    head = explain.headline(topic, sections, summary, headline_impacts, len(unique), sector_bounds)
+    if headline_impacts is not impacts and not any(impact["analysed"] for impact in headline_impacts):
+        head = ("No company exposure limit is on record for this investor, so there is no limit to compare with. "
+                "The rules that are on record are listed under constraint impacts.")
     template = explain.render(head, sections) if topic != "unsupported" else head
     explanation, explanation_source, model_status = template, "template", "not_configured"
     if explainer is not None and topic != "unsupported":
@@ -199,7 +228,7 @@ def investigate(*, snapshot: Any, scenario: dict, policy: dict | None, fund_id: 
         "snapshot_id": snapshot.snapshot_id,
         "persona_id": scenario["persona"]["persona_id"],
         "fund_id": fund_id,
-        "question": {"topic": topic, "supported": topic != "unsupported", "sectors_recognised": asked_sectors},
+        "question": {"topic": topic, "supported": topic != "unsupported", "sectors_recognised": asked_sectors, "fund_recognised": fund_recognised},
         "summary": summary,
         "fund": public(focus) if focus is not None else None,
         "portfolio": coverage,
@@ -209,6 +238,8 @@ def investigate(*, snapshot: Any, scenario: dict, policy: dict | None, fund_id: 
         "next_evidence": sections["verify_next"],
         "exposure_bounds": [bounds_module.strip(item) for item in sector_bounds],
         "constraint_impacts": impacts,
+        "rules_basis": rule_basis,
+        "rules_confirmed": policy is not None,
         "headline": head,
         "explanation": explanation,
         "explanation_source": explanation_source,

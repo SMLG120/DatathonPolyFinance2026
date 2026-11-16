@@ -10,8 +10,11 @@ Registration (``backend/api/handler.py``, in ``Api.__init__``)::
     self._routes[ROUTE_KEY] = evidence_route(self)
 
 The route runs inside ``Api.handle``, so authentication (the Lambda authorizer), CORS and the error shape are the
-existing ones. The model wording uses the same Bedrock model and switch as the interpreter (``INTERPRETER_ENABLED``,
-``BEDROCK_MODEL_ID``); with the switch off, or on any model failure, the server's own wording is returned.
+existing ones.
+
+Model wording is OFF in this release (``MODEL_WORDING_ENABLED``): the project shows no model-written text
+(``backend/agents/explain.py``; test ``wk01f``), so every answer is the server's own deterministic wording and the
+route makes no Bedrock call. The guarded explainer stays in ``wording.py``, tested, for a later decision by the lead.
 """
 
 from __future__ import annotations
@@ -30,6 +33,8 @@ _PERSONA_RE = re.compile(r"[a-z][a-z0-9_]{0,31}")
 _FUND_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.\-]{0,31}")
 _KEYS = frozenset({"persona_id", "fund_id", "question", "policy_id", "policy_version"})
 _MESSAGE = "The request body does not match the evidence investigation contract."
+# Release decision: no model-written text is shown. While this is False the route never builds a model client.
+MODEL_WORDING_ENABLED = False
 
 
 def _invalid(path: str, issue: str) -> ApiError:
@@ -91,7 +96,7 @@ class EvidenceRoute:
 
 def _lazy_explainer(config: Any) -> Callable[[], Any] | None:
     """The model client is built on first use, with the interpreter's timeouts, and only if the interpreter switch is on."""
-    if not getattr(config, "interpreter_enabled", False) or not getattr(config, "model_id", None):
+    if not MODEL_WORDING_ENABLED or not getattr(config, "interpreter_enabled", False) or not getattr(config, "model_id", None):
         return None
     cache: list[Any] = []
 

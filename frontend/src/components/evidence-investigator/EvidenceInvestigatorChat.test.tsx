@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/lib/api";
 import { LIVE_CONFIG, renderWithApp } from "@/test/render";
 import { asEvidenceResponse, createHttpEvidenceClient, createRecordedEvidenceClient, NO_RECORDED_ANSWER, type EvidenceClient } from "./client";
-import { EvidenceInvestigatorChat, percentText, SUBTITLE, TITLE, UNKNOWN } from "./EvidenceInvestigatorChat";
+import { EvidenceInvestigatorChat, percentText, SCOPE_NOTE, SUBTITLE, TITLE, UNCONFIRMED_RULES_NOTE, UNKNOWN } from "./EvidenceInvestigatorChat";
 import recorded from "./recorded-answers.json";
 import { OVERVIEW_QUESTION, SUGGESTED_QUESTIONS, type EvidenceRequest, type EvidenceResponse } from "./types";
 
@@ -55,7 +55,7 @@ describe("EvidenceInvestigatorChat", () => {
     for (const title of ["1. What we know", "2. What is missing", "3. What could happen under an assumption", "4. What needs to be verified next"]) {
       expect(within(answer).getByRole("heading", { name: new RegExp(title) })).toBeInTheDocument();
     }
-    expect(within(answer).getByText("Hypothetical — not measured")).toBeInTheDocument();
+    expect(within(answer).getByText("Hypothetical: not measured")).toBeInTheDocument();
     expect(within(answer).getByText("Sources and calculation basis")).toBeInTheDocument();
     expect(within(answer).getByText("Calculation basis")).toBeInTheDocument();
     expect(within(answer).getAllByText(/Provisional|Verified source/).length).toBeGreaterThan(0);
@@ -152,6 +152,34 @@ describe("EvidenceInvestigatorChat", () => {
     expect(await within(summary).findByText("The holdings file is not consistent")).toBeInTheDocument();
     expect(within(summary).queryByRole("progressbar")).toBeNull();
     expect(within(summary).getAllByText(UNKNOWN).length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("release labelling", () => {
+  it("describes itself as a limited tool and marks suggested rules as not confirmed", async () => {
+    renderWithApp(<EvidenceInvestigatorChat personaId="robert" />);
+    expect(screen.getByText(SCOPE_NOTE)).toBeInTheDocument();
+    expect(screen.getByText("Suggested rules only: not confirmed")).toBeInTheDocument();
+    expect(screen.getByText(UNCONFIRMED_RULES_NOTE)).toBeInTheDocument();
+    // recorded synthetic answers carry the test-data tag
+    expect(screen.getAllByTestId("test-data-tag").length).toBeGreaterThan(0);
+    const answer = await recordedClient.investigate({ persona_id: "robert", fund_id: null, question: OVERVIEW_QUESTION, policy_id: null, policy_version: null });
+    expect(answer.rules_confirmed).toBe(false);
+    expect(answer.explanation_source).toBe("template");
+  });
+
+  it("names the confirmed policy version instead when one is supplied", async () => {
+    const client = clientReturning((request) => answerFor("robert", request.fund_id, OVERVIEW_QUESTION));
+    renderWithApp(<EvidenceInvestigatorChat personaId="robert" policyId="pol-robert-1" policyVersion={2} client={client} />);
+    expect(screen.queryByText("Suggested rules only: not confirmed")).toBeNull();
+    expect(screen.getByText(/Limits come from confirmed policy version/)).toBeInTheDocument();
+  });
+
+  it("links to the investigator from the main page header", async () => {
+    const { AppShell } = await import("@/components/shell/AppShell");
+    renderWithApp(<AppShell>content</AppShell>);
+    const link = screen.getByRole("link", { name: "Evidence Investigator" });
+    expect(link).toHaveAttribute("href", "/evidence/");
   });
 });
 

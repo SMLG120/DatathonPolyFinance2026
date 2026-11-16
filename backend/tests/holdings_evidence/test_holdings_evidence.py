@@ -253,7 +253,7 @@ def run(question, *, fund_id=None, rules=(), policy=None, explainer=None, funds=
 
 def test_technology_question_separates_verified_unknown_and_hypothetical_and_cannot_confirm_a_25_percent_limit():
     result = run("Could missing holdings violate my technology limit?", rules=[sector_rule(0.25)])
-    assert result["question"] == {"topic": "constraint", "supported": True, "sectors_recognised": [TECH]}
+    assert result["question"] == {"topic": "constraint", "supported": True, "sectors_recognised": [TECH], "fund_recognised": None}
     impact = result["constraint_impacts"][0]
     assert impact["assessment"] == bounds.UNCONFIRMED and impact["limit_pct"] == 25.0 and impact["rule_status"] == "PROPOSED"
     assert "cannot currently be confirmed" in result["headline"]
@@ -447,3 +447,52 @@ def test_recorded_frontend_answers_are_current():
     import record_frontend_fixtures as recorder
 
     assert recorder.TARGET.read_text(encoding="utf-8") == recorder.render(), "run backend/tests/holdings_evidence/record_frontend_fixtures.py"
+
+
+# ------------------------------------------------------------------ release integration: scope from the question, rule status, no model
+
+@pytest.mark.parametrize("question, expected", [("What holdings information is missing from FUNDA?", "FUNDA"), ("What evidence is missing from NOFILE?", "NOFILE"),
+                                                ("Compare FUNDA and FUNDB", None), ("what about funda?", None), ("Is TECHCO missing?", None), ("nothing named", None)])
+def test_one_fund_written_in_the_question_becomes_the_scope(question, expected):
+    result = run(question)
+    assert result["fund_id"] == expected and result["question"]["fund_recognised"] == expected
+    assert result["summary"]["scope"] == ("fund" if expected else "portfolio")
+
+
+def test_a_named_fund_without_holdings_is_reported_unavailable_and_topic_is_missing_data():
+    result = run("What evidence is missing from NOFILE?")
+    assert result["question"]["topic"] == "missing_data" and result["summary"]["verified_weight_pct"] is None
+    assert result["retrieval"]["message"] == EVIDENCE_UNAVAILABLE and result["status"] == "insufficient_evidence"
+
+
+def test_an_explicit_fund_selection_wins_over_a_fund_named_in_the_question():
+    result = run("What is missing from FUNDB?", fund_id="FUNDA")
+    assert result["fund_id"] == "FUNDA" and result["question"]["fund_recognised"] is None
+
+
+def issuer_rule(limit, status="PROPOSED"):
+    return {"rule_id": "r-cap", "rule_type": "max_issuer_exposure", "status": status, "threshold": limit, "parameters": {"issuer_scope": "any"}}
+
+
+def test_company_limit_question_is_answered_from_the_company_rule_and_states_whether_it_is_confirmed():
+    question = "Could unresolved holdings violate my company exposure limit?"
+    offered = run(question, rules=[sector_rule(0.25), issuer_rule(0.35)])
+    # BANKCO verified 30%, unresolved fund weight 9% -> 39% possible: a 35% cap cannot be confirmed
+    assert "any single company cannot currently be confirmed at or below the 35% limit" in offered["headline"]
+    assert offered["rules_confirmed"] is False and "not confirmed" in offered["rules_basis"]
+    confirmed = run(question, policy={"policy_id": "pol-x", "version": 1, "rules": [issuer_rule(0.45, "CONFIRMED")]})
+    assert confirmed["rules_confirmed"] is True and "would stay at or below the 45% limit" in confirmed["headline"]
+    none = run(question, rules=[sector_rule(0.25)])
+    assert none["headline"].startswith("No company exposure limit is on record")
+
+
+def test_the_registered_route_makes_no_model_call_in_this_release(service):
+    from backend.api.holdings_evidence import route as route_module
+    from backend.common.config import ApiConfig
+
+    assert route_module.MODEL_WORDING_ENABLED is False
+    enabled = ApiConfig(data_bucket="b", worker_function_name="w", snapshot_id="s", model_id="m", interpreter_enabled=True)
+    assert route_module._lazy_explainer(enabled) is None
+    status, body = ask(service, question="How much of my portfolio is verified?")
+    assert status == 200 and body["explanation_source"] == "template" and body["model_status"] == "not_configured"
+    assert service.bedrock.calls == []

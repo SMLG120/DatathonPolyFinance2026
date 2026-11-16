@@ -185,7 +185,7 @@ def test_v29_interpreter_timeouts_fit_under_the_gateway_limit_and_the_contract_d
     api_function = resources()["ApiFunction"]
     function_timeout = int(re.search(r"^      Timeout: (\d+)", api_function, re.M).group(1))
     integration = dict(re.findall(r"Path: (\S+)\n\s+PayloadFormatVersion: \"2\.0\"\n(?:\s+#.*\n)*\s+TimeoutInMillis: (\d+)", api_function))
-    assert set(integration) == {path for _, path in CANONICAL_ROUTES}
+    assert set(integration) == {path for _, path in DECLARED_ROUTES}
     slow = {"/rules/interpret", "/investigations/{id}/challenge"}
     assert {path for path, value in integration.items() if int(value) != 20000} == slow
     assert INTERPRET_TIMEOUT_SECONDS == 20 and INTERPRET_TIMEOUT_SECONDS + 3 <= function_timeout
@@ -279,21 +279,41 @@ def test_v29_every_route_is_behind_the_authorizer_and_there_is_no_default_route(
 
 CANONICAL_ROUTES = {("GET", "/portfolios/{persona_id}"), ("POST", "/rules/interpret"), ("POST", "/rules/confirm"), ("POST", "/check"),
                     ("POST", "/investigations"), ("GET", "/investigations/{id}"), ("POST", "/investigations/{id}/challenge")}
+# Release integration 2026-11-15: one additive route outside contracts/api.md, the Missing Holdings Evidence Investigator.
+# Reviewed as: read-only (snapshot and policies), no write, no worker invocation, no model call in this release, default
+# authorizer, default throttle, 20 s integration timeout. test_v29_the_additive_evidence_route_reaches_no_model pins that.
+ADDITIVE_ROUTES = {("POST", "/evidence/investigate")}
+DECLARED_ROUTES = CANONICAL_ROUTES | ADDITIVE_ROUTES
 
 
 @pytest.mark.vcase("V29")
 def test_v29_declared_routes_are_exactly_the_seven_of_the_contract():
     """Re-reviewed on the candidate df33dd6: the seven routes of contracts/api.md, all events of ApiFunction, all attached
     to HttpApi (default authorizer), none with its own Auth block. The two routes that start an investigation carry
-    the tighter throttle."""
+    the tighter throttle. Since the release integration of 2026-11-15 there is exactly one more, ADDITIVE_ROUTES."""
     text = TEMPLATE.read_text()
     routes = re.findall(r"Method: (GET|POST|PUT|DELETE|PATCH|ANY)\s*\n\s+Path: (\S+)", text)
-    assert len(routes) == len(set(routes)) and set(routes) == CANONICAL_ROUTES, sorted(set(routes) ^ CANONICAL_ROUTES)
+    assert len(routes) == len(set(routes)) and set(routes) == DECLARED_ROUTES, sorted(set(routes) ^ DECLARED_ROUTES)
     api_function = resources()["ApiFunction"]
-    assert api_function.count("Type: HttpApi") == 7 and api_function.count("ApiId: !Ref HttpApi") == 7
+    assert api_function.count("Type: HttpApi") == 8 and api_function.count("ApiId: !Ref HttpApi") == 8
+    assert "Auth:" not in api_function.split("Path: /evidence/investigate\n", 1)[1].split("Type: HttpApi")[0], "the additive route keeps the default authorizer"
     for path in ("/investigations", "/investigations/{id}/challenge"):
         block = api_function.split(f"Path: {path}\n", 1)[1].split("Type: HttpApi")[0]
         assert re.search(r"ThrottlingBurstLimit: 10\s*\n\s+ThrottlingRateLimit: 5\b", block), f"{path} starts model work and needs the tight throttle"
+
+
+@pytest.mark.vcase("V29")
+def test_v29_the_additive_evidence_route_reaches_no_model():
+    """The evidence route has the default throttle, which the review allows only for a route that reaches no model.
+    Pinned: the switch is off, and with it off no model client can be built, whatever the function's configuration."""
+    route = (REPO_ROOT / "backend" / "api" / "holdings_evidence" / "route.py").read_text()
+    assert re.search(r"^MODEL_WORDING_ENABLED = False$", route, re.M), "turning model wording on needs a throttle and a re-review"
+    assert "if not MODEL_WORDING_ENABLED or" in route
+    package = REPO_ROOT / "backend" / "api" / "holdings_evidence"
+    importers = [path.name for path in package.glob("*.py") if re.search(r"^\s*(import|from) (boto3|botocore)", path.read_text(), re.M)]
+    assert importers == ["route.py"], "only the route may build an AWS client, and only behind the switch"
+    service = (package / "service.py").read_text()
+    assert "put_object" not in service and "invoke(" not in service
 
 
 # Every identity statement of the candidate, read one by one on df33dd6: (action, key prefix or resource, write condition).

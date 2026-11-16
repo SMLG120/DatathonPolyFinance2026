@@ -15,6 +15,10 @@ import { MAX_QUESTION_CHARS, OVERVIEW_QUESTION, SUGGESTED_QUESTIONS, type Eviden
 
 export const TITLE = "Evidence Investigator";
 export const SUBTITLE = "Understand missing portfolio data and its impact on your investment rules.";
+export const SCOPE_NOTE =
+  "A limited evidence tool, not a research agent: it reads the holdings files, instrument registry and source registry held by this service, and answers with calculated figures and fixed wording. It does not search the web or fetch new data.";
+export const UNCONFIRMED_RULES_NOTE =
+  "Limits mentioned here are this fictional scenario's suggested rules. They have not been confirmed by the investor and are not an active policy.";
 export const UNKNOWN = "Unknown";
 const WHOLE_PORTFOLIO = "";
 
@@ -67,7 +71,7 @@ function StatementList({ title, items, empty, hypothetical = false }: { title: s
         {title}
         {hypothetical ? (
           <Badge tone="unknown" dashed>
-            Hypothetical — not measured
+            Hypothetical: not measured
           </Badge>
         ) : null}
       </h4>
@@ -93,6 +97,11 @@ function Answer({ answer, scopeNote }: { answer: EvidenceResponse; scopeNote: st
   return (
     <div className="space-y-3">
       {scopeNote ? <p className="text-sm text-ink-muted">{scopeNote}</p> : null}
+      {answer.question.fund_recognised ? (
+        <p className="text-sm text-ink-muted">
+          The question names {answer.question.fund_recognised}, so this answer is about that fund.
+        </p>
+      ) : null}
       {empty ? (
         <Notice tone="caution" title="The service sent an empty answer">Nothing is shown in its place. The structured evidence below is what was calculated.</Notice>
       ) : (
@@ -266,6 +275,18 @@ function Investigator({ personaId, policyId = null, policyVersion = null, client
   return (
     <Panel title={TITLE} description={SUBTITLE} eyebrow="Read-only assistant" figures aside={status ? <Badge tone={status.tone} dashed={status.tone !== "pass"}>{status.label}</Badge> : null}>
       <div className="space-y-5">
+        <p className="text-sm text-ink-muted" data-testid="evidence-scope-note">
+          {SCOPE_NOTE}
+        </p>
+        {policyId === null ? (
+          <Notice tone="caution" title="Suggested rules only: not confirmed">
+            {UNCONFIRMED_RULES_NOTE}
+          </Notice>
+        ) : (
+          <p className="text-sm text-ink-muted">
+            Limits come from confirmed policy version <span className="tabular-nums">{policyVersion}</span>.
+          </p>
+        )}
         <Field htmlFor={fundSelectId} label="What to investigate" hint="The whole portfolio, or one fund held in it.">
           <Select id={fundSelectId} value={fundId} onChange={(event) => setFundId(event.target.value)} disabled={funds === null}>
             <option value={WHOLE_PORTFOLIO}>Whole portfolio</option>
@@ -350,7 +371,7 @@ function Investigator({ personaId, policyId = null, policyVersion = null, client
               Ask
             </Button>
           </form>
-          <p className="text-sm text-ink-muted">This assistant explains evidence only. It gives no advice or forecasts and cannot change your portfolio, rules or verdicts.</p>
+          <p className="text-sm text-ink-muted">This assistant explains evidence only. It cannot change your portfolio, your rules or a verdict.</p>
         </section>
       </div>
     </Panel>

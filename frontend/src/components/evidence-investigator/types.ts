@@ -58,7 +58,7 @@ export interface EvidenceResponse {
   status: EvidenceStatus;
   persona_id: string;
   fund_id: string | null;
-  question: { topic: string; supported: boolean; sectors_recognised: string[] };
+  question: { topic: string; supported: boolean; sectors_recognised: string[]; fund_recognised?: string | null };
   summary: EvidenceSummary;
   fund: FundEvidence | null;
   portfolio: { basis: string };
@@ -67,6 +67,9 @@ export interface EvidenceResponse {
   hypothetical_scenarios: EvidenceStatement[];
   next_evidence: EvidenceStatement[];
   exposure_bounds: ExposureBounds[];
+  /** Where the limits came from, and whether that is a confirmed policy version (false: the scenario's suggested rules). */
+  rules_basis?: string;
+  rules_confirmed?: boolean;
   headline: string;
   explanation: string;
   explanation_source: "model" | "template";

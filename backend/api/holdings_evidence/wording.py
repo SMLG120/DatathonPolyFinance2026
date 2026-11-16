@@ -27,10 +27,10 @@ _UNSUPPORTED_RE = re.compile(
     r"price target|will .{0,40}\b(go up|go down|rise|fall|crash|outperform)|rebalanc\w*|optimi[sz]e\w*|place (an? )?order|execute)\b", re.IGNORECASE)
 _TOPIC_RES = [
     ("sources", re.compile(r"\b(sources?|where .{0,20}from|provenance|checked|investigated|traceab\w*|as of|dated?)\b", re.IGNORECASE)),
-    ("next_evidence", re.compile(r"\b(next|retrieve|obtain|need(ed)? to (get|verify|check)|what evidence|additional evidence|resolve)\b", re.IGNORECASE)),
     ("constraint", re.compile(r"\b(limit|rule|constraint|violat\w*|breach\w*|exceed\w*|cap|exclusion|allowed|comply|compliant)\b", re.IGNORECASE)),
-    ("coverage", re.compile(r"\b(how much|verified|coverage|covered|percent\w*|share|unresolved|unknown)\b|%", re.IGNORECASE)),
     ("missing_data", re.compile(r"\b(missing|incomplete|gaps?|lack\w*|absent|not (known|available)|unclassified)\b", re.IGNORECASE)),
+    ("next_evidence", re.compile(r"\b(next|retrieve|obtain|need(ed)? to (get|verify|check)|what evidence|additional evidence|resolve)\b", re.IGNORECASE)),
+    ("coverage", re.compile(r"\b(how much|verified|coverage|covered|percent\w*|share|unresolved|unknown)\b|%", re.IGNORECASE)),
 ]
 
 
@@ -71,6 +71,8 @@ def fund_statements(scan: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
             if breakdown["unattributed_pct"]:
                 nxt.append(statement(NEXT, f"{fund}: an issuer statement of what the unattributed {_fmt(breakdown['unattributed_pct'])} of the fund consists of."))
         if scan["rows"]["missing_sector"]:
+            missing.append(statement(UNRESOLVED, f"{fund}: the sector classification is missing for {scan['rows']['missing_sector']} holdings "
+                                                 f"({_fmt(sector['unclassified_weight_pct'])} of the fund). The holdings are known; their sector is not.", sources))
             nxt.append(statement(NEXT, f"{fund}: a sourced sector classification for the {scan['rows']['missing_sector']} holdings without a label "
                                        f"({_fmt(sector['unclassified_weight_pct'])} of the fund), from the issuer's file or a registered classification."))
     elif scan["coverage_basis"] == "no_holdings_file":

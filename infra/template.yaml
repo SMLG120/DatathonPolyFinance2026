@@ -534,6 +534,16 @@ Resources:
             Path: /check
             PayloadFormatVersion: "2.0"
             TimeoutInMillis: 20000
+        # Read-only and deterministic: reads the snapshot and stored policies, writes nothing and calls no model
+        # (backend/api/holdings_evidence/route.py, MODEL_WORDING_ENABLED = False), so it keeps the default throttle.
+        InvestigateEvidence:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Method: POST
+            Path: /evidence/investigate
+            PayloadFormatVersion: "2.0"
+            TimeoutInMillis: 20000
       Tags:
         project: before-you-buy
 

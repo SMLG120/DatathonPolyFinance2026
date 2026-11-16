@@ -2,6 +2,7 @@
 
 import { useId, useState, useSyncExternalStore } from "react";
 import { AccessCodeForm } from "@/components/shell/AccessCodeForm";
+import { FIXTURES_LABEL, SIMULATION_LABEL } from "@/components/shell/AppShell";
 import { LinkButton } from "@/components/ui/Button";
 import { Field, Select } from "@/components/ui/Field";
 import { DEFAULT_PERSONA, PERSONAS } from "@/content/personas";
@@ -16,9 +17,10 @@ function Content() {
   const [personaId, setPersonaId] = useState<string>(DEFAULT_PERSONA);
   return (
     <div className="mx-auto w-full max-w-4xl space-y-5 px-4 py-6 sm:px-6">
-      <title>{`${TITLE} — Before You Buy (fictional simulation)`}</title>
+      <title>{`${TITLE}: Before You Buy (fictional simulation)`}</title>
       <p className="rounded-md bg-sunken px-3 py-2 text-sm font-semibold text-ink">
-        Simulation — fictional portfolio, not advice{config.mode === "fixtures" ? " · Test data — fixtures" : ""}
+        {SIMULATION_LABEL}
+        {config.mode === "fixtures" ? ` · ${FIXTURES_LABEL}` : ""}
       </p>
       <LinkButton href="../" variant="quiet" size="sm">
         Back to the purchase check

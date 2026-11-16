@@ -223,6 +223,10 @@ class Api:
             "GET /investigations/{id}": self._get,
             "POST /investigations/{id}/challenge": self._challenge,
         }
+        # Additive, read-only: the Missing Holdings Evidence Investigator (backend/api/holdings_evidence).
+        from backend.api.holdings_evidence.route import ROUTE_KEY as EVIDENCE_ROUTE_KEY, evidence_route
+
+        self._routes[EVIDENCE_ROUTE_KEY] = evidence_route(self)
 
     def handle(self, event: dict[str, Any], context: Any) -> dict[str, Any]:
         request_id = (event.get("requestContext") or {}).get("requestId") or getattr(context, "aws_request_id", None)
