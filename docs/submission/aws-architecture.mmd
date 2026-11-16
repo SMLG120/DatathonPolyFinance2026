@@ -1,0 +1,54 @@
+%% ETHOS (repository name: Before You Buy) - deployed AWS architecture, region us-east-1.
+%% Editable source of aws-architecture.svg. Every box is a resource of the CloudFormation stack
+%% "before-you-buy", the Amplify app, or the SSM parameter. Nothing else is deployed.
+flowchart TB
+    U["Investor's browser<br/>static single-page app"]
+    SITE["AWS Amplify Hosting<br/>static site, manual deployments"]
+
+    subgraph EDGE["API entry and access control"]
+        direction LR
+        GW["Amazon API Gateway (HTTP API)<br/>8 routes, CORS limited to the site,<br/>throttling"]
+        AUTH["Lambda authorizer<br/>checks the access code<br/>on every route"]
+        SSM[("SSM Parameter Store<br/>SecureString: access code")]
+        GW -- "3 authorize" --> AUTH
+        AUTH -- "GetParameter" --> SSM
+    end
+
+    subgraph COMPUTE["Backend processing (AWS Lambda, Python)"]
+        direction LR
+        API["API function<br/>validation, policies, jobs,<br/>instant check, rule interpreter"]
+        subgraph WK["Worker function (asynchronous)"]
+            direction TB
+            ENG["Deterministic engine<br/>computes the verdict<br/>and every figure"]
+            AGT["Investigator agent<br/>read-only tools<br/>over that result"]
+            ENG --> AGT
+        end
+        API -- "6 asynchronous invoke" --> ENG
+    end
+
+    BR["Amazon Bedrock (Converse API)<br/>Claude Sonnet 5.5,<br/>one inference profile"]
+
+    subgraph S3["Amazon S3: one private, encrypted bucket"]
+        direction LR
+        SNAP[("snapshots/<br/>dated data snapshot")]
+        POL[("policies/<br/>immutable versions")]
+        JOBS[("jobs/ and results/<br/>job state, final report")]
+        TR[("traces/<br/>tool-call trace")]
+    end
+
+    CW["Amazon CloudWatch Logs<br/>functions and API access log"]
+
+    U -- "1 load the site" --> SITE
+    U -- "2 API calls with the access code<br/>9 poll the job" --> GW
+    GW -- "4 authorized request" --> API
+    API -- "5 create job, read job and result<br/>(conditional writes)" --> JOBS
+    API -- "read and write" --> POL
+    API -- "read" --> SNAP
+    API -. "interpret wording<br/>into draft rules" .-> BR
+    ENG -- "read" --> SNAP
+    ENG -- "read" --> POL
+    AGT -- "7 Converse<br/>with tool use" --> BR
+    AGT -- "8 store result" --> JOBS
+    AGT -- "store trace" --> TR
+    COMPUTE -.-> CW
+    EDGE -.-> CW
