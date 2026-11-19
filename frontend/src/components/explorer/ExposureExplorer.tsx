@@ -32,7 +32,7 @@ import {
 } from "./capability";
 import type { ExposureSceneHandle, SceneLabels } from "./ExposureScene";
 import type { ExplorerColumn, ExplorerModel, ExplorerReady, ExplorerSegment, ExplorerUnavailable, LimitUnavailableReason, UnavailableReason } from "./model";
-import { t } from "@/lib/i18n";
+import { t, tf, useLocale } from "@/lib/i18n";
 
 const ExposureScene = lazy(() => import("./ExposureScene"));
 
@@ -83,10 +83,19 @@ const STATE_LONG_TEXT = { starting: "Current portfolio", proposed: "Proposed por
 
 const UNRESOLVED_LABEL = "Not attributed (could be this company)";
 
+/** The app's wording for a code when it has one, else the code itself, untranslated. */
+function translatedOr(text: string | undefined, code: string): string {
+  return text === undefined ? code : t(text);
+}
+
+function stateText(state: keyof typeof STATE_TEXT): string {
+  return t(STATE_TEXT[state]);
+}
+
 function segmentLabel(segment: ExplorerSegment): string {
-  if (segment.kind === "DIRECT") return "Held directly";
-  if (segment.kind === "FUND") return `Through ${segment.fundId ?? "a fund"}`;
-  return UNRESOLVED_LABEL;
+  if (segment.kind === "DIRECT") return t("Held directly");
+  if (segment.kind === "FUND") return segment.fundId ? tf("Through {fund}", { fund: segment.fundId }) : t("Through a fund");
+  return t(UNRESOLVED_LABEL);
 }
 
 /**
@@ -95,11 +104,11 @@ function segmentLabel(segment: ExplorerSegment): string {
  */
 function segmentValueText(segment: ExplorerSegment): string {
   if (segment.kind !== "UNRESOLVED") return formatFraction(segment.value);
-  return `up to ${formatFraction(segment.value, { decimals: decimalsToDistinguish(0, segment.value) })}`;
+  return tf("up to {value}", { value: formatFraction(segment.value, { decimals: decimalsToDistinguish(0, segment.value) }) });
 }
 
 function limitNoun(model: ExplorerReady): string {
-  return model.limit?.isDraft ? "Draft limit (not confirmed)" : "Confirmed limit";
+  return model.limit?.isDraft ? t("Draft limit (not confirmed)") : t("Confirmed limit");
 }
 
 /** A percentage on the drawing scale: whole percent when it is one, otherwise one decimal. Presentation only. */
@@ -179,7 +188,7 @@ function Unavailable({ model, className }: { model: ExplorerUnavailable; classNa
         <UnknownIcon size={20} className="mt-0.5 flex-none text-unknown" />
         <div className="space-y-1">
           <p className="font-semibold text-ink">{t("Exposure cannot be shown")}</p>
-          <p className="text-ink">{UNAVAILABLE_TEXT[model.reason]}</p>
+          <p className="text-ink">{t(UNAVAILABLE_TEXT[model.reason])}</p>
           {model.message ? (
             <p className="text-ink">
               <span className="font-semibold">{t("Message from the check:")}</span> {model.message}
@@ -229,46 +238,46 @@ function ValuesTable({ model }: { model: ExplorerReady }) {
   const rows: { key: string; label: string; cells: [string, string]; strong?: boolean }[] = [
     {
       key: "direct",
-      label: "Held directly",
+      label: t("Held directly"),
       cells: columns.map((column) => formatFraction(find(column, (segment) => segment.kind === "DIRECT")?.value)) as [string, string],
     },
     ...fundIds.map((fundId) => ({
       key: `fund:${fundId}`,
-      label: `Through ${fundId}`,
+      label: tf("Through {fund}", { fund: fundId }),
       cells: columns.map((column) => {
         const segment = find(column, (item) => item.kind === "FUND" && item.fundId === fundId);
-        return segment ? formatFraction(segment.value) : "None reported";
+        return segment ? formatFraction(segment.value) : t("None reported");
       }) as [string, string],
     })),
   ];
   if (hasUnresolved) {
     rows.push({
       key: "unresolved",
-      label: UNRESOLVED_LABEL,
+      label: t(UNRESOLVED_LABEL),
       cells: columns.map((column) => {
         const segment = find(column, (item) => item.kind === "UNRESOLVED");
-        return segment ? segmentValueText(segment) : "None";
+        return segment ? segmentValueText(segment) : t("None");
       }) as [string, string],
     });
   }
   rows.push({
     key: "known",
-    label: "Proven total",
+    label: t("Proven total"),
     strong: true,
     cells: columns.map((column) => formatFraction(column.known, { decimals: totalDecimals })) as [string, string],
   });
   if (anyRange) {
     rows.push({
       key: "upper",
-      label: "Possible total",
+      label: t("Possible total"),
       strong: true,
       cells: columns.map((column) => formatFraction(column.upper, { decimals: totalDecimals })) as [string, string],
     });
   }
   rows.push({
     key: "limit",
-    label: model.limit ? limitNoun(model) : "Limit",
-    cells: columns.map(() => (model.limit ? formatFraction(model.limit.value) : "Not available")) as [string, string],
+    label: model.limit ? limitNoun(model) : t("Limit"),
+    cells: columns.map(() => (model.limit ? formatFraction(model.limit.value) : t("Not available"))) as [string, string],
   });
 
   return (
@@ -279,7 +288,7 @@ function ValuesTable({ model }: { model: ExplorerReady }) {
           <td className="py-2 pr-3" />
           {columns.map((column) => (
             <th key={column.state} scope="col" className="py-2 pl-3 text-right font-semibold">
-              {STATE_TEXT[column.state]}
+              {stateText(column.state)}
             </th>
           ))}
         </tr>
@@ -310,7 +319,7 @@ function TotalsInWords({ model }: { model: ExplorerReady }) {
         const decimals = column.isRange ? decimalsToDistinguish(column.known, column.upper) : 1;
         return (
           <p key={column.state} data-state={column.state}>
-            <span className="font-semibold">{STATE_TEXT[column.state]}:</span>{" "}
+            <span className="font-semibold">{stateText(column.state)}:</span>{" "}
             {column.isRange ? (
               <span className="tabular">
                 {t("between")} {formatFraction(column.known, { decimals })} {t("and")} {formatFraction(column.upper, { decimals })} {t("of the portfolio; the part that cannot be attributed is an uncertain upper bound.")}</span>
@@ -325,7 +334,7 @@ function TotalsInWords({ model }: { model: ExplorerReady }) {
           <p>{t("Why the total is a range and not one number:")}</p>
           <ul className="list-disc pl-5">
             {model.unknownCauses.map((cause) => (
-              <li key={cause}>{UNKNOWN_CAUSE_TEXT[cause] ?? cause}</li>
+              <li key={cause}>{translatedOr(UNKNOWN_CAUSE_TEXT[cause], cause)}</li>
             ))}
           </ul>
         </div>
@@ -338,7 +347,7 @@ function LimitLine({ model }: { model: ExplorerReady }) {
   if (!model.limit) {
     return (
       <p className="text-ink" data-testid="explorer-limit">
-        {model.limitUnavailableReason ? LIMIT_UNAVAILABLE_TEXT[model.limitUnavailableReason] : "No limit is drawn."}
+        {model.limitUnavailableReason ? t(LIMIT_UNAVAILABLE_TEXT[model.limitUnavailableReason]) : t("No limit is drawn.")}
       </p>
     );
   }
@@ -362,7 +371,7 @@ function SegmentDetails({ segment, onOpenEvidence }: { segment: ExplorerSegment;
   return (
     <div className="rounded-md border border-line bg-sunken p-3 sm:p-4" data-testid="explorer-details" data-segment={segment.id}>
       <p className="font-semibold text-ink">
-        {segmentLabel(segment)}: {STATE_LONG_TEXT[segment.state]}
+        {segmentLabel(segment)}: {t(STATE_LONG_TEXT[segment.state])}
       </p>
       <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-2 text-ink sm:grid-cols-2">
         <div>
@@ -373,15 +382,15 @@ function SegmentDetails({ segment, onOpenEvidence }: { segment: ExplorerSegment;
           <>
             <div>
               <dt className="text-sm font-semibold text-ink-muted">{t("Holdings date")}</dt>
-              <dd className="tabular">{segment.holdingsDate ? formatDate(segment.holdingsDate) : "No holdings file"}</dd>
+              <dd className="tabular">{segment.holdingsDate ? formatDate(segment.holdingsDate) : t("No holdings file")}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-ink-muted">{t("Source")}</dt>
-              <dd className="break-all font-mono text-sm">{segment.sourceId ?? "No source recorded"}</dd>
+              <dd className="break-all font-mono text-sm">{segment.sourceId ?? t("No source recorded")}</dd>
             </div>
             <div>
               <dt className="text-sm font-semibold text-ink-muted">{t("Holdings coverage")}</dt>
-              <dd>{segment.coverageStatus ? (COVERAGE_TEXT[segment.coverageStatus] ?? segment.coverageStatus) : "Not reported"}</dd>
+              <dd>{segment.coverageStatus ? translatedOr(COVERAGE_TEXT[segment.coverageStatus], segment.coverageStatus) : t("Not reported")}</dd>
             </div>
             {segment.formula ? (
               <div className="sm:col-span-2">
@@ -427,8 +436,8 @@ function SegmentButtons({
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {[model.current, model.proposed].map((column) => (
-        <div key={column.state} role="group" aria-label={`${STATE_TEXT[column.state]} portfolio: parts`}>
-          <p className="text-sm font-semibold text-ink-muted">{STATE_TEXT[column.state]}</p>
+        <div key={column.state} role="group" aria-label={column.state === "starting" ? t("Current portfolio: parts") : t("Proposed portfolio: parts")}>
+          <p className="text-sm font-semibold text-ink-muted">{stateText(column.state)}</p>
           <ul className="mt-1 space-y-1.5">
             {column.segments.map((segment) => {
               const selected = segment.id === selectedId;
@@ -490,6 +499,8 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
   const Heading = headingLevel === 2 ? "h2" : "h3";
   const SubHeading = headingLevel === 2 ? "h3" : "h4";
   const sceneRef = useRef<ExposureSceneHandle>(null);
+  // The scene's labels are drawn into textures, so a change of language rebuilds them.
+  const [locale] = useLocale();
   const [simpleView, setSimpleView] = useState(false);
   const [selection, setSelection] = useState<string | null>(null);
   const [sceneFailure, setSceneFailure] = useState<SceneFailure | null>(null);
@@ -511,19 +522,23 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
 
   const { axisMax, limit } = model;
   const labels = useMemo<SceneLabels>(
-    () => ({
-      ticks: [0, 0.5, 1].map((position) => ({ position, text: scaleText(axisMax * position) })),
-      limit: limit ? `${limit.isDraft ? "Draft limit" : "Confirmed limit"} ${formatFraction(limit.value)}` : null,
-      current: STATE_TEXT.starting,
-      proposed: STATE_TEXT.proposed,
-    }),
-    [axisMax, limit],
+    () => {
+      void locale; // The labels are drawn in the language on screen.
+      return {
+        ticks: [0, 0.5, 1].map((position) => ({ position, text: scaleText(axisMax * position) })),
+        limit: limit ? `${limit.isDraft ? t("Draft limit") : t("Confirmed limit")} ${formatFraction(limit.value)}` : null,
+        current: stateText("starting"),
+        proposed: stateText("proposed"),
+      };
+    },
+    [axisMax, limit, locale],
   );
 
   const onSceneFailure = useCallback((reason: "INIT_FAILED" | "CONTEXT_LOST") => setSceneFailure(reason), []);
   const onBoundaryError = useCallback(() => setSceneFailure("LOAD_OR_RENDER_ERROR"), []);
 
-  const fallbackNote = decision.mode === "FALLBACK" ? fallbackReasonText(decision.reason) : null;
+  const fallbackReason = decision.mode === "FALLBACK" ? fallbackReasonText(decision.reason) : null;
+  const fallbackNote = fallbackReason === null ? null : t(fallbackReason);
 
   return (
     <section
@@ -541,7 +556,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
           <OriginMarker model={model} />
         </div>
         <p className="text-sm text-ink-muted" data-testid="explorer-context">
-          {model.policyVersion === null ? "Draft rules, not a confirmed policy" : `Confirmed policy version ${model.policyVersion}`}
+          {model.policyVersion === null ? t("Draft rules, not a confirmed policy") : tf("Confirmed policy version {version}", { version: model.policyVersion })}
           {" · "}{t("Valuation date")} <span className="tabular">{formatDate(model.valuationDate)}</span>
           {" · "}{t("Calculation")} <span className="break-all font-mono">{model.calculationVersion}</span>
         </p>
@@ -553,7 +568,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
           <p className="text-sm text-ink-muted">{t("Follow each connection from your portfolio. Select a holding to inspect its source.")}</p>
         </div>
         {decision.mode === "3D" ? <Button size="sm" aria-pressed={simpleView} onClick={() => setSimpleView(!simpleView)}>
-          {simpleView ? "Show interactive network" : "Show simple chart"}
+          {simpleView ? t("Show interactive network") : t("Show simple chart")}
         </Button> : null}
       </div>
       <div className="grid min-w-0 grid-cols-1 gap-5">
@@ -561,7 +576,7 @@ function Ready({ model, fallback, onOpenEvidence, headingLevel = 3, className }:
           {decision.mode === "3D" && !simpleView ? (
             <SceneBoundary onError={onBoundaryError}>
               <Suspense fallback={<div data-testid="explorer-fallback">{fallback}</div>}>
-                <ExposureScene ref={sceneRef} model={model} labels={labels} selectedId={selected?.id ?? null} onSelect={setSelection} onFailure={onSceneFailure} />
+                <ExposureScene key={locale} ref={sceneRef} model={model} labels={labels} selectedId={selected?.id ?? null} onSelect={setSelection} onFailure={onSceneFailure} />
                 <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t("3D view controls")}>
                   <Button size="sm" onClick={() => sceneRef.current?.rotate(-1)}>
                     {t("Rotate left")}</Button>

@@ -835,7 +835,9 @@ def test_v31_a_maximum_is_shown_only_when_the_service_supports_it():
 @pytest.mark.vcase("V31")
 def test_v31_a_draft_preview_is_never_presented_as_a_confirmed_result():
     preview = _source("components/rules/DraftPreview.tsx")
-    assert "aria-label={`Draft preview: ${ruleTypeLabel(ruleType)}`}" in preview and "A preview is never saved" in preview
+    # Since the French catalog (2026-11-15) the label goes through tf(); the English wording is the same.
+    assert ("aria-label={`Draft preview: ${ruleTypeLabel(ruleType)}`}" in preview
+            or 'aria-label={tf("Draft preview: {rule}", { rule: ruleTypeLabel(ruleType) })}' in preview) and "A preview is never saved" in preview
     assert "assessResult(preview.result)" in preview, "a preview that was not evaluated shows no verdict"
     assert "isDraft: result.preview" in _source("components/explorer/model.ts")
     assert _hits(r"status:\s*\"CONFIRMED\"") == [] or all("fixtures-client" in h for h in _hits(r"status:\s*\"CONFIRMED\"")), "the browser never marks a rule CONFIRMED itself"
@@ -855,7 +857,8 @@ def test_v31_no_advice_or_forecast_wording_in_the_interface():
     assert unexpected == [], "\n".join(unexpected)
     scenario = _source("components/verdict/ScenarioPanel.tsx")
     # The owner replaced the em dash by a colon in every label (2026-11-15); the words are the same.
-    assert 'title="A replay of the past: not a forecast"' in scenario
+    # Since the French catalog (2026-11-15) the title goes through t(); the English wording is the same.
+    assert 'title="A replay of the past: not a forecast"' in scenario or 'title={t("A replay of the past: not a forecast")}' in scenario
     assert 'SIMULATION_LABEL = "Simulation: fictional portfolio, not advice"' in _source("components/shell/AppShell.tsx")
 
 

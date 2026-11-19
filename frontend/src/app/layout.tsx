@@ -30,6 +30,10 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <p className="m-4 rounded-md border-l-4 border-unknown bg-unknown-soft px-4 py-3 text-ink">
             Simulation: fictional portfolio, not advice. This page needs JavaScript to run the simulation.
           </p>
+          {/* No script means no stored language choice, so the French notice is always shown alongside. */}
+          <p lang="fr" className="m-4 rounded-md border-l-4 border-unknown bg-unknown-soft px-4 py-3 text-ink">
+            Simulation : portefeuille fictif, pas un conseil financier. Cette page nécessite JavaScript pour exécuter la simulation.
+          </p>
         </noscript>
         {children}
       </body>

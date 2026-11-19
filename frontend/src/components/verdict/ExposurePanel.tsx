@@ -7,7 +7,7 @@ import { EPS, formatFraction } from "@/lib/format";
 import { ISSUER_SCOPE_ANY } from "@/lib/contracts";
 import { ExposureChart } from "./ExposureChart";
 import type { RuleLookup } from "./RuleResults";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * The limit the chart may draw: the threshold of an evaluated limit on ANY
@@ -48,18 +48,18 @@ export function ExposurePanel({ result, lookup, openIssuerId = null }: { result:
         <ExposureChart
           exposure={exposure}
           limit={drawn ? drawn.limit : null}
-          limitLabel={result.preview ? "Draft limit" : "Confirmed limit"}
+          limitLabel={result.preview ? t("Draft limit") : t("Confirmed limit")}
           openIssuerId={openIssuerId}
         />
         {/* The 3D exposure explorer mounts here, beside the 2D chart. It renders nothing until it is wired in. */}
         <VerdictExposureExplorerSlot result={result} />
       </div>
-      <p className="text-sm text-ink-muted" data-testid="exposure-selection-note">
+      <p className="text-sm text-ink-muted" data-testid="exposure-selection-note" lang="en">
         {exposure.selection_note}
       </p>
       {extra > EPS ? (
         <p className="text-ink" data-testid="possible-extra-note">
-          <span className="font-semibold">{formatFraction(extra)} {t("of the portfolio")}</span> {t("is fund weight that the holdings files do not attribute to any company. It could belong to any of them, so every company&apos;s exposure is shown as a range from what is proven to what is possible. Missing holdings are never counted as zero, and reported holdings are never rescaled to 100%.")}</p>
+          <span className="font-semibold">{tf("{weight} of the portfolio", { weight: formatFraction(extra) })}</span> {t("is fund weight that the holdings files do not attribute to any company. It could belong to any of them, so every company&apos;s exposure is shown as a range from what is proven to what is possible. Missing holdings are never counted as zero, and reported holdings are never rescaled to 100%.")}</p>
       ) : null}
       <p className="text-sm text-ink-muted">
         {t("Whether a rule is respected is decided on the rule itself, in the list of confirmed rules above. The chart shows where the exposure comes from.")}</p>

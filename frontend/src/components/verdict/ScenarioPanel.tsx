@@ -7,13 +7,15 @@ import { Notice } from "@/components/ui/Notice";
 import { cn } from "@/lib/cn";
 import type { CheckResult, InstrumentReturn, ScenarioMeasures, ScenarioResult } from "@/lib/contracts";
 import { formatDate, formatReturn } from "@/lib/format";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
+import { tn } from "@/lib/i18n-nodes";
 
 const NOT_COMPUTED = "Not computed";
 
 function ageText(days: number | null): string {
   if (days === null) return "";
-  return days === 0 ? " (same day)" : ` (${days} ${days === 1 ? "day" : "days"} earlier)`;
+  if (days === 0) return ` ${t("(same day)")}`;
+  return ` ${tf(days === 1 ? "({days} day earlier)" : "({days} days earlier)", { days })}`;
 }
 
 function MeasureRow({ label, hint, values, testId }: { label: string; hint?: string; values: string[]; testId: string }) {
@@ -79,17 +81,23 @@ function InstrumentReturns({ rows }: { rows: InstrumentReturn[] }) {
             </td>
             <td role="cell" className="tabular col-span-2 pb-1.5 sm:py-1.5 sm:pl-3 sm:align-top">
               <span className="block" data-testid="price-dates">
-                <span className="text-ink-muted">{t("Prices:")}</span> <UsedDate date={row.base_price_date} ageDays={row.base_price_age_days} /> {t("and")}{" "}
-                <UsedDate date={row.end_price_date} ageDays={row.end_price_age_days} />
+                <span className="text-ink-muted">{t("Prices:")}</span>{" "}
+                {tn("{start} and {end}", {
+                  start: <UsedDate date={row.base_price_date} ageDays={row.base_price_age_days} />,
+                  end: <UsedDate date={row.end_price_date} ageDays={row.end_price_age_days} />,
+                })}
               </span>
               <span className="block" data-testid="fx-dates">
                 <span className="text-ink-muted">{t("Exchange rates:")}</span>{" "}
                 {row.base_fx_date && row.end_fx_date ? (
                   <>
-                    <UsedDate date={row.base_fx_date} ageDays={row.base_fx_age_days} /> {t("and")} <UsedDate date={row.end_fx_date} ageDays={row.end_fx_age_days} />
+                    {tn("{start} and {end}", {
+                      start: <UsedDate date={row.base_fx_date} ageDays={row.base_fx_age_days} />,
+                      end: <UsedDate date={row.end_fx_date} ageDays={row.end_fx_age_days} />,
+                    })}
                   </>
                 ) : (
-                  "none needed"
+                  t("none needed")
                 )}
               </span>
             </td>
@@ -102,9 +110,9 @@ function InstrumentReturns({ rows }: { rows: InstrumentReturn[] }) {
 
 function measureCells(measures: ScenarioMeasures | null) {
   return {
-    terminal: measures ? formatReturn(measures.scenario_terminal_return) : NOT_COMPUTED,
-    drawdown: measures ? formatReturn(measures.scenario_max_drawdown) : NOT_COMPUTED,
-    drawdownDate: measures?.max_drawdown_date ? formatDate(measures.max_drawdown_date) : NOT_COMPUTED,
+    terminal: measures ? formatReturn(measures.scenario_terminal_return) : t(NOT_COMPUTED),
+    drawdown: measures ? formatReturn(measures.scenario_max_drawdown) : t(NOT_COMPUTED),
+    drawdownDate: measures?.max_drawdown_date ? formatDate(measures.max_drawdown_date) : t(NOT_COMPUTED),
   };
 }
 
@@ -121,18 +129,22 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
   const target = result.purchase_request.instrument_id;
   return (
     <div className="space-y-5" data-testid="scenario-panel" data-scenario-status={scenario.status}>
-      <Notice tone="caution" title="A replay of the past: not a forecast">
+      <Notice tone="caution" title={t("A replay of the past: not a forecast")}>
         <p data-testid="scenario-note">
-          {scenario.label}{t(". The allocation is assumed to have been bought once on")} <span className="tabular">{formatDate(scenario.base_date)}</span>{" "}
-          {t("and held to")} <span className="tabular">{formatDate(scenario.end_date)}</span>{t(". It says what would have happened in that period only. It predicts nothing and guarantees nothing.")}</p>
+          {tn("{label}. The allocation is assumed to have been bought once on {start} and held to {end}. It says what would have happened in that period only. It predicts nothing and guarantees nothing.", {
+            label: <span lang="en">{scenario.label}</span>,
+            start: <span className="tabular">{formatDate(scenario.base_date)}</span>,
+            end: <span className="tabular">{formatDate(scenario.end_date)}</span>,
+          })}
+        </p>
       </Notice>
 
       {scenario.status === "INSUFFICIENT_HISTORY" ? (
         <UnknownBlock title={t("Not enough price history to replay this allocation")}>
           <p data-testid="scenario-insufficient">
             {scenario.missing_instruments.length > 0
-              ? `No usable price history for: ${scenario.missing_instruments.join(", ")}.`
-              : "A price or an exchange rate needed for the period is missing."}{" "}
+              ? tf("No usable price history for: {instruments}.", { instruments: scenario.missing_instruments.join(", ") })
+              : t("A price or an exchange rate needed for the period is missing.")}{" "}
             {t("No figure is shown in its place.")}</p>
         </UnknownBlock>
       ) : null}
@@ -167,11 +179,15 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
 
       {scenario.target_instrument_return !== null ? (
         <p className="text-ink" data-testid="scenario-target-return">
-          {target} {t("alone over the same period:")} <span className="tabular font-semibold">{formatReturn(scenario.target_instrument_return)}</span>{t(", in Canadian dollars.")}</p>
+          {tn("{instrument} alone over the same period: {return}, in Canadian dollars.", {
+            instrument: target,
+            return: <span className="tabular font-semibold">{formatReturn(scenario.target_instrument_return)}</span>,
+          })}
+        </p>
       ) : null}
       {scenario.status === "COMPUTED" && scenario.missing_instruments.length > 0 ? (
         <p className="text-ink" data-testid="scenario-missing">
-          {t("No usable price history for:")} {scenario.missing_instruments.join(", ")}.
+          {tf("No usable price history for: {instruments}.", { instruments: scenario.missing_instruments.join(", ") })}
         </p>
       ) : null}
 
@@ -180,8 +196,8 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
 
       {scenario.assumptions.length > 0 ? (
         <details>
-          <summary className="min-h-6 font-semibold text-ink">{t("Assumptions of the replay (")}{scenario.assumptions.length})</summary>
-          <ul className="mt-2 list-disc space-y-1 pl-5 text-ink" data-testid="scenario-assumptions">
+          <summary className="min-h-6 font-semibold text-ink">{tf("Assumptions of the replay ({count})", { count: scenario.assumptions.length })}</summary>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-ink" data-testid="scenario-assumptions" lang="en">
             {scenario.assumptions.map((assumption) => (
               <li key={assumption}>{assumption}</li>
             ))}
@@ -190,7 +206,7 @@ export function ScenarioPanel({ result, scenario }: { result: CheckResult; scena
       ) : null}
       {scenario.instrument_returns.length > 0 ? (
         <details>
-          <summary className="min-h-6 font-semibold text-ink">{t("Return of each instrument and the dates of the prices used (")}{scenario.instrument_returns.length})</summary>
+          <summary className="min-h-6 font-semibold text-ink">{tf("Return of each instrument and the dates of the prices used ({count})", { count: scenario.instrument_returns.length })}</summary>
           <div className="mt-2">
             <InstrumentReturns rows={scenario.instrument_returns} />
           </div>

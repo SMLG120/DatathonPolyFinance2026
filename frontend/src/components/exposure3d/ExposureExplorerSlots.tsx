@@ -7,6 +7,7 @@ import { buildExplorerModel, type ExplorerModel, type ExplorerReady } from "@/co
 import { useIsTestData } from "@/components/ui/TestDataTag";
 import { ExposureChart } from "@/components/verdict/ExposureChart";
 import type { CheckResult, Exposure } from "@/lib/contracts";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * Where the exposure explorer is mounted: one company's exposure before and
@@ -29,19 +30,23 @@ function FlatChart({ exposure, model }: { exposure: Exposure; model: ExplorerRea
     <ExposureChart
       exposure={{ ...exposure, issuers: company }}
       limit={model.limit ? model.limit.value : null}
-      limitLabel={model.limit?.isDraft ? "Draft limit" : "Confirmed limit"}
-      caption={`${model.issuerName}: exposure as a share of the portfolio, flat view`}
+      limitLabel={model.limit?.isDraft ? t("Draft limit") : t("Confirmed limit")}
+      caption={tf("{company}: exposure as a share of the portfolio, flat view", { company: model.issuerName })}
     />
   );
 }
 
 /** What a calculation record is about, in words, for the title of the evidence drawer. */
 function evidenceTitle(model: ExplorerModel, evidenceId: string): string {
-  if (model.status !== "READY") return "the exposure shown";
+  if (model.status !== "READY") return t("the exposure shown");
   const segment = [...model.current.segments, ...model.proposed.segments].find((candidate) => candidate.evidenceId === evidenceId);
-  if (!segment) return `exposure to ${model.issuerName}`;
-  const when = segment.state === "starting" ? "before the purchase" : "after the purchase";
-  return segment.fundId ? `exposure to ${model.issuerName} through ${segment.fundId}, ${when}` : `exposure to ${model.issuerName}, ${when}`;
+  if (!segment) return tf("exposure to {company}", { company: model.issuerName });
+  if (segment.fundId) {
+    const template = segment.state === "starting" ? "exposure to {company} through {fund}, before the purchase" : "exposure to {company} through {fund}, after the purchase";
+    return tf(template, { company: model.issuerName, fund: segment.fundId });
+  }
+  const template = segment.state === "starting" ? "exposure to {company}, before the purchase" : "exposure to {company}, after the purchase";
+  return tf(template, { company: model.issuerName });
 }
 
 function Explorer({ result }: { result: CheckResult }) {

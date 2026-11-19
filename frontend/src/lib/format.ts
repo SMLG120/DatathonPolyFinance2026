@@ -7,7 +7,7 @@
  */
 
 import { EPS } from "@/lib/contracts";
-import { getLocale, t } from "@/lib/i18n";
+import { getLocale, t, tf } from "@/lib/i18n";
 
 /** The contract's tolerance. Used here for wording only, never for a verdict. */
 export { EPS };
@@ -136,7 +136,7 @@ export function decimalsToDistinguish(a: number, b: number, start = 1): number {
  * 0.165 -> "16.5 points". Always unsigned; the caller words the direction.
  */
 export function formatPoints(value: number | null | undefined, decimals = 1): string {
-  if (!isFiniteNumber(value)) return UNKNOWN_TEXT;
+  if (!isFiniteNumber(value)) return t(UNKNOWN_TEXT);
   const scaled = Math.abs(roundHalfAwayFromZero(shiftDecimal(value, 2 + decimals)));
   const text = scaledToText(scaled, decimals);
   const display = getLocale() === "fr" ? text.replace(".", ",") : text;
@@ -182,12 +182,21 @@ export function formatGap(
   startDecimals = 1,
 ): string {
   if (!isFiniteNumber(gap)) return t("Cannot be determined");
-  if (Math.abs(gap) <= EPS) return `${t("Exactly at the")} ${noun}`;
+  if (Math.abs(gap) <= EPS) return tf("Exactly at the {noun}", { noun: frenchArticle("à", noun) });
   let decimals = startDecimals;
-  while (decimals < MAX_DECIMALS && Number(formatPoints(gap, decimals).split(" ")[0]) === 0) decimals += 1;
+  while (decimals < MAX_DECIMALS && Number(formatPoints(gap, decimals).split(" ")[0]?.replace(",", ".")) === 0) decimals += 1;
   const points = formatPoints(gap, decimals);
-  if (direction === "max") return gap > 0 ? `${points} ${t("over the")} ${noun}` : `${points} ${t("under the")} ${noun}`;
-  return gap > 0 ? `${points} ${t("below the")} ${noun}` : `${points} ${t("above the")} ${noun}`;
+  const values = { points, noun: frenchArticle("de", noun) };
+  if (direction === "max") return gap > 0 ? tf("{points} over the {noun}", values) : tf("{points} under the {noun}", values);
+  return gap > 0 ? tf("{points} below the {noun}", values) : tf("{points} above the {noun}", values);
+}
+
+/** French only: the noun with its article joined to "à" or "de" ("à la limite", "du budget"). English gets the noun unchanged. */
+function frenchArticle(preposition: "à" | "de", noun: string): string {
+  if (getLocale() !== "fr") return noun;
+  const feminine = noun === "limite";
+  if (preposition === "à") return feminine ? `à la ${noun}` : `au ${noun}`;
+  return feminine ? `de la ${noun}` : `du ${noun}`;
 }
 
 /** "12 Nov 2026" from "2026-11-12". Parsed as text so no time zone can shift the day. */

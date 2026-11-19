@@ -24,7 +24,7 @@ export interface ClarificationCardProps {
  * rule, the interface asks. Only definitions that can actually be checked are
  * offered as choices; the others are listed with the reason they are not.
  */
-export function ClarificationCard({ clarification, chosenOptionId, onChoose, outcome, chooseLabel = "Use this definition" }: ClarificationCardProps) {
+export function ClarificationCard({ clarification, chosenOptionId, onChoose, outcome, chooseLabel }: ClarificationCardProps) {
   const headingId = useId();
   const groupName = useId();
   const errorId = useId();
@@ -51,7 +51,7 @@ export function ClarificationCard({ clarification, chosenOptionId, onChoose, out
         </div>
         <figure>
           <figcaption className="text-sm font-semibold text-ink-muted">{t("The words in question")}</figcaption>
-          <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">{t("&ldquo;")}{clarification.about_words}{t("&rdquo;")}</blockquote>
+          <blockquote className="mt-1 border-l-4 border-line-strong pl-3 text-ink">&ldquo;{clarification.about_words}&rdquo;</blockquote>
         </figure>
 
         {supported.length > 0 ? (
@@ -118,7 +118,7 @@ export function ClarificationCard({ clarification, chosenOptionId, onChoose, out
             }}
             data-testid="choose-definition"
           >
-            {chooseLabel}
+            {chooseLabel ?? t("Use this definition")}
           </Button>
         ) : null}
 

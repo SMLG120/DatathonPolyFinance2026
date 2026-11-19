@@ -5,7 +5,7 @@ import { ChevronIcon } from "@/components/ui/icons";
 import type { Exposure, ExposureBreakdown, IssuerExposure } from "@/lib/contracts";
 import { cn } from "@/lib/cn";
 import { EPS, formatFraction, formatFractionRange } from "@/lib/format";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 export interface ExposureChartProps {
   /** The engine's chart rows: at most ten companies, in the engine's order. Every value drawn is one of its fields. */
@@ -93,7 +93,7 @@ function BreakdownTable({ issuer, exposure, limit, limitLabel }: { issuer: Issue
   const extras = [exposure.possible_extra.starting, exposure.possible_extra.proposed];
   return (
     <table className="w-full max-w-2xl border-collapse text-left" data-testid="exposure-breakdown">
-      <caption className="sr-only">{issuer.name}{t(": the values drawn in the bars, as a share of the portfolio")}</caption>
+      <caption className="sr-only">{tf("{company}: the values drawn in the bars, as a share of the portfolio", { company: issuer.name })}</caption>
       <thead>
         <tr className="border-b-2 border-line-strong text-sm text-ink-muted">
           <td className="py-1.5 pr-3" />
@@ -109,10 +109,10 @@ function BreakdownTable({ issuer, exposure, limit, limitLabel }: { issuer: Issue
           <ValueRow
             key={fundId}
             rowKey={`fund-${fundId}`}
-            label={`Through ${fundId}, from its reported holdings`}
+            label={tf("Through {fund}, from its reported holdings", { fund: fundId })}
             values={states.map((state) => {
               const part = state.indirect_by_fund.find((candidate) => candidate.fund_id === fundId);
-              return part ? formatFraction(part.known, DETAIL) : "Not listed";
+              return part ? formatFraction(part.known, DETAIL) : t("Not listed");
             })}
           />
         ))}
@@ -120,7 +120,7 @@ function BreakdownTable({ issuer, exposure, limit, limitLabel }: { issuer: Issue
         <ValueRow
           label={t("Possible extra, not measured")}
           rowKey="possible"
-          values={extras.map((extra) => (extra > EPS ? `up to ${formatFraction(extra, DETAIL)}` : "None"))}
+          values={extras.map((extra) => (extra > EPS ? tf("up to {value}", { value: formatFraction(extra, DETAIL) }) : t("None")))}
         />
         <ValueRow label={t("Possible range")} rowKey="range" strong values={states.map((state) => formatFractionRange(state.lower, state.upper, DETAIL))} />
         {limit !== null ? <ValueRow label={limitLabel} rowKey="limit" values={states.map(() => formatFraction(limit, DETAIL))} /> : null}
@@ -166,6 +166,8 @@ export function ExposureChart({
   caption = "Exposure to single companies, as a share of the portfolio",
 }: ExposureChartProps) {
   const captionId = useId();
+  // The defaults and the labels callers pass are catalog text, translated here so every caller gets them in the reader's language.
+  const limitText = t(limitLabel);
   const axis = exposureAxis([...exposure.issuers.flatMap((issuer) => [issuer.starting.upper, issuer.proposed.upper]), limit ?? 0]);
   const step = axis.ticks[1] ?? axis.max;
   const extras = exposure.possible_extra;
@@ -176,7 +178,7 @@ export function ExposureChart({
   return (
     <figure className="byb-chart" aria-labelledby={captionId} data-testid="exposure-chart">
       <figcaption id={captionId} className="font-semibold text-ink">
-        {caption}
+        {t(caption)}
       </figcaption>
       <p className="mt-1 text-sm text-ink-muted">{t("Select a company to see the value of each part of its bars.")}</p>
 
@@ -203,7 +205,7 @@ export function ExposureChart({
                 <span className="inline-flex md:hidden">
                   <span className="byb-swatch" data-seg="limit" />
                 </span>
-                {limitLabel} {formatFraction(limit)}
+                {limitText} {formatFraction(limit)}
               </span>
               {limitNearEnd ? <span className="hidden shrink md:block" style={{ flexBasis: `calc(100% - ${percent(limit, axis.max)})` }} /> : null}
             </>
@@ -231,7 +233,7 @@ export function ExposureChart({
                 </span>
               </summary>
               <div className="pb-4 pt-1 sm:pl-6">
-                <BreakdownTable issuer={issuer} exposure={exposure} limit={limit} limitLabel={limitLabel} />
+                <BreakdownTable issuer={issuer} exposure={exposure} limit={limit} limitLabel={limitText} />
               </div>
             </details>
           </li>
@@ -270,7 +272,7 @@ export function ExposureChart({
         {limit !== null ? (
           <li className="flex items-center gap-2" data-key="limit">
             <span className="byb-swatch" data-seg="limit" aria-hidden="true" />
-            {limitLabel}
+            {limitText}
           </li>
         ) : null}
         <li className="flex items-center gap-2">

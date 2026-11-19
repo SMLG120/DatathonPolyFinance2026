@@ -12,7 +12,7 @@ import { formatEvidenceValue, formatValueInUnit, metricLabel, subjectText } from
 import { formatDateTime, fractionToPercentInput, percentInputToFraction } from "@/lib/format";
 import { findEvidence } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /** How the asserted value is typed for each unit, and how the text is read. A share is typed as a percentage and stored as a fraction. */
 const VALUE_FIELD: Record<EvidenceUnit, { label: string; hint: string; error: string }> = {
@@ -59,13 +59,13 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
     <li className="rounded-md border border-dashed border-unknown bg-unknown-soft p-3 sm:p-4" data-testid="correction-card" data-figures="true">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <Badge tone="unknown" dashed icon={<UnknownIcon size={16} />}>
-          Proposed correction: unverified
+          {t("Proposed correction: unverified")}
         </Badge>
         <TestDataTag />
       </div>
       <dl className="mt-3 grid gap-x-6 gap-y-3 sm:grid-cols-2">
         <div>
-          <dt className="text-sm font-semibold text-ink-muted">Recorded in the report: unchanged</dt>
+          <dt className="text-sm font-semibold text-ink-muted">{t("Recorded in the report: unchanged")}</dt>
           <dd className="text-ink" data-testid="correction-original">
             {original ? (
               <>
@@ -80,7 +80,7 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
           </dd>
           {original ? (
             <dd>
-              <EvidenceButton label={`the recorded value of ${recordName(original)}`} result={result} evidenceIds={[original.evidence_id]} />
+              <EvidenceButton label={tf("the recorded value of {name}", { name: recordName(original) })} result={result} evidenceIds={[original.evidence_id]} />
             </dd>
           ) : null}
         </div>
@@ -96,7 +96,7 @@ function CorrectionCard({ correction, result }: { correction: ProposedCorrection
         </div>
         <div className="sm:col-span-2">
           <dt className="text-sm font-semibold text-ink-muted">{t("Source named")}</dt>
-          <dd className="whitespace-pre-line text-ink">{correction.provenance.user_source ?? "None"}</dd>
+          <dd className="whitespace-pre-line text-ink">{correction.provenance.user_source ?? t("None")}</dd>
         </div>
         <div className="sm:col-span-2">
           <dt className="text-sm font-semibold text-ink-muted">{t("Provenance")}</dt>
@@ -134,9 +134,9 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
   const field = VALUE_FIELD[selected?.unit ?? "text"];
   const asserted = selected ? readAssertedValue(value, selected.unit) : null;
   const errors = {
-    evidence: selected ? null : "Choose the figure you want to correct.",
-    value: asserted === null ? (value.trim() === "" ? "Enter the value you believe is right." : field.error) : null,
-    note: note.trim() === "" ? "Say why. It is stored with the correction." : null,
+    evidence: selected ? null : t("Choose the figure you want to correct."),
+    value: asserted === null ? (value.trim() === "" ? t("Enter the value you believe is right.") : t(field.error)) : null,
+    note: note.trim() === "" ? t("Say why. It is stored with the correction.") : null,
   };
   const show = (message: string | null) => (attempted ? message : null);
   const busy = state.challenge.status === "loading";
@@ -226,12 +226,12 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
               {metricLabel(selected.metric_id)}: <span className="tabular text-lg font-bold">{formatEvidenceValue(selected)}</span>
             </p>
             <p className="text-sm text-ink-muted">{subjectText(selected.subject)}</p>
-            <EvidenceButton label={`the recorded value of ${recordName(selected)}`} result={result} evidenceIds={[selected.evidence_id]} />
+            <EvidenceButton label={tf("the recorded value of {name}", { name: recordName(selected) })} result={result} evidenceIds={[selected.evidence_id]} />
           </div>
         ) : null}
 
         <div className="grid gap-5 md:grid-cols-2">
-          <Field htmlFor={valueId} label={field.label} hint={field.hint} error={show(errors.value)}>
+          <Field htmlFor={valueId} label={t(field.label)} hint={t(field.hint)} error={show(errors.value)}>
             <TextInput
               id={valueId}
               value={value}
@@ -263,7 +263,7 @@ export function CorrectFactForm({ job, result, example }: { job: InvestigationJo
           />
         </Field>
 
-        <Button type="submit" variant="primary" busy={busy} busyLabel="Recording…" data-testid="submit-correction">
+        <Button type="submit" variant="primary" busy={busy} busyLabel={t("Recording…")} data-testid="submit-correction">
           {t("Record my correction as unverified")}</Button>
       </form>
 

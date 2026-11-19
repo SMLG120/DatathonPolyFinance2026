@@ -8,7 +8,7 @@ import { EPS, formatFraction, formatFractionRange } from "@/lib/format";
 import { ruleParametersText, ruleStatusLabel, ruleTypeLabel } from "@/lib/rules";
 import { findRule, issuerName } from "@/lib/verdict";
 import { measuredText, RuleMeasure } from "./RuleMeasure";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 const ROW_BORDER = {
   PASS: "border-line",
@@ -73,7 +73,7 @@ function RuleResultRow({ result, lookup, ruleResult }: { result: CheckResult; lo
           gap={ruleResult.gap}
           unknownCauses={ruleResult.unknown_causes}
         />
-        <p className="text-ink" data-testid="rule-reason">
+        <p className="text-ink" data-testid="rule-reason" lang="en">
           {ruleResult.reason}
         </p>
         {ruleResult.status === "UNKNOWN" ? (
@@ -90,20 +90,20 @@ function RuleResultRow({ result, lookup, ruleResult }: { result: CheckResult; lo
         </p>
         {ruleResult.out_of_scope.length > 0 ? (
           <details className="text-sm">
-            <summary className="min-h-6 cursor-pointer font-semibold text-ink-muted">{t("Positions outside the scope of this rule (")}{ruleResult.out_of_scope.length})</summary>
+            <summary className="min-h-6 cursor-pointer font-semibold text-ink-muted">{tf("Positions outside the scope of this rule ({count})", { count: ruleResult.out_of_scope.length })}</summary>
             <ul className="mt-1 space-y-1 text-ink" data-testid="out-of-scope">
               {ruleResult.out_of_scope.map((position) => (
                 <li key={position.instrument_id}>
                   <span className="tabular font-semibold">
                     {position.instrument_id} {formatFraction(position.weight)}
                   </span>{" "}
-                 : {position.reason}
+                 : <span lang="en">{position.reason}</span>
                 </li>
               ))}
             </ul>
           </details>
         ) : null}
-        <EvidenceButton label={`${name}, after the purchase`} result={result} evidenceIds={ruleResult.evidence_ids} />
+        <EvidenceButton label={tf("{rule}, after the purchase", { rule: name })} result={result} evidenceIds={ruleResult.evidence_ids} />
       </article>
     </li>
   );
@@ -126,7 +126,7 @@ export function RuleResultsList({ result, lookup }: { result: CheckResult; looku
               const rule = lookup(item.rule_id);
               return (
                 <li key={item.rule_id}>
-                  <span className="font-semibold">{rule ? ruleTypeLabel(rule.rule_type) : item.rule_id}</span> ({ruleStatusLabel(item.status)}): {item.reason}
+                  <span className="font-semibold">{rule ? ruleTypeLabel(rule.rule_type) : item.rule_id}</span> ({ruleStatusLabel(item.status)}): <span lang="en">{item.reason}</span>
                 </li>
               );
             })}
@@ -194,9 +194,11 @@ export function StartingFindingsList({ result, lookup }: { result: CheckResult; 
                 <RuleMeasure ruleType={ruleType} status={finding.status} measured={finding.measured} limit={finding.limit} gap={finding.gap} unknownCauses={[]} />
               ) : null}
               <PurchaseEffectLine finding={finding} />
-              <p className="text-ink">{finding.reason}</p>
+              <p className="text-ink" lang="en">
+                {finding.reason}
+              </p>
               <BreachingSubjects result={result} subjects={finding.breaching_subjects} />
-              <EvidenceButton label={`${name}, before the purchase`} result={result} evidenceIds={finding.evidence_ids} />
+              <EvidenceButton label={tf("{rule}, before the purchase", { rule: name })} result={result} evidenceIds={finding.evidence_ids} />
             </article>
           </li>
         );

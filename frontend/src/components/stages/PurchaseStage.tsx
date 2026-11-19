@@ -26,7 +26,7 @@ import { usePurchaseForm } from "@/state/purchase";
 import { useRuntime } from "@/state/runtime";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /** The label of every figure shown before the investigation has run. */
 export const PURCHASE_PREVIEW_LABEL = "Preview: computed by the service for the request above";
@@ -80,7 +80,7 @@ export function PurchaseStage() {
     return (
       <StageFrame stage="purchase" lead={t("Describe the purchase to check: which instrument, and the final weight it should have in the portfolio.")}>
         {state.portfolio.status === "error" ? (
-          <ErrorBlock title={t("The portfolio could not be loaded")} message={state.portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
+          <ErrorBlock title={t("The portfolio could not be loaded")} message={state.portfolio.error ?? t("The request failed.")} onRetry={actions.retryPortfolio}>
             <p>{t("A purchase is described relative to a portfolio, so this stage needs it.")}</p>
           </ErrorBlock>
         ) : (
@@ -96,7 +96,7 @@ export function PurchaseStage() {
   // A field left empty is not an error until the user tries to start.
   const showProblem = problem !== null && (attempted || (problem.code !== "NO_INSTRUMENT" && problem.code !== "NO_TARGET"));
   const instrumentError = showProblem && problem.field === "instrument" ? problem.message : null;
-  const targetError = targetMalformed ? "Enter a number such as 25 or 12.5." : showProblem && problem.field === "target" ? problem.message : null;
+  const targetError = targetMalformed ? t("Enter a number such as 25 or 12.5.") : showProblem && problem.field === "target" ? problem.message : null;
   const held = state.purchase.instrumentId === "" ? null : heldWeight(startingPortfolio, state.purchase.instrumentId);
   const starting = state.start.status === "loading";
   const canStart = request !== null && policy !== null;
@@ -142,12 +142,11 @@ export function PurchaseStage() {
             <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-ink" data-testid="purchase-portfolio-note">
               <span data-testid="customized-badge">
                 <Badge tone="accent" dashed>
-                  {CUSTOMIZED_LABEL}
+                  {t(CUSTOMIZED_LABEL)}
                 </Badge>
               </span>
               <span>
-                This idea is checked against the weights you entered in step 1, not against {scenario.persona.display_name}&rsquo;s original fictional
-                portfolio.
+                {tf("This idea is checked against the weights you entered in step 1, not against {name}’s original fictional portfolio.", { name: scenario.persona.display_name })}
               </span>
             </p>
           ) : null}
@@ -159,8 +158,8 @@ export function PurchaseStage() {
                   const inForm = request?.instrument_id === demo.purchase_request.instrument_id && request.target_direct_weight === demo.purchase_request.target_direct_weight;
                   return (
                     <li key={demo.request_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
-                      <span className="text-ink">
-                        {demo.purchase_request.original_words ? <>{t("&ldquo;")}{demo.purchase_request.original_words}{t("&rdquo;")} </> : null}
+                      <span className="text-ink" lang="en">
+                        {demo.purchase_request.original_words ? <>“{demo.purchase_request.original_words}” </> : null}
                         <span className="text-sm text-ink-muted">{demo.label}.</span>
                       </span>
                       {inForm ? (
@@ -214,7 +213,7 @@ export function PurchaseStage() {
                 {t("Total share")} <strong className="font-semibold text-ink">{t("after")}</strong> {t("buying, including what you already hold.")}{" "}
                 {state.purchase.instrumentId === "" ? null : (
                   <span data-testid="held-now">
-                    {t("Held directly now:")} {held === null ? "nothing" : <span className="tabular">{formatFraction(held)}</span>}.
+                    {t("Held directly now:")} {held === null ? t("nothing") : <span className="tabular">{formatFraction(held)}</span>}.
                   </span>
                 )}
               </p>
@@ -258,7 +257,7 @@ export function PurchaseStage() {
           ) : (
             <ErrorBlock
               title={t("The investigation could not be started")}
-              message={state.start.error ?? "The request failed."}
+              message={state.start.error ?? t("The request failed.")}
               onRetry={startRefused ? undefined : () => void start()}
             >
               {state.start.issues.length > 0 ? (
@@ -277,14 +276,16 @@ export function PurchaseStage() {
         ) : null}
         {state.investigationIds.length > 0 ? (
           <p className="text-ink-muted">
-            {state.investigationIds.length === 1 ? "One investigation has" : `${state.investigationIds.length} investigations have`} {t("already run in this session. Starting again creates a new one; earlier reports stay available.")}</p>
+            {state.investigationIds.length === 1
+              ? t("One investigation has already run in this session. Starting again creates a new one; earlier reports stay available.")
+              : tf("{count} investigations have already run in this session. Starting again creates a new one; earlier reports stay available.", { count: state.investigationIds.length })}</p>
         ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <Button
             variant="primary"
             softDisabled={!canStart}
             busy={starting}
-            busyLabel="Checking your idea…"
+            busyLabel={t("Checking your idea…")}
             iconAfter={<ArrowRightIcon />}
             onClick={() => void start()}
             data-testid="start-investigation"
@@ -295,12 +296,12 @@ export function PurchaseStage() {
               <span data-testid="start-preview-refusal">
                 {t("The preview above says this request cannot be evaluated")}{previewRefusal.code ? ` (${previewRefusal.code})` : ""}{t(". Started as it is, it is refused for the same reason and no investigation is created. Change the request first.")}</span>
             ) : canStart
-              ? "Checks your limits. No trade is placed."
+              ? t("Checks your limits. No trade is placed.")
               : !policy
-                ? "Needs at least one confirmed rule."
+                ? t("Needs at least one confirmed rule.")
                 : attempted
-                  ? "The request above is not complete yet."
-                  : "Needs an instrument and a final weight."}
+                  ? t("The request above is not complete yet.")
+                  : t("Needs an instrument and a final weight.")}
           </p>
         </div>
       </div>
@@ -324,7 +325,7 @@ export function PurchaseStage() {
           {previewed?.feasibility ? (
             <>
               <p className="text-sm font-semibold text-ink" data-testid="purchase-preview-label">
-                {PURCHASE_PREVIEW_LABEL}
+                {t(PURCHASE_PREVIEW_LABEL)}
               </p>
               <FeasibilityTable
                 feasibility={previewed.feasibility}
@@ -366,7 +367,7 @@ export function PurchaseStage() {
               action={
                 request && policy && !previewRefused ? (
                   <Button size="sm" onClick={() => schedule({ request, policy, customPortfolio })}>
-                    Try again
+                    {t("Try again")}
                   </Button>
                 ) : undefined
               }
@@ -381,11 +382,10 @@ export function PurchaseStage() {
               ) : null}
               {previewRefused ? (
                 <p data-testid="purchase-preview-refused">
-                  No figure is shown rather than a guessed one. The service refused the request as it was sent, so sending it again unchanged would be
-                  refused again, and an investigation of it would be refused for the same reason. Change the request above, or the portfolio in step 1.
+                  {t("No figure is shown rather than a guessed one. The service refused the request as it was sent, so sending it again unchanged would be refused again, and an investigation of it would be refused for the same reason. Change the request above, or the portfolio in step 1.")}
                 </p>
               ) : (
-                <p>No figure is shown rather than a guessed one. The investigation can still be started.</p>
+                <p>{t("No figure is shown rather than a guessed one. The investigation can still be started.")}</p>
               )}
             </Notice>
           ) : null}
@@ -408,7 +408,7 @@ export function PurchaseStage() {
             title={t("No confirmed rule yet")}
             action={
               <LinkButton href={stageHref("goals")} size="sm">
-                Set your limits
+                {t("Set your limits")}
               </LinkButton>
             }
           >

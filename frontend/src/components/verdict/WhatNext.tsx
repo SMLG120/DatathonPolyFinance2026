@@ -2,12 +2,11 @@
 
 import { Button, LinkButton } from "@/components/ui/Button";
 import type { CheckResult } from "@/lib/contracts";
+import { t, tf } from "@/lib/i18n";
 import { summaryCounts } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { PRINT_REPORT_LABEL } from "./PrintReport";
 import { goToSection } from "./VerdictSummary";
-
-const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
 /**
  * The practical reading of the result, in plain words, and the actions available from here. Every number is one of the
@@ -17,8 +16,8 @@ export function WhatNext({ result, onPrint }: { result: CheckResult; onPrint?: (
   const counts = summaryCounts(result.summary);
   // Prints this report, or saves it as PDF, through the browser. Offered only when the caller can print it.
   const printButton = onPrint ? (
-    <Button onClick={onPrint} data-testid="print-report-button" title="Opens the browser's print dialog, where the report can be printed or saved as a PDF file">
-      {PRINT_REPORT_LABEL}
+    <Button onClick={onPrint} data-testid="print-report-button" title={t("Opens the browser's print dialog, where the report can be printed or saved as a PDF file")}>
+      {t(PRINT_REPORT_LABEL)}
     </Button>
   ) : null;
   // A report with no evaluated rule has no reading to give, but it can still be printed.
@@ -27,39 +26,47 @@ export function WhatNext({ result, onPrint }: { result: CheckResult; onPrint?: (
   const hasMax = result.max_compliant?.status === "SUPPORTED";
   let meaning: string;
   if (counts.fail > 0) {
-    meaning = `This idea goes over ${counts.fail} of the ${plural(counts.total, "limit", "limits")} you confirmed.`;
-    if (counts.unknown > 0) meaning += ` ${plural(counts.unknown, "other limit cannot", "other limits cannot")} be decided with the data held.`;
+    meaning = tf(counts.total === 1 ? "This idea goes over {fail} of the {total} limit you confirmed." : "This idea goes over {fail} of the {total} limits you confirmed.", { fail: counts.fail, total: counts.total });
+    if (counts.unknown > 0) meaning += ` ${tf(counts.unknown === 1 ? "{n} other limit cannot be decided with the data held." : "{n} other limits cannot be decided with the data held.", { n: counts.unknown })}`;
   } else if (counts.unknown > 0) {
-    meaning = `No confirmed limit is shown to be broken, but ${plural(counts.unknown, "limit cannot", "limits cannot")} be decided with the data held. A missing figure is never counted as zero.`;
+    meaning = tf(
+      counts.unknown === 1
+        ? "No confirmed limit is shown to be broken, but {n} limit cannot be decided with the data held. A missing figure is never counted as zero."
+        : "No confirmed limit is shown to be broken, but {n} limits cannot be decided with the data held. A missing figure is never counted as zero.",
+      { n: counts.unknown },
+    );
   } else {
-    meaning = `${counts.total === 1 ? "The limit" : `All ${counts.total} limits`} you confirmed ${counts.total === 1 ? "is" : "are"} respected by this idea, on the data held. That says nothing about whether the investment itself is a good one.`;
+    meaning =
+      counts.total === 1
+        ? t("The limit you confirmed is respected by this idea, on the data held. That says nothing about whether the investment itself is a good one.")
+        : tf("All {total} limits you confirmed are respected by this idea, on the data held. That says nothing about whether the investment itself is a good one.", { total: counts.total });
   }
   return (
     <section aria-labelledby="what-next-title" className="rounded-xl border border-line bg-surface p-5" data-testid="what-next">
       <h2 id="what-next-title" className="text-lg font-semibold text-ink">
-        What this means and what you can do next
+        {t("What this means and what you can do next")}
       </h2>
       <p className="mt-1 max-w-prose text-ink" data-testid="what-next-meaning">
-        {meaning} This is a check against your own limits, not advice.
+        {meaning} {t("This is a check against your own limits, not advice.")}
       </p>
       <ul className="mt-3 list-disc space-y-1 pl-5 text-ink-muted">
-        <li>Change the investment or the share it would have, then check again.</li>
-        {counts.unknown > 0 ? <li>See which data is missing and why it leaves a limit undecided.</li> : null}
-        <li>Read the evidence behind each figure, or dispute a figure or a limit you disagree with.</li>
+        <li>{t("Change the investment or the share it would have, then check again.")}</li>
+        {counts.unknown > 0 ? <li>{t("See which data is missing and why it leaves a limit undecided.")}</li> : null}
+        <li>{t("Read the evidence behind each figure, or dispute a figure or a limit you disagree with.")}</li>
       </ul>
       <div className="mt-4 flex flex-wrap gap-3" data-testid="result-actions">
         <LinkButton href={stageHref("purchase")} variant="primary">
-          Modify my idea
+          {t("Modify my idea")}
         </LinkButton>
         {hasMax ? (
           <LinkButton href="#report-max" onClick={(event) => { event.preventDefault(); goToSection("report-max"); }}>
-            Largest share that fits my limits
+            {t("Largest share that fits my limits")}
           </LinkButton>
         ) : null}
         <LinkButton href="#report-coverage" onClick={(event) => { event.preventDefault(); goToSection("report-coverage"); }}>
-          Sources and missing data
+          {t("Sources and missing data")}
         </LinkButton>
-        <LinkButton href={stageHref("challenge")}>Review or dispute this result</LinkButton>
+        <LinkButton href={stageHref("challenge")}>{t("Review or dispute this result")}</LinkButton>
         {printButton}
       </div>
     </section>

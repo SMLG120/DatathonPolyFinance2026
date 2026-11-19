@@ -1,5 +1,6 @@
 import type { CustomPortfolio, InstrumentId, Objective, Portfolio } from "@/lib/contracts";
 import { shiftDecimal } from "@/lib/format";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * The customized fictional portfolio: reading the editor's form and carrying
@@ -40,7 +41,7 @@ const WEIGHT_MESSAGES: Record<WeightProblemCode, string> = {
   ABOVE_FULL: "A weight cannot be above 100%. Leverage is not supported.",
 };
 
-const refuse = (code: WeightProblemCode): WeightReading => ({ ok: false, code, message: WEIGHT_MESSAGES[code] });
+const refuse = (code: WeightProblemCode): WeightReading => ({ ok: false, code, message: t(WEIGHT_MESSAGES[code]) });
 
 /**
  * Reads a typed percentage into whole hundredths of a percent, from its digits: "12.5" is 1250.
@@ -126,25 +127,25 @@ export function readCustomizeForm(input: CustomizeFormInput, purchasableIds: rea
   const unsupported = ids.find((id) => !purchasableIds.includes(id));
   const listError =
     unsupported !== undefined
-      ? `${unsupported} cannot be held in this simulation. Remove its row.`
+      ? tf("{instrument} cannot be held in this simulation. Remove its row.", { instrument: unsupported })
       : new Set(ids).size !== ids.length
-        ? "An asset can be listed only once."
+        ? t("An asset can be listed only once.")
         : ids.length > MAX_CUSTOM_POSITIONS
-          ? `A portfolio can hold at most ${MAX_CUSTOM_POSITIONS} positions.`
+          ? tf("A portfolio can hold at most {max} positions.", { max: MAX_CUSTOM_POSITIONS })
           : null;
 
   // The total of the form, in whole hundredths of a percent. This is form validation, not a portfolio figure.
   let totalHundredths: number | null = cash.ok ? cash.hundredths : null;
   for (const { reading } of readings) totalHundredths = totalHundredths !== null && reading.ok ? totalHundredths + reading.hundredths : null;
-  const totalError = totalHundredths !== null && totalHundredths !== FULL_HUNDREDTHS ? TOTAL_MESSAGE : null;
+  const totalError = totalHundredths !== null && totalHundredths !== FULL_HUNDREDTHS ? t(TOTAL_MESSAGE) : null;
 
   const objectiveError =
     input.objectiveText === null
       ? null
       : input.objectiveText.trim() === ""
-        ? "Write the objective in a sentence. It cannot be empty."
+        ? t("Write the objective in a sentence. It cannot be empty.")
         : input.objectiveText.length > MAX_OBJECTIVE_LENGTH
-          ? `The objective can have at most ${MAX_OBJECTIVE_LENGTH} characters. It has ${input.objectiveText.length}.`
+          ? tf("The objective can have at most {max} characters. It has {length}.", { max: MAX_OBJECTIVE_LENGTH, length: input.objectiveText.length })
           : null;
 
   const valid = Object.keys(rowErrors).length === 0 && cashError === null && listError === null && totalHundredths === FULL_HUNDREDTHS && objectiveError === null;
@@ -209,8 +210,8 @@ export function customPortfolioOfReport(portfolio: Portfolio | undefined, scenar
 
 /** What a stored portfolio is called wherever a report names it. */
 export function portfolioCheckedLabel(portfolio: Portfolio, scenario: Portfolio | null, personaName: string): string {
-  if (scenario === null) return "Fictional portfolio stored with this report";
-  return isCustomizedPortfolio(portfolio, scenario) ? CUSTOMIZED_LABEL : `${personaName}’s original fictional portfolio`;
+  if (scenario === null) return t("Fictional portfolio stored with this report");
+  return isCustomizedPortfolio(portfolio, scenario) ? t(CUSTOMIZED_LABEL) : tf("{persona}’s original fictional portfolio", { persona: personaName });
 }
 
 /** The scenario objective with the user's wording: same id and kind, the words verbatim, stated by the user. */

@@ -3,6 +3,7 @@
 import { createContext, useContext } from "react";
 import type { AppMode } from "@/lib/config";
 import { cn } from "@/lib/cn";
+import { t } from "@/lib/i18n";
 
 /**
  * Whether the figures on screen are recorded test data. Provided by the
@@ -34,7 +35,7 @@ export function TestDataTag({ className }: { className?: string }) {
         className,
       )}
     >
-      {TEST_DATA_LABEL}
+      {t(TEST_DATA_LABEL)}
     </span>
   );
 }

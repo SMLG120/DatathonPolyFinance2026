@@ -14,7 +14,7 @@ import { limitNoun, ruleTypeLabel, thresholdText } from "@/lib/rules";
 import { isTerminalJobStatus, pairRuleResults, diffPolicies, summaryCounts, verdictHeadline, type RuleChangeKind } from "@/lib/verdict";
 import { goToStage, stageHref } from "@/state/stage";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 const CHANGE_TEXT: Record<RuleChangeKind, string> = {
   CHANGED: "Changed",
@@ -103,18 +103,24 @@ function ReportCard({ label, job, onOpen }: { label: string; job: InvestigationJ
         </>
       ) : assessment?.kind === "not_executed" ? (
         <UnknownBlock title={t("The check did not run")}>
-          <p>{assessment.result.execution.message ?? "The service gave no reason."} {t("No rule was evaluated, so there is no verdict.")}</p>
+          <p>{assessment.result.execution.message ?? t("The service gave no reason.")} {t("No rule was evaluated, so there is no verdict.")}</p>
         </UnknownBlock>
       ) : assessment?.kind === "unreadable" ? (
         <UnknownBlock title={t("The result could not be read")} />
       ) : job?.status === "FAILED" ? (
-        <ErrorBlock title={t("This investigation failed")} message={job.failure?.message ?? "No result was produced."} />
+        <ErrorBlock title={t("This investigation failed")} message={job.failure?.message ?? t("No result was produced.")} />
       ) : job && isTerminalJobStatus(job.status) ? (
         <UnknownBlock title={t("No result was returned")} />
       ) : (
         <>
           <LoadingBlock
-            label={job ? `Checking again: ${job.steps.length} ${job.steps.length === 1 ? "step" : "steps"} reported so far.` : "Checking again: waiting for the first status."}
+            label={
+              job
+                ? job.steps.length === 1
+                  ? t("Checking again: 1 step reported so far.")
+                  : tf("Checking again: {count} steps reported so far.", { count: job.steps.length })
+                : t("Checking again: waiting for the first status.")
+            }
           />
           <div>
             <LinkButton href={stageHref("investigation")} size="sm">
@@ -171,7 +177,7 @@ export function RuleChangeComparison() {
   };
   const match = portfolioMatch(older, newer);
   const named = (portfolio: Portfolio) => (
-    <span className="font-semibold text-ink">{portfolioCheckedLabel(portfolio, scenarioData?.portfolio ?? null, scenarioData?.persona.display_name ?? "This persona")}</span>
+    <span className="font-semibold text-ink">{portfolioCheckedLabel(portfolio, scenarioData?.portfolio ?? null, scenarioData?.persona.display_name ?? t("This persona"))}</span>
   );
 
   return (
@@ -188,36 +194,36 @@ export function RuleChangeComparison() {
 
       <section aria-labelledby="comparison-reports-title">
         <h3 id="comparison-reports-title" className="text-lg font-semibold text-ink">
-          The same purchase under each version
+          {t("The same purchase under each version")}
         </h3>
         {/* Said from the two jobs' own portfolio ids. Sameness is claimed only when both jobs carry the same id. */}
         {older?.portfolio || newer?.portfolio ? (
           <p className="mt-1 text-sm text-ink-muted" data-testid="comparison-portfolio" data-portfolio-match={match}>
             {match === "same" && older?.portfolio ? (
-              <>Both reports were checked against the portfolio stored with the earlier one: {named(older.portfolio)}.</>
+              <>{t("Both reports were checked against the portfolio stored with the earlier one:")} {named(older.portfolio)}.</>
             ) : match === "different" && older?.portfolio && newer?.portfolio ? (
               <>
-                The two reports were not checked against the same portfolio. The earlier report used: {named(older.portfolio)}. The new report used:{" "}
+                {t("The two reports were not checked against the same portfolio. The earlier report used:")} {named(older.portfolio)}. {t("The new report used:")}{" "}
                 {named(newer.portfolio)}.
               </>
             ) : match === "pending" && older?.portfolio ? (
-              <>The earlier report was checked against: {named(older.portfolio)}. The new check has not reported its portfolio yet.</>
+              <>{t("The earlier report was checked against:")} {named(older.portfolio)}. {t("The new check has not reported its portfolio yet.")}</>
             ) : older?.portfolio ? (
               <>
-                The earlier report was checked against: {named(older.portfolio)}. The service did not say which portfolio the new report was checked against,
-                so this page cannot confirm that both used the same one.
+                {t("The earlier report was checked against:")} {named(older.portfolio)}.{" "}
+                {t("The service did not say which portfolio the new report was checked against, so this page cannot confirm that both used the same one.")}
               </>
             ) : newer?.portfolio ? (
               <>
-                The new report was checked against: {named(newer.portfolio)}. The service did not say which portfolio the earlier report was checked
-                against, so this page cannot confirm that both used the same one.
+                {t("The new report was checked against:")} {named(newer.portfolio)}.{" "}
+                {t("The service did not say which portfolio the earlier report was checked against, so this page cannot confirm that both used the same one.")}
               </>
             ) : null}
           </p>
         ) : null}
         <div className="mt-3 grid gap-4 md:grid-cols-2">
-          <ReportCard label={`Earlier report: policy version ${older?.policy_version ?? "unknown"}: unchanged`} job={older} onOpen={() => open(comparison.olderId)} />
-          <ReportCard label={`New report: policy version ${newer?.policy_version ?? newerPolicy?.version ?? "unknown"}`} job={newer} onOpen={() => open(comparison.newerId)} />
+          <ReportCard label={tf("Earlier report: policy version {version}: unchanged", { version: older?.policy_version ?? t("unknown") })} job={older} onOpen={() => open(comparison.olderId)} />
+          <ReportCard label={tf("New report: policy version {version}", { version: newer?.policy_version ?? newerPolicy?.version ?? t("unknown") })} job={newer} onOpen={() => open(comparison.newerId)} />
         </div>
       </section>
 
@@ -267,12 +273,12 @@ export function RuleChangeComparison() {
 
       <p className="text-sm text-ink-muted" data-testid="comparison-cause" data-portfolio-match={match}>
         {match === "same" || match === "legacy"
-          ? "A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the same purchase and the same sources."
+          ? t("A different result under the new version comes from the rule that was changed, not from the data: both reports use the same portfolio, the same purchase and the same sources.")
           : match === "different"
-            ? "The two reports were not checked against the same portfolio, so a different result under the new version can come from the portfolio as well as from the rule that was changed."
+            ? t("The two reports were not checked against the same portfolio, so a different result under the new version can come from the portfolio as well as from the rule that was changed.")
             : match === "pending"
-              ? "A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio. That is known once the new check reports its portfolio."
-              : "A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio, which this page cannot confirm for these two."}
+              ? t("A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio. That is known once the new check reports its portfolio.")
+              : t("A different result under the new version comes from the rule that was changed only if the two reports were checked against one portfolio, which this page cannot confirm for these two.")}
       </p>
     </div>
   );

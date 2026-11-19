@@ -18,7 +18,8 @@ import { isTerminalJobStatus, verdictHeadline } from "@/lib/verdict";
 import { stageHref } from "@/state/stage";
 import { useRuntime } from "@/state/runtime";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
+import { tn } from "@/lib/i18n-nodes";
 
 const LEAD = "See whether your idea fits your limits. Open any figure to see its evidence.";
 
@@ -26,8 +27,8 @@ const LEAD = "See whether your idea fits your limits. Open any figure to see its
 function reportLine(job: InvestigationJob): string {
   const assessment = assessResult(job.result);
   if (assessment.kind === "ok") return verdictHeadline(assessment.result.summary).title;
-  if (assessment.kind === "not_executed") return "The check did not run";
-  return "No readable result";
+  if (assessment.kind === "not_executed") return t("The check did not run");
+  return t("No readable result");
 }
 
 interface ReportListProps {
@@ -54,10 +55,13 @@ function ReportList({ reports, viewedId, onOpen, scenarioPortfolio, personaName 
             >
               <p className="min-w-0 text-ink">
                 <span className="font-semibold">
-                  {t("Report")} <span className="tabular">{index + 1}</span> {t("· policy version")} <span className="tabular">{report.policy_version}</span>
+                  {tn("Report {number} · policy version {version}", {
+                    number: <span className="tabular">{index + 1}</span>,
+                    version: <span className="tabular">{report.policy_version}</span>,
+                  })}
                 </span>
                 <span className="block text-sm text-ink-muted">
-                  {t("Started")} <span className="tabular">{formatTime(report.created_at)}</span> · {reportLine(report)}
+                  {tn("Started {time}", { time: <span className="tabular">{formatTime(report.created_at)}</span> })} · {reportLine(report)}
                 </span>
                 {/* Two reports under one policy version can differ by portfolio alone: each entry names its job's own. */}
                 {report.portfolio ? (
@@ -70,7 +74,7 @@ function ReportList({ reports, viewedId, onOpen, scenarioPortfolio, personaName 
                 <Badge tone="accent">{t("Shown above")}</Badge>
               ) : (
                 <Button size="sm" onClick={() => onOpen(report.id)}>
-                  {t("Open report")} {index + 1}
+                  {tf("Open report {number}", { number: index + 1 })}
                 </Button>
               )}
             </li>
@@ -94,19 +98,18 @@ export function VerdictStage() {
 
   if (!id) {
     return (
-      <StageFrame stage="verdict" lead={LEAD}>
+      <StageFrame stage="verdict" lead={t(LEAD)}>
         <EmptyBlock
-          title="There is no result to show yet"
+          title={t("There is no result to show yet")}
           action={
             <LinkButton href={stageHref("purchase")} size="sm" data-testid="empty-result-action">
-              Go to Test an idea
+              {t("Go to Test an idea")}
             </LinkButton>
           }
         >
-          <p>A result exists only after you check an idea. Nothing is shown in its place.</p>
+          <p>{t("A result exists only after you check an idea. Nothing is shown in its place.")}</p>
           <p data-testid="empty-result-reload-note">
-            Results are kept only while this tab stays open: reloading the page or opening it from a saved link starts a new session.
-            Choose a profile, confirm your limits, then check your idea again.
+            {t("Results are kept only while this tab stays open: reloading the page or opening it from a saved link starts a new session. Choose a profile, confirm your limits, then check your idea again.")}
           </p>
         </EmptyBlock>
       </StageFrame>
@@ -118,12 +121,12 @@ export function VerdictStage() {
   const assessment = job?.status === "SUCCEEDED" && job.result !== null ? assessResult(job.result) : null;
 
   return (
-    <StageFrame stage="verdict" lead={LEAD}>
+    <StageFrame stage="verdict" lead={t(LEAD)}>
       {!isLatest && assessment ? (
         <Notice
           tone="info"
           role="status"
-          title={`You are reading an earlier report, checked against policy version ${job?.policy_version}`}
+          title={tf("You are reading an earlier report, checked against policy version {version}", { version: String(job?.policy_version) })}
           action={
             <Button size="sm" onClick={() => actions.viewReport(null)}>
               {t("Back to the latest")}</Button>
@@ -137,8 +140,13 @@ export function VerdictStage() {
         <LoadingBlock
           label={
             job
-              ? `The investigation is still running: ${job.steps.length} ${job.steps.length === 1 ? "step" : "steps"} reported so far. No verdict exists yet.`
-              : "The investigation was accepted. No verdict exists yet."
+              ? tf(
+                  job.steps.length === 1
+                    ? "The investigation is still running: {count} step reported so far. No verdict exists yet."
+                    : "The investigation is still running: {count} steps reported so far. No verdict exists yet.",
+                  { count: job.steps.length },
+                )
+              : t("The investigation was accepted. No verdict exists yet.")
           }
         />
       ) : null}
@@ -150,8 +158,8 @@ export function VerdictStage() {
       ) : null}
       {pollProblem ? (
         <ErrorBlock
-          title={derived.polling.phase === "timed_out" ? "No final answer within the time limit" : "The status of the investigation could not be fetched"}
-          message={derived.polling.error ?? "The investigation did not report a final status. It may still be running."}
+          title={derived.polling.phase === "timed_out" ? t("No final answer within the time limit") : t("The status of the investigation could not be fetched")}
+          message={derived.polling.error ?? t("The investigation did not report a final status. It may still be running.")}
           onRetry={actions.retryPolling}
           retryLabel={t("Check again")}
         >
@@ -160,15 +168,15 @@ export function VerdictStage() {
       ) : null}
 
       {job?.status === "FAILED" ? (
-        <ErrorBlock title={t("This investigation failed, so there is no verdict")} message={job.failure?.message ?? "The job ended without a result and gave no reason."}>
+        <ErrorBlock title={t("This investigation failed, so there is no verdict")} message={job.failure?.message ?? t("The job ended without a result and gave no reason.")}>
           <p data-testid="failure-code">
             {job.failure ? (
               <>
-                {t("Reported by the service as")} <span className="font-mono text-[0.8125rem]">{job.failure.code}</span>.{" "}
+                {tn("Reported by the service as {code}.", { code: <span className="font-mono text-[0.8125rem]">{job.failure.code}</span> })}{" "}
               </>
             ) : null}
             {t("A failed run is not a pass and not a fail.")}{" "}
-            {job.failure?.retryable === false ? "Starting it again is not expected to help." : "You can start the investigation again from Proposed purchase."}
+            {job.failure?.retryable === false ? t("Starting it again is not expected to help.") : t("You can start the investigation again from Proposed purchase.")}
           </p>
         </ErrorBlock>
       ) : null}
@@ -177,13 +185,15 @@ export function VerdictStage() {
         <UnknownBlock title={t("The investigation stopped to ask a question")}>
           <div className="space-y-2" data-testid="job-clarification">
             <p>
-              {t("About &ldquo;")}{job.clarification.about_words}{t("&rdquo;:")} {job.clarification.question}
+              {tn("About “{words}”:", { words: <span lang="en">{job.clarification.about_words}</span> })} <span lang="en">{job.clarification.question}</span>
             </p>
             <ul className="list-disc space-y-1 pl-5">
               {job.clarification.options.map((option) => (
                 <li key={option.option_id}>
-                  <span className="font-semibold">{option.label}</span>
-                  {option.supported ? "" : " (not supported)"}: {option.description}
+                  <span className="font-semibold" lang="en">
+                    {option.label}
+                  </span>
+                  {option.supported ? "" : ` ${t("(not supported)")}`}: <span lang="en">{option.description}</span>
                 </li>
               ))}
             </ul>
@@ -249,7 +259,7 @@ export function VerdictStage() {
           viewedId={id}
           onOpen={actions.viewReport}
           scenarioPortfolio={state.portfolio.data?.scenario.portfolio ?? null}
-          personaName={state.portfolio.data?.scenario.persona.display_name ?? "This persona"}
+          personaName={state.portfolio.data?.scenario.persona.display_name ?? t("This persona")}
         />
       ) : null}
     </StageFrame>

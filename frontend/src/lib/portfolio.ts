@@ -1,6 +1,6 @@
 import type { AssetClass, Instrument, InstrumentId, Portfolio, PurchaseRequest } from "@/lib/contracts";
 import { formatFraction } from "@/lib/format";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /**
  * Read-only helpers over a portfolio and the purchase form.
@@ -48,7 +48,7 @@ function instrumentKind(instruments: InstrumentRegistry, instrumentId: Instrumen
 }
 
 export function cashRowName(portfolio: Portfolio): string {
-  return `${t("Cash")} (${portfolio.base_currency})`;
+  return tf("Cash ({currency})", { currency: portfolio.base_currency });
 }
 
 /** The direct weight held now, or null when the instrument is not held. Read from the portfolio, never computed. */
@@ -66,7 +66,7 @@ export function portfolioRows(portfolio: Portfolio, instruments: InstrumentRegis
       kind: instrumentKind(instruments, position.instrument_id),
       weight: position.weight,
     })),
-    { key: "__cash__", instrument_id: null, name: cashRowName(portfolio), kind: "Cash", weight: portfolio.cash_weight },
+    { key: "__cash__", instrument_id: null, name: cashRowName(portfolio), kind: t("Cash"), weight: portfolio.cash_weight },
   ];
 }
 
@@ -104,18 +104,18 @@ export interface PurchaseForm {
 export function readPurchaseForm(purchasableIds: InstrumentId[], input: PurchaseInput, scripted: PurchaseRequest[] = []): PurchaseForm {
   const { instrumentId, target } = input;
   if (instrumentId === null || instrumentId === "") {
-    return { request: null, problem: { code: "NO_INSTRUMENT", field: "instrument", message: "Choose the instrument to buy." } };
+    return { request: null, problem: { code: "NO_INSTRUMENT", field: "instrument", message: t("Choose the instrument to buy.") } };
   }
   if (!purchasableIds.includes(instrumentId)) {
-    return { request: null, problem: { code: "UNSUPPORTED_INSTRUMENT", field: "instrument", message: "This instrument is not supported." } };
+    return { request: null, problem: { code: "UNSUPPORTED_INSTRUMENT", field: "instrument", message: t("This instrument is not supported.") } };
   }
   if (target === null) {
-    return { request: null, problem: { code: "NO_TARGET", field: "target", message: "Enter the final direct weight as a percentage, for example 25." } };
+    return { request: null, problem: { code: "NO_TARGET", field: "target", message: t("Enter the final direct weight as a percentage, for example 25.") } };
   }
   if (target < 0 || target > 1) {
     return {
       request: null,
-      problem: { code: "OUT_OF_RANGE", field: "target", message: "The final weight must be between 0% and 100% of the portfolio. Shorting and leverage are not supported." },
+      problem: { code: "OUT_OF_RANGE", field: "target", message: t("The final weight must be between 0% and 100% of the portfolio. Shorting and leverage are not supported.") },
     };
   }
   const match = scripted.find((request) => request.instrument_id === instrumentId && request.target_direct_weight === target);
@@ -127,5 +127,5 @@ export function readPurchaseForm(purchasableIds: InstrumentId[], input: Purchase
 
 /** "NVDA at a final direct weight of 25.0%" */
 export function describePurchase(purchase: PurchaseRequest): string {
-  return `${purchase.instrument_id} ${t("at a final direct weight of")} ${formatFraction(purchase.target_direct_weight)}`;
+  return tf("{instrument} at a final direct weight of {weight}", { instrument: purchase.instrument_id, weight: formatFraction(purchase.target_direct_weight) });
 }

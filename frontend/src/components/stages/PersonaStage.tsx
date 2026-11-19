@@ -16,7 +16,7 @@ import type { Persona } from "@/lib/contracts";
 import { CUSTOMIZED_LABEL } from "@/lib/customize";
 import { formatDate, formatFraction } from "@/lib/format";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; selected: boolean; onSelect: () => void }) {
   const headingId = `persona-${persona.persona_id}`;
@@ -37,25 +37,25 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
         </h3>
 
       </div>
-      <p className="text-ink-muted">{persona.objective}</p>
+      <p className="text-ink-muted">{t(persona.objective)}</p>
       <details className="text-sm"><summary className="cursor-pointer font-medium text-ink-muted">{t("Full profile")}</summary>
       {/* Each group is a direct child of the list: a <dl> may hold <div> groups, but not groups nested in a layout wrapper. */}
       <dl className="flex flex-wrap gap-x-6 gap-y-2 text-sm">
         <div className="basis-full">
           <dt className="font-semibold text-ink-muted">{t("Objective in the case")}</dt>
-          <dd className="text-ink">{persona.objective}</dd>
+          <dd className="text-ink">{t(persona.objective)}</dd>
         </div>
         <div>
           <dt className="font-semibold text-ink-muted">{t("Horizon")}</dt>
-          <dd className="text-ink">{persona.horizon}</dd>
+          <dd className="text-ink">{t(persona.horizon)}</dd>
         </div>
         <div>
           <dt className="font-semibold text-ink-muted">{t("Risk profile")}</dt>
-          <dd className="text-ink">{persona.risk_profile}</dd>
+          <dd className="text-ink">{t(persona.risk_profile)}</dd>
         </div>
         <div className="basis-full">
           <dt className="font-semibold text-ink-muted">{t("What it demonstrates")}</dt>
-          <dd className="text-ink">{persona.demonstrates}</dd>
+          <dd className="text-ink">{t(persona.demonstrates)}</dd>
         </div>
       </dl>
       </details>
@@ -67,7 +67,7 @@ function PersonaOption({ persona, selected, onSelect }: { persona: PersonaCard; 
               {t("Selected")}</p>
           ) : (
             <Button onClick={onSelect} aria-describedby={headingId}>
-              {t("Use")} {persona.name}{t("&rsquo;s portfolio")}</Button>
+              {tf("Use {name}’s portfolio", { name: persona.name })}</Button>
           )
         ) : (
           <p className="text-sm text-ink-muted">{t("Not available in this build. It is added once the two demonstrations above work end to end.")}</p>
@@ -82,14 +82,14 @@ function CaseFacts({ persona }: { persona: Persona }) {
   return (
     <details className="rounded-md border border-line bg-canvas p-3" data-testid="case-facts">
       <summary className="min-h-6 cursor-pointer font-semibold text-ink">
-        {t("What the case says about")} {persona.display_name} ({persona.case_reference})
+        {tf("What the case says about {name} ({reference})", { name: persona.display_name, reference: persona.case_reference })}
       </summary>
       <dl className="mt-3 grid gap-3 sm:grid-cols-2">
         {persona.facts.map((fact) => (
           <div key={fact.fact_id}>
             <dt className="text-sm font-semibold text-ink-muted">{fact.label}</dt>
             <dd className="text-ink">
-              {fact.text} <span className="text-sm text-ink-muted">({fact.case_reference})</span>
+              <span lang="en">{fact.text}</span> <span className="text-sm text-ink-muted">({fact.case_reference})</span>
             </dd>
           </div>
         ))}
@@ -123,34 +123,32 @@ export function PersonaStage() {
     >
       <section aria-labelledby="how-it-works-title" className="rounded-xl border border-line bg-surface p-5" data-testid="how-it-works">
         <h2 id="how-it-works-title" className="text-lg font-semibold text-ink">
-          What this tool does
+          {t("What this tool does")}
         </h2>
         <p className="mt-1 max-w-prose text-ink-muted">
-          Before you buy something, it checks whether the purchase would break limits you set for yourself, such as
-          &ldquo;no more than 10% of my money in one company&rdquo;. It counts what you hold directly and what you hold inside funds,
-          and it says plainly when the data cannot prove an answer. Everything is fictional: it gives no advice and places no trade.
+          {t("Before you buy something, it checks whether the purchase would break limits you set for yourself, such as “no more than 10% of my money in one company”. It counts what you hold directly and what you hold inside funds, and it says plainly when the data cannot prove an answer. Everything is fictional: it gives no advice and places no trade.")}
         </p>
         <ol className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
+          {([
             ["Choose a profile", "Pick a fictional investor and look at what they own."],
             ["Set your limits", "Confirm the limits you want checked. Nothing is checked until you confirm it."],
             ["Test an idea", "Pick one investment and the share of the portfolio it would have after buying."],
             ["Understand the result", "See which limits pass or fail, what is still unknown, and the evidence behind each figure."],
-          ].map(([title, text], index) => (
+          ] as const).map(([title, text], index) => (
             <li key={title} className="flex gap-3 rounded-lg bg-sunken p-3">
               <span aria-hidden="true" className="tabular flex size-7 flex-none items-center justify-center rounded-md border border-line-strong bg-surface text-xs font-semibold text-ink-muted">
                 {index + 1}
               </span>
               <span className="text-sm">
-                <span className="block font-semibold text-ink">{title}</span>
-                <span className="text-ink-muted">{text}</span>
+                <span className="block font-semibold text-ink">{t(title)}</span>
+                <span className="text-ink-muted">{t(text)}</span>
               </span>
             </li>
           ))}
         </ol>
       </section>
 
-      <Panel id={PERSONA_CHOICE} focusableHeading title="Who would you like to try?">
+      <Panel id={PERSONA_CHOICE} focusableHeading title={t("Who would you like to try?")}>
         <ul className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PERSONAS.filter((persona) => persona.available).map((persona) => (
             <PersonaOption
@@ -170,50 +168,49 @@ export function PersonaStage() {
       <Panel
         title={t("View the fictional portfolio")}
         collapsible={portfolio.status === "ready"}
-        eyebrow="Fictional simulation"
+        eyebrow={t("Fictional simulation")}
         figures
         aside={
           <>
             {customized ? (
               <span data-testid="customized-badge">
                 <Badge tone="accent" dashed>
-                  {CUSTOMIZED_LABEL}
+                  {t(CUSTOMIZED_LABEL)}
                 </Badge>
               </span>
             ) : null}
             <Badge tone="neutral" dashed>
-              Invented holdings
+              {t("Invented holdings")}
             </Badge>
           </>
         }
       >
         {portfolio.status === "idle" ? <LoadingBlock label={t("Preparing the portfolio…")} /> : null}
-        {portfolio.status === "loading" ? <LoadingBlock label={`Loading ${personaName(personaId)}’s portfolio…`} /> : null}
+        {portfolio.status === "loading" ? <LoadingBlock label={tf("Loading {name}’s portfolio…", { name: personaName(personaId) })} /> : null}
         {portfolio.status === "error" ? (
-          <ErrorBlock title={t("The portfolio could not be loaded")} message={portfolio.error ?? "The request failed."} onRetry={actions.retryPortfolio}>
+          <ErrorBlock title={t("The portfolio could not be loaded")} message={portfolio.error ?? t("The request failed.")} onRetry={actions.retryPortfolio}>
             <p>{t("Nothing was changed. No figure is shown rather than a guessed one.")}</p>
           </ErrorBlock>
         ) : null}
         {portfolio.status === "ready" && portfolio.data && scenario && shown ? (
           <div className="space-y-5">
             <Notice tone="info" title={t("These holdings are invented")}>
-              <p data-testid="fiction-notice">{scenario.fiction_notice}</p>
+              <p data-testid="fiction-notice" lang="en">{scenario.fiction_notice}</p>
             </Notice>
             {customized ? (
-              <Notice tone="info" title={CUSTOMIZED_LABEL}>
+              <Notice tone="info" title={t(CUSTOMIZED_LABEL)}>
                 <p data-testid="customized-notice">
-                  These weights were entered by you in place of {scenario.persona.display_name}&rsquo;s original fictional portfolio. They are still invented,
-                  and they are the weights every check is asked for.
+                  {tf("These weights were entered by you in place of {name}’s original fictional portfolio. They are still invented, and they are the weights every check is asked for.", { name: scenario.persona.display_name })}
                 </p>
               </Notice>
             ) : null}
             <Facts className="sm:grid-cols-3">
-              <Fact label="Valuation date">
+              <Fact label={t("Valuation date")}>
                 <span className="tabular">{formatDate(shown.valuation_date)}</span>
               </Fact>
-              <Fact label="Reporting currency">{shown.base_currency}</Fact>
-              <Fact label="Cash">
-                <span className="tabular">{formatFraction(shown.cash_weight)}</span> of the portfolio
+              <Fact label={t("Reporting currency")}>{shown.base_currency}</Fact>
+              <Fact label={t("Cash")}>
+                <span className="tabular">{formatFraction(shown.cash_weight)}</span> {t("of the portfolio")}
               </Fact>
             </Facts>
             <PortfolioTable portfolio={shown} instruments={portfolio.data.instruments} personaName={scenario.persona.display_name} customized={customized} />

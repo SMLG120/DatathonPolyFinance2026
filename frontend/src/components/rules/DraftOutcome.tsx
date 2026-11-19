@@ -4,7 +4,7 @@ import type { ClarificationOption, Rule } from "@/lib/contracts";
 import { measureKey, ruleParametersText, ruleTypeLabel } from "@/lib/rules";
 import { activeRules } from "@/lib/verdict";
 import { useWorkflow } from "@/state/workflow";
-import { t } from "@/lib/i18n";
+import { t, tf } from "@/lib/i18n";
 
 /** "Maximum exposure to a single company — any single company" */
 export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)}: ${ruleParametersText(rule)}`;
@@ -18,7 +18,7 @@ export const ruleName = (rule: Rule) => `${ruleTypeLabel(rule.rule_type)}: ${rul
 export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "here" | "elsewhere" }) {
   const { state, derived } = useWorkflow();
   const policy = derived.currentPolicy;
-  const list = place === "here" ? "“Your limits”" : "“Your limits”";
+  const list = `“${t("Your limits")}”`;
 
   // The same rule is the same id and the same check: another answer can have given another rule this id.
   if (state.proposedRules.some((rule) => rule.rule_id === draft.rule_id && measureKey(rule) === measureKey(draft))) {
@@ -39,7 +39,7 @@ export function DraftOutcome({ draft, place = "here" }: { draft: Rule; place?: "
     return (
       <>
         <span className="font-semibold">{t("Already in force")}</span> {t("in policy version")} <span className="tabular">{policy?.version}</span>: {ruleName(inForce)}.
-        {place === "here" ? " Change its number by reviewing the result." : " Its number can be changed under “Change a rule”."}
+        {place === "here" ? ` ${t("Change its number by reviewing the result.")}` : ` ${tf("Its number can be changed under “{section}”.", { section: t("Change a rule") })}`}
       </>
     );
   }

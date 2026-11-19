@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/Button";
 import { ArrowRightIcon } from "@/components/ui/icons";
+import { t } from "@/lib/i18n";
 
 export const BRAND_NAME = "ETHOS";
 export const BRAND_HEADLINE = ["Invest with conviction.", "Not contradiction."] as const;
@@ -36,14 +37,14 @@ export function BrandHero() {
   return (
     <section aria-label={BRAND_NAME} data-testid="brand-hero" className="space-y-5 border-b border-line pb-8">
       <p className="text-4xl font-bold leading-tight tracking-tight text-ink sm:text-5xl" data-testid="brand-headline">
-        <span className="block">{BRAND_HEADLINE[0]}</span>
-        <span className="block text-accent-strong">{BRAND_HEADLINE[1]}</span>
+        <span className="block">{t(BRAND_HEADLINE[0])}</span>
+        <span className="block text-accent-strong">{t(BRAND_HEADLINE[1])}</span>
       </p>
       <p className="max-w-prose text-lg text-ink-muted" data-testid="brand-subtitle">
-        {BRAND_SUBTITLE}
+        {t(BRAND_SUBTITLE)}
       </p>
       <Button variant="primary" iconAfter={<ArrowRightIcon className="rotate-90" />} onClick={startWithAProfile} data-testid="brand-cta-start">
-        Start with a profile
+        {t("Start with a profile")}
       </Button>
     </section>
   );
